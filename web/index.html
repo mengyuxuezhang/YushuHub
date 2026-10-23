@@ -1,0 +1,1525 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent AI 管理后台</title>
+  <link rel="stylesheet" href="/admin/static/styles/admin.css?v=__ADMIN_ASSET_VERSION__">
+</head>
+<body>
+  <section id="loginView" class="login-wrap hidden">
+    <div class="login-shell">
+      <div class="login-left">
+        <div class="login-brand-line">
+          <div class="brand-mark login-brand-mark">Y</div>
+          <div class="login-brand-copy">
+            <strong id="loginBrandName" class="login-brand-name">Agent AI</strong>
+            <span id="loginBrandSubtitle" class="login-brand-subtitle">运营控制台</span>
+          </div>
+        </div>
+
+        <div class="login-copy">
+          <span id="loginKicker" class="login-kicker">AI OPERATIONS PLATFORM</span>
+          <h1 id="loginHeroTitle">Agent AI 管理后台</h1>
+          <p id="loginHeroSubtitle">代理贴牌、云端构建与版本分发</p>
+        </div>
+
+        <div class="card login">
+          <div class="login-card-head">
+            <span id="loginPanelEyebrow">安全访问</span>
+            <h2 id="loginPanelTitle">用户登录</h2>
+            <p id="loginPanelSubtitle">登录管理控制台</p>
+          </div>
+          <label id="loginAccountLabel" for="loginUser">账号</label>
+          <div class="login-field">
+            <span class="login-field-icon" aria-hidden="true">◎</span>
+            <input id="loginUser" value="admin" placeholder="请输入管理员或代理商账号" autocomplete="username" />
+          </div>
+          <label id="loginPasswordLabel" for="loginPass">密码</label>
+          <div class="login-field">
+            <span class="login-field-icon" aria-hidden="true">◇</span>
+            <input id="loginPass" type="password" placeholder="请输入密码" autocomplete="current-password" />
+            <button id="toggleLoginPasswordBtn" class="login-password-toggle" type="button" aria-label="显示密码" title="显示密码">查看</button>
+          </div>
+          <label for="loginCaptcha">验证码</label>
+          <div class="legacy-login-captcha-row">
+            <div class="login-field">
+              <span class="login-field-icon" aria-hidden="true">▣</span>
+              <input id="loginCaptcha" maxlength="5" placeholder="输入图中字符" autocomplete="off" />
+            </div>
+            <button id="loginCaptchaImageBtn" class="legacy-login-captcha-image" type="button" aria-label="刷新验证码" title="看不清？点击刷新"><img id="loginCaptchaImage" alt="登录验证码" /></button>
+          </div>
+          <button id="loginBtn" class="login-submit" type="button"><span id="loginSubmitText">登录</span><span aria-hidden="true">→</span></button>
+          <p id="loginError" class="login-error" role="alert"></p>
+          <div class="login-footnote"><span class="login-secure-dot"></span><span id="loginSecurityText">连接已加密，请使用授权账号登录</span></div>
+        </div>
+
+        <div class="login-copyright">© <span id="loginCopyrightYear">2026</span> <span id="loginCopyrightName">Agent AI</span>. All rights reserved.</div>
+      </div>
+
+      <div class="login-visual" aria-hidden="true">
+        <div class="login-digital-grid"></div>
+        <div class="login-orbit-stage">
+          <div id="loginInteractionHint" class="login-crystal-hint">拖动旋转 · 双击恢复</div>
+          <div class="login-stage-ring login-stage-ring-outer"></div>
+          <div class="login-stage-ring login-stage-ring-middle"></div>
+          <div class="login-stage-ring login-stage-ring-inner"></div>
+          <div class="login-stage-light"></div>
+          <div class="login-cube-wrap">
+            <div class="login-cube">
+              <div class="login-cube-face login-cube-front"><span id="loginCrystalFaceFront"></span></div>
+              <div class="login-cube-face login-cube-back"><span id="loginCrystalFaceBack"></span></div>
+              <div class="login-cube-face login-cube-right"><span id="loginCrystalFaceRight"></span></div>
+              <div class="login-cube-face login-cube-left"><span id="loginCrystalFaceLeft"></span></div>
+              <div class="login-cube-face login-cube-top"><span id="loginCrystalFaceTop"></span></div>
+              <div class="login-cube-face login-cube-bottom"><span id="loginCrystalFaceBottom"></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="login-signal login-signal-agent"><span>▣</span><div><strong id="loginSignalTitle0">AI Agent</strong><small id="loginSignalSubtitle0">专家编排</small></div></div>
+        <div class="login-signal login-signal-decision"><span>⌘</span><div><strong id="loginSignalTitle1">智能决策</strong><small id="loginSignalSubtitle1">模型驱动分析</small></div></div>
+        <div class="login-signal login-signal-automation"><span>⌁</span><div><strong id="loginSignalTitle2">RPA 自动化</strong><small id="loginSignalSubtitle2">流程自动执行</small></div></div>
+        <div class="login-signal login-signal-insight"><span>▥</span><div><strong id="loginSignalTitle3">数据分析</strong><small id="loginSignalSubtitle3">洞察业务趋势</small></div></div>
+        <div class="login-capabilities">
+          <div><span>▣</span><strong id="loginCapabilityTitle0">AI 专家</strong><small id="loginCapabilitySubtitle0">自主学习，智能决策</small></div>
+          <div><span>⌁</span><strong id="loginCapabilityTitle1">RPA 自动化</strong><small id="loginCapabilitySubtitle1">流程自动化，降本增效</small></div>
+          <div><span>▥</span><strong id="loginCapabilityTitle2">数据驱动</strong><small id="loginCapabilitySubtitle2">洞察数据，驱动业务</small></div>
+          <div><span>◇</span><strong id="loginCapabilityTitle3">安全可靠</strong><small id="loginCapabilitySubtitle3">企业级安全保障</small></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="appView" class="hidden shell">
+    <aside class="side">
+      <div class="brand"><div class="brand-mark">Y</div><div><h1>Agent AI</h1><div class="small" style="color:#93a4bb">运营控制台</div></div></div>
+      <div class="menu-section">运营概览</div>
+      <button class="tab active" data-tab="dashboard"><span class="label"><span class="icon">◇</span>仪表盘</span></button>
+      <div class="menu-section">贴牌交付</div>
+      <button class="tab parent-tab" data-tab="projectList" data-group="projects"><span class="label"><span class="icon">□</span>AI 项目</span><span id="projectCount" class="count">0</span></button>
+      <div class="subnav" data-parent="projects">
+        <button class="subtab" data-tab="projectList">项目列表</button>
+        <button class="subtab" data-tab="projectEditor">新建/编辑</button>
+      </div>
+      <button class="tab" data-tab="builds"><span class="label"><span class="icon">△</span>构建发布</span><span id="buildCount" class="count">0</span></button>
+      <button class="tab planned" data-tab="licenses"><span class="label"><span class="icon">▣</span>安装包授权</span><span class="count">规划</span></button>
+      <div class="menu-section">账号中心</div>
+      <button class="tab parent-tab hidden" data-tab="agents" data-group="userCenter" id="userCenterTab"><span class="label"><span class="icon">◎</span>账号中心</span><span id="agentCount" class="count">0</span><span id="centerSupplierCount" class="count hidden">0</span></button>
+      <div class="subnav" data-parent="userCenter" id="userCenterSubnav">
+        <button class="subtab" data-tab="organizations" id="organizationsSubtab">组织主体</button>
+        <button class="subtab" data-tab="agents" id="agentsSubtab">后台账号</button>
+        <button class="subtab" data-tab="userGroups" id="userGroupsSubtab">账号分组</button>
+        <button class="subtab planned" data-tab="permissions">权限管理</button>
+        <button class="subtab" data-tab="authStatus">授权状态</button>
+        <button class="subtab hidden" data-tab="centerSuppliers" id="centerSuppliersTab">供应商接入</button>
+      </div>
+      <div class="menu-section">商业运营</div>
+      <button class="tab" data-tab="endUsers"><span class="label"><span class="icon">○</span>终端用户</span><span id="endUserCount" class="count">0</span></button>
+      <button class="tab" data-tab="memberships"><span class="label"><span class="icon">◇</span>会员卡</span><span id="membershipCount" class="count">0</span></button>
+      <button class="tab parent-tab" data-tab="paymentConfig" data-group="payments"><span class="label"><span class="icon">￥</span>支付中心</span><span id="paymentOrderCount" class="count">0</span></button>
+      <div class="subnav" data-parent="payments">
+        <button class="subtab" data-tab="paymentConfig">支付配置</button>
+        <button class="subtab" data-tab="paymentOrders">支付订单</button>
+      </div>
+      <button class="tab" data-tab="keys"><span class="label"><span class="icon">◆</span>消耗流水</span></button>
+      <button class="tab" data-tab="redeemCodes"><span class="label"><span class="icon">券</span>兑换码</span><span id="redeemCodeCount" class="count">0</span></button>
+      <div class="menu-section">能力配置</div>
+      <button class="tab parent-tab" data-tab="providers" data-group="modelService" id="modelServiceTab"><span class="label"><span class="icon">◈</span>模型服务</span><span id="providerCount" class="count">0</span></button>
+      <div class="subnav" data-parent="modelService" id="modelServiceSubnav">
+        <button class="subtab" data-tab="providers" id="providersSubtab">服务商</button>
+        <button class="subtab" data-tab="modelKeys">Key 池</button>
+        <button class="subtab" data-tab="providerModels">模型管理</button>
+        <button class="subtab" data-tab="pricingRules">计费规则</button>
+      </div>
+      <button class="tab" data-tab="mcp"><span class="label"><span class="icon">⌘</span>精选 MCP</span><span id="curatedMcpCount" class="count">0</span></button>
+      <button class="tab" data-tab="skills"><span class="label"><span class="icon">✦</span>技能市场</span><span id="curatedSkillCount" class="count">0</span></button>
+      <button class="tab" data-tab="curatedAgents"><span class="label"><span class="icon">◇</span>专家市场</span><span id="curatedAgentCount" class="count">0</span></button>
+      <div class="menu-section">系统</div>
+      <button class="tab parent-tab hidden" data-tab="platformBrand" data-group="platformSettings" id="platformTab"><span class="label"><span class="icon">▤</span>平台设置</span></button>
+      <div class="subnav" data-parent="platformSettings" id="platformSettingsSubnav">
+        <button class="subtab" data-tab="platformBrand">后台品牌</button>
+        <button class="subtab" data-tab="platformBuildCenter">官方构建中心</button>
+        <button class="subtab" data-tab="platformStorage">安装包存储</button>
+        <button class="subtab" data-tab="platformEmail">邮件服务</button>
+      </div>
+      <button class="tab hidden" data-tab="updates" id="updatesTab"><span class="label"><span class="icon">↻</span>系统更新</span></button>
+      <button class="tab hidden" data-tab="diagnostics" id="diagnosticsTab"><span class="label"><span class="icon">⌁</span>系统诊断</span></button>
+      <button class="tab" data-tab="security"><span class="label"><span class="icon">●</span>账号安全</span></button>
+    </aside>
+
+    <div class="main">
+      <div class="topbar">
+        <div class="topbar-title">
+          <button id="sideCollapseBtn" class="side-toggle" title="折叠/展开菜单">☰</button>
+          <div>
+          <h1 id="pageTitle">仪表盘</h1>
+          <div id="pageSubtitle" class="page-subtitle">运营全景概览 · 数据实时聚合</div>
+          </div>
+        </div>
+        <div class="inline-actions"><span id="currentUser" class="muted"></span><button id="logoutBtn" class="secondary hidden">退出登录</button></div>
+      </div>
+      <main class="page">
+        <div id="dashboardView" class="content">
+          <div class="summary">
+            <div class="metric"><span class="muted">源码版本</span><strong id="sourceVersion">-</strong></div>
+            <div class="metric"><span class="muted">AI 项目</span><strong id="projectMetric">0</strong></div>
+            <div class="metric"><span class="muted">已发布版本</span><strong id="successMetric">0</strong></div>
+            <div class="metric"><span class="muted">待更新项目</span><strong id="staleMetric">0</strong></div>
+            <div class="metric"><span class="muted">构建机</span><strong id="workerMetric">离线</strong></div>
+          </div>
+          <div class="dashboard-grid">
+            <div class="card">
+              <h2>近期构建</h2>
+              <table><thead><tr><th>项目</th><th>版本</th><th>状态</th><th>时间</th></tr></thead><tbody id="recentBuildRows"></tbody></table>
+            </div>
+            <div class="stack">
+              <div class="card">
+                <h2>交付流程</h2>
+                <div class="plan-grid" style="grid-template-columns:1fr">
+                  <div><h3>1. 维护贴牌资料</h3><p class="muted small">Logo、图标、关于我们、教程链接等品牌素材。</p></div>
+                  <div><h3>2. 打包测试版</h3><p class="muted small">Windows 构建机领取任务，生成预览安装包。</p></div>
+                  <div><h3>3. 推送给用户</h3><p class="muted small">测试通过后发布到正式更新地址。</p></div>
+                </div>
+              </div>
+              <div class="card">
+                <h2>后续规划</h2>
+                <p class="muted">终端用户注册授权、额度充值、模型 Key 托管、MCP/技能预置、自定义 API 服务商会逐步接入当前菜单。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="skillsView" class="content management-page hidden">
+          <div class="management-head"><div><h1>精选技能市场</h1><div class="page-subtitle">发布官方签名技能，并为当前账号名下用户配置会员范围和交付策略</div></div><div class="management-actions"><button id="syncCuratedSkillsBtn" class="secondary hidden">同步总后台</button><button id="refreshCuratedSkillsBtn" class="secondary">刷新</button><button id="openCuratedSkillDrawerBtn">+ 新建官方技能</button></div></div>
+          <div class="card table-card"><div class="table-scroll"><table><thead><tr><th>技能</th><th>类型</th><th>当前版本</th><th>状态</th><th>我的分发</th><th>操作</th></tr></thead><tbody id="curatedSkillRows"></tbody></table></div></div>
+          <aside id="curatedSkillDrawer" class="form-drawer hidden" aria-label="精选技能编辑">
+            <div class="form-drawer-head"><h2>官方技能</h2><button id="closeCuratedSkillDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+              <label>技能 ID</label><input id="curatedSkillId" placeholder="official-data-analyst" />
+              <label>名称</label><input id="curatedSkillName" placeholder="官方数据分析" />
+              <label>触发描述</label><textarea id="curatedSkillDescription"></textarea>
+              <div class="form-grid"><div><label>分类</label><input id="curatedSkillCategory" /></div><div><label>标签（逗号分隔）</label><input id="curatedSkillTags" /></div></div>
+              <div class="form-grid"><div><label>分发类型</label><select id="curatedSkillType"><option value="public">公开技能</option><option value="protected">保护技能（仅文本）</option></select></div><div><label>默认交付</label><select id="curatedSkillDelivery"><option value="market">市场展示</option><option value="recommended">推荐更新</option><option value="auto_install">自动安装</option></select></div></div>
+              <h3>市场投放</h3><div class="model-access-list"><label><input id="curatedSkillMarketPersonal" type="checkbox" checked disabled> 个人技能市场</label></div>
+              <div class="toolbar"><button id="saveCuratedSkillBtn">保存草稿</button></div><p id="curatedSkillMsg" class="action-feedback hidden" aria-live="polite"></p>
+              <hr />
+              <h3>上传版本草稿</h3><p class="muted small">上传只会保存待发布版本。上传成功后，请在下方版本列表执行发布；总后台发布会通知下游，本地后台发布后可由当前账号上架。</p><div class="form-grid"><div><label>版本号</label><input id="curatedVersion" placeholder="1.0.0" /></div><div><label>最低 Desktop 版本</label><input id="curatedMinDesktopVersion" placeholder="1.0.94" /></div></div>
+              <label>更新说明</label><textarea id="curatedReleaseNotes"></textarea><label>技能 ZIP</label><input id="curatedPackageFile" type="file" accept=".zip,application/zip" />
+              <div class="toolbar"><button id="uploadCuratedVersionBtn" class="secondary">上传为草稿</button></div>
+              <div id="curatedVersionList" class="stack"></div>
+              <hr />
+              <h3>我的分发</h3><label class="checkbox-line"><input id="curatedDistributionEnabled" type="checkbox" /> 向当前账号名下用户上架</label>
+              <label>当前分发版本</label><select id="curatedSelectedVersion"></select>
+              <div class="form-grid"><div><label>交付策略</label><select id="curatedDistributionDelivery"><option value="market">市场展示</option><option value="recommended">推荐更新</option><option value="auto_install">自动安装</option></select></div><div><label>版本策略</label><select id="curatedVersionPolicy"><option value="manual">手动确认</option><option value="follow_latest">自动跟随</option></select></div></div>
+              <label>会员范围</label><select id="curatedAudienceType"><option value="all">全部已登录用户</option><option value="membership_cards">指定会员卡</option></select><div id="curatedMembershipChoices" class="model-access-list"></div>
+              <div class="toolbar"><button id="saveCuratedDistributionBtn">保存分发</button></div>
+            </div>
+          </aside><div id="curatedSkillBackdrop" class="drawer-backdrop hidden"></div>
+        </div>
+
+        <div id="mcpView" class="content management-page hidden">
+          <div class="management-head"><div><h1>精选 MCP</h1><div class="page-subtitle">发布经过安全校验的 MCP 配置，并远程分发到当前账号名下客户端</div></div><div class="management-actions"><button id="syncCuratedMcpsBtn" class="secondary hidden">同步总后台</button><button id="refreshCuratedMcpsBtn" class="secondary">刷新</button><button id="createCuratedMcpBtn">+ 新建 MCP</button></div></div>
+          <div class="notice"><div><strong>安全交付规则</strong><div class="muted small">托管 MCP 安装后默认停用；密钥与 OAuth 由客户端本地维护，管理端不能远程授予工具权限。</div></div></div>
+          <div id="curatedMcpSyncNotice" class="notice hidden"><div><strong id="curatedMcpSyncTitle">总后台 MCP 更新</strong><div id="curatedMcpSyncMessage" class="muted small"></div><div class="progress-track"><span id="curatedMcpSyncProgress" class="progress-fill"></span></div></div></div>
+          <div class="card table-card"><div class="table-scroll"><table><thead><tr><th>MCP</th><th>分类</th><th>状态</th><th>我的分发</th><th>操作</th></tr></thead><tbody id="curatedMcpRows"></tbody></table></div></div>
+          <aside id="curatedMcpDrawer" class="form-drawer mcp-drawer hidden" aria-label="精选 MCP 编辑">
+            <div class="form-drawer-head"><div><h2 id="curatedMcpDrawerTitle">精选 MCP</h2><div id="curatedMcpDrawerSource" class="muted small"></div></div><button id="closeCuratedMcpDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+              <h3>基本信息</h3>
+              <label>MCP ID</label><input id="curatedMcpId" class="mono" placeholder="chrome-devtools-managed" />
+              <label>名称</label><input id="curatedMcpName" placeholder="Chrome DevTools MCP" />
+              <label>用途说明</label><textarea id="curatedMcpDescription" placeholder="说明该 MCP 能力及适用场景"></textarea>
+              <div class="form-grid"><div><label>分类</label><input id="curatedMcpCategory" placeholder="浏览器" /></div><div><label>标签（逗号分隔）</label><input id="curatedMcpTags" placeholder="调试, 自动化" /></div></div>
+              <label>图标 URL（可选）</label><input id="curatedMcpIconUrl" placeholder="https://..." />
+              <label>默认交付策略</label><select id="curatedMcpDelivery"><option value="market">市场展示</option><option value="recommended">推荐更新</option><option value="auto_install">自动安装</option></select>
+              <h3>市场投放</h3><div class="model-access-list"><label><input id="curatedMcpMarketPersonal" type="checkbox" checked disabled> 个人 MCP 市场</label></div>
+              <div class="toolbar"><button id="saveCuratedMcpBtn">保存基本信息</button></div><p id="curatedMcpMsg" class="action-feedback hidden" aria-live="polite"></p>
+              <div id="curatedMcpVersionEditor">
+                <hr />
+                <h3>新增版本草稿</h3><p class="muted small">配置会在服务端执行安全校验。先保存为草稿，再从版本列表明确发布。</p>
+                <div class="form-grid"><div><label>版本号</label><input id="curatedMcpVersion" placeholder="1.0.0" /></div><div><label>最低 Desktop 版本</label><input id="curatedMcpMinDesktopVersion" placeholder="3.0.0-beta.13" /></div></div>
+                <label>更新说明</label><textarea id="curatedMcpReleaseNotes" placeholder="本版本的能力与变更"></textarea>
+                <label>连接方式</label><select id="curatedMcpTransport"><option value="stdio">本地 stdio（npx / uvx）</option><option value="remote">远程 HTTPS</option><option value="json">JSON 配置</option></select>
+                <div id="curatedMcpStdioFields">
+                  <div class="form-grid"><div><label>运行命令</label><select id="curatedMcpCommand"><option value="npx.cmd">npx.cmd（Windows）</option><option value="npx">npx</option><option value="uvx.exe">uvx.exe（Windows）</option><option value="uvx">uvx</option></select></div><div><label>固定版本软件包</label><input id="curatedMcpPackage" class="mono" placeholder="chrome-devtools-mcp@1.6.0" /></div></div>
+                  <label>附加参数（每行一项）</label><textarea id="curatedMcpArgs" class="mono" placeholder="-y"></textarea>
+                  <label>环境变量引用（每行 NAME=${NAME}）</label><textarea id="curatedMcpEnv" class="mono" placeholder="API_TOKEN=${API_TOKEN}"></textarea>
+                </div>
+                <div id="curatedMcpRemoteFields" class="hidden"><label>远程 HTTPS URL</label><input id="curatedMcpRemoteUrl" class="mono" placeholder="https://mcp.example.com/mcp" /></div>
+                <div id="curatedMcpJsonFields" class="hidden">
+                  <label>完整 MCP JSON</label><textarea id="curatedMcpJson" class="mono" rows="16" spellcheck="false" placeholder='{"mcpServers":{"MySQL":{"command":"uvx","args":["--from","mysql-mcp-server==0.2.2","mysql_mcp_server"],"env":{"MYSQL_HOST":"","MYSQL_PASSWORD":""}}}}'></textarea>
+                  <p class="muted small">支持完整的 <code>mcpServers</code> JSON 或单个服务器配置，且一次只能包含一个服务器。空环境变量会自动转换为本机 <code>${ENV_NAME}</code> 引用；无版本的 uvx <code>--from</code> 软件包会在保存时查询 PyPI 并固化当前版本，也可直接填写 <code>package==1.2.3</code>。</p>
+                </div>
+                <div class="toolbar"><button id="createCuratedMcpVersionBtn" class="secondary">保存版本草稿</button></div>
+              </div>
+              <div id="curatedMcpVersionList" class="stack"></div>
+              <hr />
+              <h3>我的分发</h3><p id="curatedMcpDistributionHint" class="muted small">发布版本后可配置本账号用户范围；客户端安装后仍默认停用。</p>
+               <label class="checkbox-line"><input id="curatedMcpDistributionEnabled" type="checkbox" /> 向当前账号名下用户上架</label>
+              <label>当前分发版本</label><select id="curatedMcpSelectedVersion"></select>
+              <div class="form-grid"><div><label>交付策略</label><select id="curatedMcpDistributionDelivery"><option value="market">市场展示</option><option value="recommended">推荐更新</option><option value="auto_install">自动安装</option></select></div><div><label>版本策略</label><select id="curatedMcpVersionPolicy"><option value="manual">手动确认</option><option value="follow_latest">自动跟随</option></select></div></div>
+              <label>会员范围</label><select id="curatedMcpAudienceType"><option value="all">全部已登录用户</option><option value="membership_cards">指定会员卡</option></select><div id="curatedMcpMembershipChoices" class="model-access-list"></div>
+              <div class="toolbar"><button id="saveCuratedMcpDistributionBtn">保存分发</button></div>
+            </div>
+          </aside><div id="curatedMcpBackdrop" class="drawer-backdrop hidden"></div>
+        </div>
+
+        <div id="curatedAgentsView" class="content management-page hidden">
+          <div class="management-head"><div><h1>精选专家</h1><div class="page-subtitle">创建只读专家并关联已发布的技能与 MCP；分发前系统会检查相同用户范围的依赖权限。</div></div><div class="management-actions"><button id="syncCuratedAgentsBtn" class="secondary hidden">同步总后台</button><button id="refreshCuratedAgentsBtn" class="secondary">刷新</button><button id="createCuratedAgentBtn">+ 新建专家</button></div></div>
+          <div class="notice"><div><strong>依赖权限前置校验</strong><div class="muted small">请先在技能管理和 MCP 管理中完成发布及用户授权。专家的授权范围不能大于任一必需依赖的授权范围。</div></div></div>
+          <div id="curatedAgentSyncNotice" class="notice hidden"><div><strong id="curatedAgentSyncTitle">总后台专家更新</strong><div id="curatedAgentSyncMessage" class="muted small"></div><div class="progress-track"><span id="curatedAgentSyncProgress" class="progress-fill"></span></div></div></div>
+          <div class="card table-card"><div class="table-scroll"><table><thead><tr><th>专家</th><th>版本</th><th>依赖</th><th>状态</th><th>我的分发</th><th>操作</th></tr></thead><tbody id="curatedAgentRows"></tbody></table></div></div>
+          <aside id="curatedAgentDrawer" class="form-drawer hidden" aria-label="精选专家编辑">
+            <div class="form-drawer-head"><h2 id="curatedAgentDrawerTitle">精选专家</h2><button id="closeCuratedAgentDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+              <label>专家 ID</label><input id="curatedAgentId" class="mono" placeholder="content-operator" />
+              <label>名称</label><input id="curatedAgentName" placeholder="内容运营助手" />
+              <label>用途说明</label><textarea id="curatedAgentDescription"></textarea>
+              <label>行为指令</label><textarea id="curatedAgentPrompt" rows="10"></textarea>
+              <div class="form-grid"><div><label>版本</label><input id="curatedAgentVersion" value="1.0.0" /></div><div><label>默认权限</label><select id="curatedAgentPermission"><option value="default">默认询问</option><option value="acceptEdits">自动接受编辑</option><option value="auto">自动审核</option><option value="dontAsk">不询问并默认拒绝</option><option value="plan">仅规划</option></select></div></div>
+              <label>图标 URL（可选）</label><input id="curatedAgentIconUrl" placeholder="https://..." />
+              <h3>市场投放</h3><div class="model-access-list"><label><input id="curatedAgentMarketPersonal" type="checkbox" checked disabled> 个人专家市场</label></div>
+              <h3>必需技能</h3><div id="curatedAgentSkillChoices" class="model-access-list"></div>
+              <h3>必需 MCP</h3><div id="curatedAgentMcpChoices" class="model-access-list"></div>
+              <div class="toolbar"><button id="saveCuratedAgentBtn">保存专家</button><button id="publishCuratedAgentBtn" class="secondary">发布</button></div><p id="curatedAgentSaveMsg" class="action-feedback hidden" aria-live="polite"></p>
+              <hr /><h3>我的分发</h3>
+               <label class="checkbox-line"><input id="curatedAgentDistributionEnabled" type="checkbox" /> 向当前账号名下用户上架</label>
+              <label>交付策略</label><select id="curatedAgentDelivery"><option value="market">市场展示</option><option value="recommended">推荐安装</option><option value="auto_install">自动安装</option></select>
+              <label>会员范围</label><select id="curatedAgentAudienceType"><option value="all">全部已登录用户</option><option value="membership_cards">指定会员卡</option></select><div id="curatedAgentMembershipChoices" class="model-access-list"></div>
+              <div class="toolbar"><button id="saveCuratedAgentDistributionBtn">保存分发</button></div><p id="curatedAgentMsg" class="action-feedback hidden" aria-live="polite"></p>
+            </div>
+          </aside><div id="curatedAgentBackdrop" class="drawer-backdrop hidden"></div>
+        </div>
+
+        <div id="projectListView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>项目列表</h1><div class="page-subtitle">查看 AI 项目、版本状态和测试版打包进度</div></div>
+            <div class="management-actions"><button id="newProjectTopBtn">+ 新建项目</button></div>
+          </div>
+          <div class="card table-card project-table-card">
+            <div class="table-tools">
+              <div class="filter-bar">
+                <input id="projectSearchFilter" placeholder="搜索项目 / 品牌 / 代理" />
+                <select id="projectStatusFilter"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
+                <button id="filterProjectsBtn" class="secondary">查询</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>项目</th><th>品牌</th><th>所属代理</th><th>版本状态</th><th>操作</th></tr></thead><tbody id="projectRows"></tbody></table>
+            </div>
+            <div class="table-footer" id="projectFooter">共 0 条</div>
+          </div>
+        </div>
+
+        <div id="projectEditorView" class="content hidden">
+          <div class="page-head">
+            <div><h1>新建/编辑项目</h1><div class="page-subtitle">维护贴牌资料、客户端菜单和品牌展示信息</div></div>
+            <button id="backProjectListBtn" class="secondary">返回列表</button>
+          </div>
+          <div class="card project-editor">
+            <h2>贴牌信息</h2>
+            <div class="form-grid">
+              <div><label>项目 ID</label><input id="id" placeholder="agent-a" /></div>
+              <div><label>所属代理</label><select id="ownerUserId"></select></div>
+            </div>
+            <label>应用名称</label><input id="appName" placeholder="某某 AI 助手" />
+            <div class="form-grid">
+              <div><label>品牌名称</label><input id="brandName" placeholder="某某科技" /></div>
+              <div><label>短名称</label><input id="shortName" placeholder="某某 AI" /></div>
+            </div>
+            <label>Logo</label>
+            <div class="asset-row"><img id="logoPreview" class="preview" alt="Logo 预览" /><div><input id="logoUrl" placeholder="上传后自动生成 URL" /><div class="toolbar"><input id="logoFile" type="file" accept="image/*" class="hidden" /><button class="secondary" id="logoUploadBtn">上传 Logo</button></div></div></div>
+            <label>安装包 / 窗口图标（支持 .ico / .png）</label>
+            <div class="asset-row"><img id="iconPreview" class="preview" alt="图标预览" /><div><input id="iconUrl" placeholder="上传 .ico 或 .png 后自动生成 URL" /><div class="toolbar"><input id="iconFile" type="file" accept=".ico,image/x-icon,image/vnd.microsoft.icon,image/png" class="hidden" /><button class="secondary" id="iconUploadBtn">上传图标</button></div><div class="muted small">Windows 安装包要求至少 256x256；可上传包含 256 尺寸的 .ico，或上传 256x256 透明 png，打包时会自动转为安装包图标。</div></div></div>
+            <label>联系方式二维码</label>
+            <div class="asset-row"><img id="contactPreview" class="preview" alt="二维码预览" /><div><input id="contactQrUrl" placeholder="上传后自动生成 URL" /><div class="toolbar"><input id="contactFile" type="file" accept="image/*" class="hidden" /><button class="secondary" id="contactUploadBtn">上传二维码</button></div></div></div>
+            <h2>客户端登录页</h2>
+            <div class="form-grid">
+              <div><label>登录页标题</label><input id="loginTitle" placeholder="某某 AI 工作台" /></div>
+              <div><label>登录页副标题</label><input id="loginSubtitle" placeholder="专属专家入口" /></div>
+            </div>
+            <label>登录页主文案</label><input id="loginHeroTitle" placeholder="登录后开始使用你的专属工作台" />
+            <label>登录页说明</label><textarea id="loginHeroSubtitle" placeholder="展示给终端用户的服务说明、品牌说明或授权说明"></textarea>
+            <label>登录页 Logo</label>
+            <div class="asset-row"><img id="loginLogoPreview" class="preview" alt="登录 Logo 预览" /><div><input id="loginLogoUrl" placeholder="默认使用 Logo，可单独上传" /><div class="toolbar"><input id="loginLogoFile" type="file" accept="image/*" class="hidden" /><button class="secondary" id="loginLogoUploadBtn">上传登录 Logo</button></div></div></div>
+            <label>登录页背景图</label>
+            <div class="asset-row"><img id="loginBackgroundPreview" class="preview" alt="登录背景预览" /><div><input id="loginBackgroundUrl" placeholder="上传后自动生成 URL" /><div class="toolbar"><input id="loginBackgroundFile" type="file" accept="image/*" class="hidden" /><button class="secondary" id="loginBackgroundUploadBtn">上传背景图</button></div><div class="muted small">推荐分辨率 1920x1080，宽屏场景可用 2560x1440；主体内容尽量居中，避免被登录面板遮挡。</div></div></div>
+            <label>模型密钥教程链接</label><input id="modelTutorialUrl" placeholder="客户端“获取教程”按钮跳转地址，留空则隐藏按钮" />
+            <label>客户端菜单配置</label>
+            <div class="menu-editor">
+              <table>
+                <thead><tr><th>显示</th><th>菜单名称</th><th>类型</th><th>排序</th><th>打开方式</th><th>显示网址</th><th>链接 / 路由</th><th>操作</th></tr></thead>
+                <tbody id="clientMenuRows"></tbody>
+              </table>
+              <div class="toolbar" style="padding:0 10px 10px"><button type="button" class="secondary" id="addClientMenuBtn">添加外部链接</button><button type="button" class="secondary" id="resetClientMenusBtn">恢复默认菜单</button></div>
+            </div>
+            <p class="muted small">代理商只需要勾选显示、修改名称和排序；外部链接可用于教程、官网、客服等入口。</p>
+            <div class="form-grid">
+              <div><label>主题颜色</label><input id="themeColor" type="color" value="#2563eb" /></div>
+              <div><label>状态</label><select id="projectStatus"><option value="enabled">启用</option><option value="disabled">停用</option></select></div>
+            </div>
+            <label>关于我们</label><textarea id="aboutText" placeholder="展示给客户端用户的品牌介绍、服务说明或联系方式"></textarea>
+            <p class="muted small">App ID 和本地数据目录会根据项目 ID 自动生成；渠道包默认不显示 GitHub 图标。</p>
+            <div class="toolbar"><button id="newProjectBtn" class="secondary">新建</button><button id="saveProjectBtn">保存项目</button><button id="buildBtn" class="secondary">保存并打包测试版</button></div>
+            <p id="formMsg" class="muted"></p>
+          </div>
+        </div>
+
+        <div id="buildsView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>构建发布</h1><div class="page-subtitle">查看 Windows 构建机任务，发布测试包或正式更新</div></div>
+            <div class="management-actions"><button class="secondary" id="refreshBuildsBtn">刷新</button></div>
+          </div>
+          <div id="versionNotice" class="notice hidden"></div>
+          <div class="card table-card">
+            <div class="table-tools">
+              <div class="filter-bar">
+                <select id="workerStatusFilter"><option value="">全部构建机</option><option value="online">在线</option><option value="offline">离线</option></select>
+                <button id="filterWorkersBtn" class="secondary">查询</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>Worker / Desktop 源码</th><th>状态</th><th>当前任务</th><th>最后心跳</th></tr></thead><tbody id="workerRows"></tbody></table>
+            </div>
+            <div class="table-footer" id="workerFooter">共 0 条</div>
+          </div>
+          <div class="card table-card">
+            <div class="table-tools">
+              <div class="filter-bar">
+                <input id="buildSearchFilter" placeholder="搜索项目 / 版本" />
+                <select id="buildStatusFilter"><option value="">全部状态</option><option value="queued">排队中</option><option value="running">构建中</option><option value="succeeded">已完成</option><option value="failed">失败</option></select>
+                <button id="filterBuildsBtn" class="secondary">查询</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table class="builds-table">
+                <colgroup><col class="build-col-project" /><col class="build-col-source" /><col class="build-col-version" /><col class="build-col-status" /><col class="build-col-address" /><col class="build-col-time" /><col class="build-col-actions" /></colgroup>
+                <thead><tr><th>项目</th><th>来源</th><th>版本</th><th>状态</th><th>测试 / 正式地址</th><th>时间</th><th>操作</th></tr></thead><tbody id="buildRows"></tbody>
+              </table>
+            </div>
+            <div class="table-footer" id="buildFooter">共 0 条</div>
+          </div>
+        </div>
+
+        <div id="organizationsView" class="content management-page hidden">
+          <div class="notice"><div><strong>主体与岗位分离</strong><div class="small">这里管理上下级代理主体和可转授能力；“后台账号/角色模板”只管理组织内部岗位。</div></div></div>
+          <div id="organizationContextCard" class="card"><div class="muted">正在加载组织上下文…</div></div>
+          <div id="createChildOrganizationCard" class="card hidden">
+            <div class="section-head"><div><h2>新建二级代理</h2><p>二级代理依托当前一级代理服务器运行，不能继续创建下级代理。</p></div></div>
+            <form id="childOrganizationForm" class="form-grid">
+              <label>代理名称<input id="childOrganizationName" required maxlength="120" placeholder="例如：华东客户服务中心"></label>
+              <label>管理员登录账号<input id="childOrganizationUsername" required placeholder="二级代理管理员账号"></label>
+              <label>初始密码<input id="childOrganizationPassword" required type="password" minlength="8" placeholder="至少 8 位"></label>
+              <div class="full capability-field">
+                <div class="field-label-row"><label>可转授能力</label><span class="muted small">按通用、个人、渠道和平台分类</span></div>
+                <div id="childOrganizationCapabilities"></div>
+              </div>
+              <div class="form-actions full"><button type="submit">创建二级代理</button><span id="childOrganizationMsg" class="muted"></span></div>
+            </form>
+          </div>
+          <div class="card">
+            <div class="section-head"><div><h2>直属下级主体</h2><p id="childOrganizationSummary">按当前组织的数据范围显示。</p></div><button id="refreshOrganizationsBtn" class="secondary" type="button">刷新</button></div>
+            <div class="table-wrap"><table><thead><tr><th>主体</th><th>登录账号</th><th>层级/部署</th><th>状态</th><th>操作</th></tr></thead><tbody id="childOrganizationRows"><tr><td colspan="5" class="muted">暂无数据</td></tr></tbody></table></div>
+          </div>
+          <div id="organizationCapabilityDialogBackdrop" class="capability-dialog-backdrop hidden"></div>
+          <section id="organizationCapabilityDialog" class="capability-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="organizationCapabilityDialogTitle">
+            <div class="capability-dialog-head"><div><h2 id="organizationCapabilityDialogTitle">配置可转授能力</h2><p class="muted small">下级只能获得当前一级代理具备且允许转授的能力。</p></div><button id="closeOrganizationCapabilityDialogBtn" class="ghost" type="button">关闭</button></div>
+            <div class="capability-dialog-body"><div id="configuredOrganizationCapabilities"></div><p id="organizationCapabilityDialogMsg" class="muted"></p></div>
+            <div class="capability-dialog-actions"><button id="cancelOrganizationCapabilityDialogBtn" class="secondary" type="button">取消</button><button id="saveOrganizationCapabilityDialogBtn" type="button">保存能力配置</button></div>
+          </section>
+        </div>
+
+        <div id="agentsView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>后台账号</h1><div class="page-subtitle">维护当前组织内部可登录后台的管理、运营、财务等岗位账号</div></div>
+            <div class="management-actions"><button id="openAgentDrawerBtn">+ 新增账号</button></div>
+          </div>
+          <div class="card table-card">
+            <div class="table-tools">
+              <div class="filter-bar">
+                <input id="agentSearchFilter" placeholder="搜索账号 / 名称" />
+                <select id="agentRoleFilter"><option value="">全部角色模板</option></select>
+                <select id="agentStatusFilter"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
+                <button id="filterAgentsBtn" class="secondary">查询</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>账号</th><th>名称</th><th>角色模板</th><th>额度</th><th>状态</th><th>操作</th></tr></thead><tbody id="agentRows"></tbody></table>
+            </div>
+            <div class="table-footer" id="agentFooter">共 0 条</div>
+          </div>
+          <div id="agentDrawerBackdrop" class="form-drawer-backdrop hidden"></div>
+          <aside id="agentDrawer" class="form-drawer hidden" aria-label="后台账号编辑">
+            <div class="form-drawer-head"><h2>后台账号</h2><button id="closeAgentDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+            <input id="agentId" type="hidden" />
+            <label>登录账号</label><input id="agentUsername" placeholder="agent-a" />
+            <label>显示名称</label><input id="agentDisplayName" placeholder="代理商 A" />
+            <label>角色模板</label><select id="agentRoleTemplate" required><option value="">请选择角色模板</option></select>
+            <div id="agentRoleTemplateHint" class="role-template-hint">选择模板后直接使用该模板权限，无需再选择岗位类型。</div>
+            <input id="agentRole" type="hidden" value="admin" />
+            <input id="agentDataScope" type="hidden" value="self" />
+            <div class="account-scope-note"><strong>数据范围：当前组织</strong><span>运营、财务、技术等后台账号默认只查看和管理当前管理后台的数据。管理下级代理属于组织授权，不在建号时混合设置。</span></div>
+            <label>状态</label><select id="agentStatus"><option value="enabled">启用</option><option value="disabled">停用</option></select>
+            <div class="form-grid"><div><label>项目数上限</label><input id="agentMaxProjects" type="number" min="0" placeholder="0 表示不限" /></div><div><label>打包次数上限</label><input id="agentMaxBuilds" type="number" min="0" placeholder="0 表示不限" /></div></div>
+            <label>密码</label><input id="agentPassword" type="password" placeholder="新账号必填，编辑时留空表示不修改" />
+            <div class="toolbar"><button id="newAgentBtn" class="secondary">新建</button><button id="saveAgentBtn">保存账号</button></div>
+            <p id="agentMsg" class="muted"></p>
+          </div>
+          </aside>
+        </div>
+
+        <div id="userGroupsView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>账号分组</h1><div class="page-subtitle">批量维护后台账号权限；启用分组会覆盖角色模板，多分组权限取并集</div></div>
+            <div class="management-actions"><button id="openUserGroupDrawerBtn">+ 新增分组</button></div>
+          </div>
+          <div class="card table-card">
+            <div class="group-rule-note" style="margin:14px 16px 0"><strong>分组不是在模板上追加权限</strong><span>账号加入任一启用分组后，最终权限改为所有启用分组权限的并集；角色模板不再参与。需要确认某个账号最终能做什么，请使用“权限管理 → 权限预览”。</span></div>
+            <div class="table-tools">
+              <div class="filter-bar">
+                <input id="userGroupSearchFilter" placeholder="搜索分组 / 说明" />
+                <select id="userGroupStatusFilter"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
+                <button id="filterUserGroupsBtn" class="secondary">查询</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>分组</th><th>说明</th><th>成员</th><th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody id="userGroupRows"></tbody></table>
+            </div>
+            <div class="table-footer" id="userGroupFooter">共 0 条</div>
+          </div>
+          <div id="userGroupDrawerBackdrop" class="form-drawer-backdrop hidden"></div>
+          <aside id="userGroupDrawer" class="form-drawer hidden" aria-label="账号分组编辑">
+            <div class="form-drawer-head"><h2>账号分组</h2><button id="closeUserGroupDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+              <input id="userGroupId" type="hidden" />
+              <label>分组名称</label><input id="userGroupName" placeholder="例如：渠道运营组" />
+              <label>分组说明</label><input id="userGroupDescription" placeholder="用于说明该分组适用范围" />
+              <div class="form-grid"><div><label>排序</label><input id="userGroupSortOrder" type="number" value="0" /></div><div><label>状态</label><select id="userGroupStatus"><option value="enabled">启用</option><option value="disabled">停用</option></select></div></div>
+              <div class="toolbar"><button id="newUserGroupBtn" class="secondary">新建</button><button id="saveUserGroupBtn">保存分组</button></div>
+              <p id="userGroupMsg" class="muted"></p>
+              <div class="card" style="margin-top:16px">
+                <h3>分组成员</h3>
+                <p class="muted small">成员关系用于后续分组权限和数据范围控制。</p>
+                <div id="userGroupMemberList" class="plan-grid" style="grid-template-columns:1fr"></div>
+                <div class="toolbar"><button id="saveUserGroupMembersBtn" class="secondary">保存成员</button></div>
+                <p id="userGroupMembersMsg" class="muted"></p>
+              </div>
+              <div class="card" style="margin-top:16px">
+                <h3>分组权限</h3>
+                <p class="muted small">先沉淀权限点分配关系，后续逐步接入菜单和接口鉴权。</p>
+                <div id="userGroupPermissionList" class="plan-grid" style="grid-template-columns:1fr"></div>
+                <div class="toolbar"><button id="saveUserGroupPermissionsBtn" class="secondary">保存权限</button></div>
+                <p id="userGroupPermissionsMsg" class="muted"></p>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <div id="centerSuppliersView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>供应商接入</h1><div class="page-subtitle">分配官方构建中心的供应商 ID 和 Token</div></div>
+            <div class="management-actions"><button id="openCenterSupplierDrawerBtn">+ 新增供应商</button></div>
+          </div>
+          <div class="card table-card">
+            <div class="table-tools">
+              <div class="filter-bar">
+                <input id="centerSupplierSearchFilter" placeholder="搜索供应商 / ID" />
+                <select id="centerSupplierStatusFilter"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
+                <button id="filterCenterSuppliersBtn" class="secondary">查询</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>供应商</th><th>状态</th><th>额度</th><th>最近活动</th><th>操作</th></tr></thead><tbody id="centerSupplierRows"></tbody></table>
+            </div>
+            <div class="table-footer" id="centerSupplierFooter">共 0 条</div>
+          </div>
+          <div id="centerSupplierDrawerBackdrop" class="form-drawer-backdrop hidden"></div>
+          <aside id="centerSupplierDrawer" class="form-drawer hidden" aria-label="供应商编辑">
+            <div class="form-drawer-head"><h2>供应商构建权限</h2><button id="closeCenterSupplierDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+            <input id="centerSupplierId" type="hidden" />
+            <label>供应商名称</label><input id="centerSupplierName" placeholder="某某供应商" />
+            <div class="form-grid">
+              <div><label>状态</label><select id="centerSupplierStatus"><option value="enabled">启用</option><option value="disabled">停用</option></select></div>
+              <div><label>授权类型</label><select id="centerSupplierLicenseType"><option value="partner">同行代理</option><option value="internal">内部测试</option></select></div>
+            </div>
+            <div class="form-grid">
+              <div><label>OEM 项目额度</label><input id="centerSupplierMaxProjects" type="number" min="0" placeholder="0 表示不限" /></div>
+              <div><label>构建次数上限</label><input id="centerSupplierMaxBuilds" type="number" min="0" placeholder="0 表示不限" /></div>
+            </div>
+            <label>授权能力</label>
+            <div class="menu-editor" style="padding:10px">
+              <label><input id="centerSupplierAllowAgentManagement" type="checkbox" /> 允许管理后台账号</label>
+              <label><input id="centerSupplierAllowSupplierManagement" type="checkbox" /> 允许供应商接入管理</label>
+              <label><input id="centerSupplierAllowPlatformSettings" type="checkbox" /> 允许平台设置</label>
+              <label><input id="centerSupplierAllowCustomBrand" type="checkbox" /> 允许自定义品牌</label>
+              <label><input id="centerSupplierAllowCustomApiProviders" type="checkbox" /> 允许自定义 API 服务商</label>
+            </div>
+            <div class="toolbar"><button id="newCenterSupplierBtn" class="secondary">新建</button><button id="saveCenterSupplierBtn">保存并生成配置</button></div>
+            <p id="centerSupplierMsg" class="muted"></p>
+            <label>给供应商的 .env 配置</label>
+            <textarea id="centerSupplierDeployConfig" readonly placeholder="创建或重置 token 后在这里复制部署配置"></textarea>
+            <div class="toolbar"><button id="copyCenterSupplierConfigBtn" class="secondary">复制配置</button></div>
+          </div>
+          </aside>
+        </div>
+
+        <div id="endUsersView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>终端用户</h1><div class="page-subtitle">创建和管理客户端登录账号、渠道来源及账号状态</div></div>
+            <div class="management-actions"><button id="refreshEndUsersBtn" class="secondary">刷新</button><button id="openEndUserDrawerBtn">+ 创建账号</button></div>
+          </div>
+          <div class="card table-card">
+            <div class="table-tools">
+              <div class="filter-bar">
+                <input id="endUserSearchFilter" placeholder="搜索用户 / 邮箱 / 昵称 / 设备" />
+                <select id="endUserStatusFilter"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
+                <button id="filterEndUsersBtn" class="secondary">查询</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>用户</th><th>状态</th><th>积分</th><th>会员</th><th>模型接入</th><th>来源链路</th><th>设备 / 版本</th><th>时间</th><th>操作</th></tr></thead><tbody id="endUserRows"></tbody></table>
+            </div>
+            <div class="table-footer" id="endUserFooter">共 0 条</div>
+          </div>
+          <div id="endUserDrawerBackdrop" class="form-drawer-backdrop hidden"></div>
+          <aside id="endUserDrawer" class="form-drawer hidden" aria-label="创建终端用户账号">
+            <div class="form-drawer-head"><div><h2>创建终端用户</h2><p class="muted small">创建后可直接使用该账号登录客户端，无需邮箱验证码。</p></div><button id="closeEndUserDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+              <label>登录账号</label><input id="endUserCreateUsername" maxlength="120" autocomplete="off" placeholder="3-120 位字母、数字或 . _ - @" />
+              <label>邮箱</label><input id="endUserCreateEmail" type="email" maxlength="190" autocomplete="off" placeholder="用于密码找回" />
+              <label>用户昵称</label><input id="endUserCreateDisplayName" maxlength="120" autocomplete="off" placeholder="留空时使用登录账号" />
+              <label>初始密码</label><input id="endUserCreatePassword" type="password" minlength="6" maxlength="128" autocomplete="new-password" placeholder="至少 6 位" />
+              <label>初始状态</label><select id="endUserCreateStatus"><option value="enabled">启用，可立即登录</option><option value="disabled">停用，暂不允许登录</option></select>
+              <p class="muted small">账号自动归属当前管理账号，并自动分配该账号的基础免费会员。密码仅用于本次创建，服务端只保存加密结果。</p>
+              <div class="toolbar"><button id="saveEndUserBtn">创建账号</button></div>
+              <p id="endUserCreateMsg" class="action-feedback hidden" aria-live="polite"></p>
+            </div>
+          </aside>
+          <div id="endUserModelDrawerBackdrop" class="form-drawer-backdrop hidden"></div>
+          <aside id="endUserModelDrawer" class="form-drawer hidden" aria-label="终端用户模型授权">
+            <div class="form-drawer-head"><h2>模型授权</h2><button id="closeEndUserModelDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+              <p id="endUserModelDrawerMeta" class="muted">选择该终端用户可使用的模型</p>
+              <div class="model-access-list" id="endUserModelAccessList"></div>
+              <div class="toolbar"><button id="clearEndUserModelAccessBtn" class="secondary">恢复全部模型</button><button id="saveEndUserModelAccessBtn">保存授权</button></div>
+              <p id="endUserModelAccessMsg" class="muted"></p>
+            </div>
+          </aside>
+          <div id="endUserMembershipDrawerBackdrop" class="form-drawer-backdrop hidden"></div>
+          <aside id="endUserMembershipDrawer" class="form-drawer hidden" aria-label="终端用户会员分配">
+            <div class="form-drawer-head"><h2>分配会员</h2><button id="closeEndUserMembershipDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+              <p id="endUserMembershipDrawerMeta" class="muted">选择会员卡，系统会自动应用该卡的唯一权益</p>
+              <label>会员卡</label><select id="endUserMembershipCard"></select>
+              <label>会员权益</label><div id="endUserMembershipPackageInfo" class="membership-package-summary muted">请选择会员卡</div>
+              <label>自定义到期时间</label><input id="endUserMembershipExpiresAt" type="datetime-local" />
+              <p class="muted small">留空时按会员卡时长自动计算；免费会员固定永久。保存后会替换该用户当前有效会员。</p>
+              <div class="toolbar"><button id="cancelEndUserMembershipBtn" class="secondary">恢复免费会员</button><button id="saveEndUserMembershipBtn">保存会员</button></div>
+              <p id="endUserMembershipMsg" class="muted"></p>
+            </div>
+          </aside>
+        </div>
+
+        <div id="keysView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>消耗流水</h1><div class="page-subtitle">查看个人用户的模型调用扣费和积分变动记录</div></div>
+            <div class="management-actions"><button id="refreshCreditsBtn" class="secondary">刷新</button></div>
+          </div>
+          <div class="card table-card">
+            <div class="table-tools">
+              <div class="filter-bar">
+              <select id="ledgerOwnerFilter" class="hidden" aria-label="所属代理商"></select>
+              <select id="ledgerUserFilter"></select>
+              <select id="ledgerTypeFilter">
+                <option value="">全部类型</option>
+                <option value="consume">仅消费</option>
+                <option value="recharge">仅充值</option>
+                <option value="redeem">仅兑换</option>
+                <option value="adjust">仅调整</option>
+              </select>
+                <button id="filterLedgerBtn" class="secondary">查询</button>
+              </div>
+              <div class="inline-actions" style="margin-top:10px">
+                <span class="tag neutral">流水 <strong id="creditUserMetric" style="margin-left:4px">0</strong></span>
+                <span class="tag neutral">筛选消耗 <strong id="creditBalanceMetric" style="margin-left:4px">0</strong></span>
+                <span class="tag neutral">总消耗 <strong id="creditConsumedMetric" style="margin-left:4px">0</strong></span>
+                <span class="tag neutral">Key 池 <strong id="creditGatewayMetric" style="margin-left:4px">-</strong></span>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>时间</th><th>用户</th><th>变动</th><th>模型 / 花费</th><th>说明</th></tr></thead><tbody id="creditLedgerRows"></tbody></table>
+            </div>
+            <div class="table-footer pagination-footer" id="creditLedgerFooter">
+              <span id="creditLedgerPageInfo">共 0 条</span>
+              <div class="inline-actions">
+                <select id="creditLedgerPageSize" aria-label="每页条数"><option value="20">20 条/页</option><option value="50">50 条/页</option><option value="100">100 条/页</option></select>
+                <button id="creditLedgerPrevBtn" class="secondary" type="button">上一页</button>
+                <button id="creditLedgerNextBtn" class="secondary" type="button">下一页</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="membershipsView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>会员卡</h1><div class="page-subtitle">每张会员卡配置一组固定权益和价格，折扣能力已预留</div></div>
+            <div class="management-actions"><button id="refreshMembershipsBtn" class="secondary">刷新</button><button id="openMembershipDrawerBtn">+ 新增会员卡</button></div>
+          </div>
+          <div class="summary">
+            <div class="metric"><span class="muted">卡种数</span><strong id="membershipCardMetric">0</strong></div>
+            <div class="metric"><span class="muted">启用中</span><strong id="membershipEnabledMetric">0</strong></div>
+            <div class="metric"><span class="muted">永久卡</span><strong id="membershipPackageMetric">0</strong></div>
+            <div class="metric"><span class="muted">兑换专属</span><strong id="membershipRedeemOnlyMetric">0</strong></div>
+            <div class="metric"><span class="muted">折扣预留</span><strong id="membershipDiscountMetric">0</strong></div>
+          </div>
+          <div class="card table-card">
+            <div class="table-tools">
+              <div class="filter-bar">
+                <input id="membershipSearchFilter" placeholder="搜索会员卡 / 等级 / 权益" />
+                <select id="membershipStatusFilter"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
+                <button id="filterMembershipsBtn" class="secondary">查询</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>会员卡</th><th>权益 / 价格</th><th>折扣预留</th><th>兑换限制</th><th>状态</th><th>说明</th><th>操作</th></tr></thead><tbody id="membershipRows"></tbody></table>
+            </div>
+            <div class="table-footer" id="membershipFooter">共 0 条</div>
+          </div>
+          <div id="membershipDrawerBackdrop" class="form-drawer-backdrop hidden"></div>
+          <aside id="membershipDrawer" class="form-drawer membership-drawer hidden" aria-label="会员卡编辑">
+            <div class="form-drawer-head"><h2>会员卡</h2><button id="closeMembershipDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+              <input id="membershipId" type="hidden" />
+              <div class="permission-tabs membership-tabs">
+                <button class="permission-tab-btn active" data-membership-tab="basic">基础设置</button>
+                <button class="permission-tab-btn" data-membership-tab="packages">权益与价格</button>
+                <button class="permission-tab-btn" data-membership-tab="models">可用模型</button>
+                <button class="permission-tab-btn" data-membership-tab="description">说明信息</button>
+              </div>
+              <div id="membershipBasicPanel" class="membership-panel">
+                <label>会员名称</label><input id="membershipName" placeholder="例如：高级会员" />
+                <div class="form-grid">
+                  <div><label>会员等级</label><input id="membershipLevel" type="number" min="1" value="1" /></div>
+                  <div><label>会员折扣</label><input id="membershipDiscountPercent" type="number" min="0" max="100" step="0.001" value="100" /></div>
+                </div>
+                <label>会员背景图</label>
+                <div class="asset-row"><img id="membershipBackgroundPreview" class="preview membership-preview" alt="会员背景预览" /><div><input id="membershipBackgroundUrl" placeholder="上传后自动生成 URL" /><div class="toolbar"><input id="membershipBackgroundFile" type="file" accept="image/*" class="hidden" /><button class="secondary" id="membershipBackgroundUploadBtn">上传背景图</button></div><div class="muted small">建议尺寸 542x252；用于后续客户端或营销页展示。</div></div></div>
+                <label>折扣模块（预留）</label>
+                <div class="menu-editor membership-module-grid">
+                  <label><input class="membership-module" type="checkbox" value="copywriting" /> AI 文案</label>
+                  <label><input class="membership-module" type="checkbox" value="voice_clone" /> 声音克隆</label>
+                  <label><input class="membership-module" type="checkbox" value="voice_synthesis" /> 声音合成</label>
+                  <label><input class="membership-module" type="checkbox" value="image_clone" /> 形象克隆</label>
+                  <label><input class="membership-module" type="checkbox" value="digital_human" /> 数字人合成</label>
+                  <label><input class="membership-module" type="checkbox" value="digital_human_self" /> 自研数字人合成</label>
+                  <label><input class="membership-module" type="checkbox" value="video_editing" /> 智能视频剪辑</label>
+                  <label><input class="membership-module" type="checkbox" value="video_extract" /> 视频文案提取</label>
+                </div>
+                <div class="form-grid">
+                  <div><label>只可兑换</label><select id="membershipRedeemOnly"><option value="0">禁用</option><option value="1">启用</option></select></div>
+                  <div><label>状态</label><select id="membershipStatus"><option value="enabled">启用</option><option value="disabled">禁用</option></select></div>
+                </div>
+              </div>
+              <div id="membershipPackagesPanel" class="membership-panel hidden">
+                <p class="muted small">每张会员卡只有一组权益。系统免费会员的会员时长固定为 0 天（永久），不可修改。</p>
+                <div id="membershipPackageRows" class="membership-package-list"></div>
+              </div>
+              <div id="membershipModelsPanel" class="membership-panel hidden">
+                <p class="muted small">未勾选任何模型时，该会员可使用全部启用模型；勾选后，只能使用选中的模型。模型来源于“模型服务 -> 模型管理”。</p>
+                <div class="model-access-list" id="membershipModelAccessList"></div>
+              </div>
+              <div id="membershipDescriptionPanel" class="membership-panel hidden">
+                <label>会员说明</label><textarea id="membershipDescription" class="membership-description" placeholder="填写会员权益说明、购买须知或兑换说明"></textarea>
+              </div>
+              <div class="toolbar"><button id="newMembershipBtn" class="secondary">新建</button><button id="saveMembershipBtn">保存会员卡</button></div>
+              <p id="membershipMsg" class="muted"></p>
+            </div>
+          </aside>
+        </div>
+
+        <div id="paymentsView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>支付中心</h1><div class="page-subtitle">配置当前管理账号的收款渠道；系统自动保护支付密钥，无需修改服务器环境配置</div></div>
+            <div class="management-actions"><button id="refreshPaymentsBtn" class="secondary">刷新</button></div>
+          </div>
+          <div class="summary">
+            <div class="metric"><span class="muted">支付订单</span><strong id="paymentOrderMetric">0</strong></div>
+            <div class="metric"><span class="muted">待支付</span><strong id="paymentPendingMetric">0</strong></div>
+            <div class="metric"><span class="muted">已支付</span><strong id="paymentPaidMetric">0</strong></div>
+            <div class="metric"><span class="muted">成交金额</span><strong id="paymentAmountMetric">￥0.00</strong></div>
+          </div>
+          <div id="paymentConfigPanel" class="payment-panel payment-config-grid">
+            <section class="card payment-provider-card" data-payment-provider="wechat">
+              <div class="payment-provider-head"><div><h2>微信支付</h2><p class="muted small">API v3 · Native 扫码支付</p></div><span id="wechatConfigBadge" class="status neutral">未配置</span></div>
+              <div class="form-grid">
+                <div><label>状态</label><select id="wechatPaymentStatus"><option value="disabled">停用</option><option value="enabled">启用</option></select></div>
+                <div><label>AppID</label><input id="wechatPaymentAppId" autocomplete="off" /></div>
+                <div><label>商户号 MchID</label><input id="wechatPaymentMchId" autocomplete="off" /></div>
+                <div><label>商户证书序列号</label><input id="wechatPaymentMerchantSerialNo" autocomplete="off" /></div>
+                <div><label>平台公钥 ID / 证书序列号</label><input id="wechatPaymentPlatformPublicKeyId" autocomplete="off" /></div>
+                <div><label>支付产品</label><label class="checkbox-line"><input id="wechatPaymentNativeEnabled" type="checkbox" checked /> Native 扫码支付</label></div>
+              </div>
+              <label>支付公网地址</label><input id="wechatPaymentPublicBaseUrl" placeholder="https://pay.example.com" />
+              <label>支付回调地址（保存后生成）</label><input id="wechatPaymentNotifyUrl" readonly />
+              <label>API v3 密钥</label><input id="wechatPaymentApiV3Key" type="password" autocomplete="new-password" placeholder="留空表示保留已保存内容" />
+              <label>商户 API 私钥</label><textarea id="wechatPaymentMerchantPrivateKey" class="payment-secret" autocomplete="off" placeholder="粘贴 apiclient_key.pem 内容；留空保留"></textarea>
+              <label>微信支付平台公钥或平台证书</label><textarea id="wechatPaymentPlatformPublicKey" class="payment-secret" autocomplete="off" placeholder="粘贴 pub_key.pem 或平台证书内容；留空保留"></textarea>
+              <div class="toolbar"><button id="saveWechatPaymentBtn">保存微信配置</button><button id="testWechatPaymentBtn" class="secondary">检测配置</button></div>
+              <p id="wechatPaymentMsg" class="muted small"></p>
+            </section>
+
+            <section class="card payment-provider-card" data-payment-provider="alipay">
+              <div class="payment-provider-head"><div><h2>支付宝</h2><p class="muted small">当面付扫码 + 电脑网站支付</p></div><span id="alipayConfigBadge" class="status neutral">未配置</span></div>
+              <div class="form-grid">
+                <div><label>状态</label><select id="alipayPaymentStatus"><option value="disabled">停用</option><option value="enabled">启用</option></select></div>
+                <div><label>环境</label><select id="alipayPaymentEnvironment"><option value="production">正式环境</option><option value="sandbox">沙箱环境</option></select></div>
+                <div><label>AppID</label><input id="alipayPaymentAppId" autocomplete="off" /></div>
+                <div><label>卖家支付宝用户 ID（选填）</label><input id="alipayPaymentSellerId" autocomplete="off" /></div>
+                <div><label>密钥模式</label><select id="alipayPaymentKeyMode"><option value="public_key">普通公钥模式</option><option value="certificate">公钥证书模式</option></select></div>
+                <div><label>默认支付产品</label><select id="alipayPaymentDefaultMode"><option value="precreate">当面付扫码</option><option value="page">电脑网站支付</option></select></div>
+              </div>
+              <div class="payment-mode-row">
+                <label class="checkbox-line"><input id="alipayPaymentFaceToFaceEnabled" type="checkbox" checked /> 当面付扫码</label>
+                <label class="checkbox-line"><input id="alipayPaymentPagePayEnabled" type="checkbox" checked /> 电脑网站支付</label>
+              </div>
+              <div id="alipayCertificateFields" class="form-grid hidden">
+                <div><label>应用公钥证书 SN</label><input id="alipayPaymentAppCertSn" autocomplete="off" /></div>
+                <div><label>支付宝根证书 SN</label><input id="alipayPaymentRootCertSn" autocomplete="off" /></div>
+              </div>
+              <label>支付公网地址</label><input id="alipayPaymentPublicBaseUrl" placeholder="https://pay.example.com" />
+              <label>支付回调地址（保存后生成）</label><input id="alipayPaymentNotifyUrl" readonly />
+              <label>应用私钥</label><textarea id="alipayPaymentAppPrivateKey" class="payment-secret" autocomplete="off" placeholder="粘贴应用私钥；留空保留"></textarea>
+              <label>支付宝公钥或支付宝公钥证书</label><textarea id="alipayPaymentPublicKey" class="payment-secret" autocomplete="off" placeholder="普通模式粘贴支付宝公钥；证书模式粘贴支付宝公钥证书；留空保留"></textarea>
+              <div class="toolbar"><button id="saveAlipayPaymentBtn">保存支付宝配置</button><button id="testAlipayPaymentBtn" class="secondary">检测配置</button></div>
+              <p id="alipayPaymentMsg" class="muted small"></p>
+            </section>
+          </div>
+
+          <div id="paymentOrdersPanel" class="payment-panel hidden">
+            <div class="card table-card">
+              <div class="table-tools">
+                <div class="filter-bar">
+                  <input id="paymentOrderSearchFilter" placeholder="搜索订单号 / 用户 / 会员卡 / 套餐" />
+                  <select id="paymentOrderProviderFilter"><option value="">全部渠道</option><option value="wechat">微信支付</option><option value="alipay">支付宝</option></select>
+                  <select id="paymentOrderStatusFilter"><option value="">全部状态</option><option value="creating">创建中</option><option value="pending">待支付</option><option value="paid">已支付</option><option value="closed">已关闭</option><option value="failed">失败</option><option value="refunded">已退款</option></select>
+                  <button id="filterPaymentOrdersBtn" class="secondary">查询</button>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table class="payment-order-table"><thead><tr><th>订单</th><th>用户</th><th>会员权益</th><th>金额</th><th>渠道</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody id="paymentOrderRows"></tbody></table>
+              </div>
+              <div class="table-footer" id="paymentOrderFooter">共 0 条</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="redeemCodesView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>兑换码</h1><div class="page-subtitle">批量生成积分或会员卡兑换码，供终端用户在客户端自助兑换</div></div>
+            <div class="management-actions"><button id="refreshRedeemCodesBtn" class="secondary">刷新</button><button id="openRedeemCodeDrawerBtn">+ 生成兑换码</button></div>
+          </div>
+          <div class="summary">
+            <div class="metric"><span class="muted">批次数</span><strong id="redeemBatchMetric">0</strong></div>
+            <div class="metric"><span class="muted">未使用</span><strong id="redeemUnusedMetric">0</strong></div>
+            <div class="metric"><span class="muted">已兑换</span><strong id="redeemUsedMetric">0</strong></div>
+            <div class="metric"><span class="muted">已停用/过期</span><strong id="redeemClosedMetric">0</strong></div>
+          </div>
+          <div class="card table-card">
+            <div class="table-tools">
+              <div class="filter-bar">
+                <input id="redeemCodeSearchFilter" placeholder="搜索批次 / 会员卡套餐 / 码尾号 / 使用用户" />
+                <select id="redeemCodeStatusFilter">
+                  <option value="">全部状态</option>
+                  <option value="unused">未使用</option>
+                  <option value="used">已兑换</option>
+                  <option value="disabled">已停用</option>
+                  <option value="expired">已过期</option>
+                </select>
+                <button id="filterRedeemCodesBtn" class="secondary">查询</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>兑换码</th><th>批次</th><th>创建账号</th><th>兑换权益</th><th>状态</th><th>使用用户</th><th>兑换来源</th><th>时间</th><th>操作</th></tr></thead><tbody id="redeemCodeRows"></tbody></table>
+            </div>
+            <div class="table-footer" id="redeemCodeFooter">共 0 条</div>
+          </div>
+          <div class="card table-card">
+            <div class="table-tools"><strong>批次概览</strong></div>
+            <div class="table-scroll">
+              <table><thead><tr><th>批次</th><th>创建账号</th><th>兑换权益</th><th>数量</th><th>状态</th><th>有效期</th><th>备注</th></tr></thead><tbody id="redeemBatchRows"></tbody></table>
+            </div>
+          </div>
+          <div id="redeemCodeDrawerBackdrop" class="form-drawer-backdrop hidden"></div>
+          <aside id="redeemCodeDrawer" class="form-drawer hidden" aria-label="兑换码生成">
+            <div class="form-drawer-head"><h2>生成兑换码</h2><button id="closeRedeemCodeDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+              <label>兑换码类型</label>
+              <select id="redeemRewardType">
+                <option value="points">积分兑换码</option>
+                <option value="membership">会员卡兑换码</option>
+              </select>
+              <label>批次名称</label><input id="redeemBatchName" placeholder="例如：100 积分体验券" />
+              <div id="redeemPointsFields">
+                <label>每个码积分</label><input id="redeemPoints" type="number" min="0.000001" step="0.000001" placeholder="100" />
+              </div>
+              <div id="redeemMembershipFields" class="hidden">
+                <label>会员卡</label><select id="redeemMembershipCardId"></select>
+                <label>会员权益</label><div id="redeemMembershipPackageInfo" class="membership-package-summary muted">请选择会员卡</div>
+                <p class="muted small">兑换后会开通该会员卡的唯一权益并替换用户当前有效会员；赠送积分也会同时到账。生成时会固化权益，后续编辑会员卡不会改变已售兑换码。</p>
+              </div>
+              <label>生成数量</label><input id="redeemQuantity" type="number" min="1" max="1000" value="10" />
+              <label>有效期</label><input id="redeemExpiresAt" type="datetime-local" />
+              <label>备注</label><input id="redeemNote" />
+              <div class="toolbar"><button id="generateRedeemCodesBtn">生成兑换码</button></div>
+              <p id="redeemCodeMsg" class="muted"></p>
+              <label>本次生成的明文兑换码</label>
+              <textarea id="redeemGeneratedCodes" readonly placeholder="生成后只在这里展示一次，请及时复制或导出保存。"></textarea>
+              <div class="toolbar"><button id="copyRedeemCodesBtn" class="secondary">复制兑换码</button></div>
+            </div>
+          </aside>
+        </div>
+
+        <div id="providersView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>服务商</h1><div class="page-subtitle">维护 OpenAI 兼容供应商和默认接入策略</div></div>
+            <div class="management-actions"><button id="refreshProvidersBtn" class="secondary">刷新</button><button id="syncProvidersBtn" class="secondary">同步总后台</button><button id="openModelProviderDrawerBtn">+ 新增服务商</button></div>
+          </div>
+          <div class="card table-card">
+            <div class="table-tools">
+              <div class="filter-bar">
+                <input id="providerSearchFilter" placeholder="搜索服务商名称 / ID / 地址" />
+                <select id="providerStatusFilter"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
+                <button id="filterProvidersBtn" class="secondary">查询</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>服务商</th><th>状态</th><th>Key / 模型</th><th>排序</th><th>操作</th></tr></thead><tbody id="modelProviderRows"></tbody></table>
+            </div>
+            <div class="table-footer" id="modelProviderFooter">共 0 条</div>
+          </div>
+          <div id="modelProviderDrawerBackdrop" class="form-drawer-backdrop hidden"></div>
+          <aside id="modelProviderDrawer" class="form-drawer hidden" aria-label="服务商编辑">
+            <div class="form-drawer-head"><h2>服务商</h2><button id="closeModelProviderDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+              <input id="modelProviderId" placeholder="服务商 ID，留空自动生成" />
+              <label>名称</label><input id="modelProviderName" placeholder="请输入服务商名称" />
+              <label>OpenAI 兼容地址</label><input id="modelProviderBaseUrl" placeholder="请输入接口地址" />
+              <div class="form-grid">
+                <div><label>状态</label><select id="modelProviderStatus"><option value="enabled">启用</option><option value="disabled">停用</option></select></div>
+                <div><label>默认服务商</label><select id="modelProviderDefault"><option value="0">否</option><option value="1">是</option></select></div>
+              </div>
+              <div class="form-grid">
+                <div><label>超时毫秒</label><input id="modelProviderTimeoutMs" type="number" min="10000" step="1000" value="120000" /></div>
+                <div><label>排序</label><input id="modelProviderSortOrder" type="number" value="0" /></div>
+              </div>
+              <label>备注</label><input id="modelProviderNotes" />
+              <div class="toolbar"><button id="newModelProviderBtn" class="secondary">新建</button><button id="saveModelProviderBtn">保存服务商</button></div>
+              <p id="modelProviderMsg" class="muted"></p>
+            </div>
+          </aside>
+        </div>
+
+        <div id="modelKeysView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>Key 池</h1><div class="page-subtitle">维护当前账号 Key 池，终端用户按来源账号自动轮询可用 Key</div></div>
+            <div class="management-actions"><button id="refreshModelKeysBtn" class="secondary">刷新</button><button id="checkLegacyModelKeyBtn" class="secondary">检测旧 Key</button><button id="openModelKeyDrawerBtn">+ 新增 Key</button></div>
+          </div>
+          <div class="card table-card">
+            <div class="table-tools">
+              <div class="filter-bar">
+                <select id="modelKeyProviderFilter"><option value="">全部服务商</option></select>
+                <select id="modelKeyStatusFilter"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
+                <button id="filterModelKeysBtn" class="secondary">查询</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>服务商</th><th>Key</th><th>状态</th><th>权重</th><th>用量 / 轮询</th><th>操作</th></tr></thead><tbody id="modelKeyRows"></tbody></table>
+            </div>
+            <div class="table-footer" id="modelKeyFooter">共 0 条</div>
+          </div>
+          <div id="modelKeyDrawerBackdrop" class="form-drawer-backdrop hidden"></div>
+          <aside id="modelKeyDrawer" class="form-drawer hidden" aria-label="Key 编辑">
+            <div class="form-drawer-head"><h2>Key 池</h2><button id="closeModelKeyDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+              <input id="modelKeyId" type="hidden" />
+              <label>服务商</label><select id="modelKeyProviderId"></select>
+              <label>模型服务 Key</label><input id="modelKeyValue" type="password" placeholder="编辑时留空表示不修改" />
+              <div class="form-grid">
+                <div><label>状态</label><select id="modelKeyStatus"><option value="enabled">启用</option><option value="disabled">停用</option></select></div>
+                <div><label>权重</label><input id="modelKeyWeight" type="number" min="1" value="1" /></div>
+              </div>
+              <label>备注</label><input id="modelKeyNotes" />
+              <div class="toolbar"><button id="newModelKeyBtn" class="secondary">新建</button><button id="saveModelKeyBtn">保存 Key</button></div>
+              <p id="modelKeyMsg" class="muted"></p>
+            </div>
+          </aside>
+        </div>
+
+        <div id="providerModelsView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>模型管理</h1><div class="page-subtitle">维护不同服务商对应的上游模型和展示名称</div></div>
+            <div class="management-actions"><button id="refreshProviderModelsBtn" class="secondary">刷新</button><button id="syncProviderModelsBtn" class="secondary">同步总后台</button><button id="openProviderModelDrawerBtn">+ 新增模型</button></div>
+          </div>
+          <div class="card table-card">
+            <div class="table-tools">
+              <div class="filter-bar">
+                <input id="providerModelSearchFilter" placeholder="搜索模型名称 / 标识" />
+                <select id="providerModelProviderFilter"><option value="">全部服务商</option></select>
+                <select id="providerModelStatusFilter"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
+                <button id="filterProviderModelsBtn" class="secondary">查询</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>模型名称</th><th>模型标识</th><th>服务商</th><th>能力</th><th>状态</th><th>计费</th><th>排序</th><th>操作</th></tr></thead><tbody id="providerModelRows"></tbody></table>
+            </div>
+            <div class="table-footer" id="providerModelFooter">共 0 条</div>
+          </div>
+          <div id="providerModelDrawerBackdrop" class="form-drawer-backdrop hidden"></div>
+          <aside id="providerModelDrawer" class="form-drawer hidden" aria-label="模型编辑">
+            <div class="form-drawer-head"><h2>模型管理</h2><button id="closeProviderModelDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+              <input id="providerModelId" type="hidden" />
+              <label>服务商</label><select id="providerModelProviderId"></select>
+              <label>上游模型 ID</label><input id="providerModelModelId" placeholder="请输入上游模型 ID" />
+              <label>显示名称</label><input id="providerModelDisplayName" placeholder="请输入展示名称" />
+              <label>模型介绍</label><textarea id="providerModelDescription" placeholder="填写给客户端用户查看的模型能力、适用场景或注意事项"></textarea>
+              <div class="form-grid">
+                <div><label>模型分类</label><select id="providerModelType"><option value="text">文本模型</option><option value="image">图片模型</option><option value="video">视频模型</option><option value="audio">音频模型</option><option value="search">搜索模型</option></select></div>
+                <div><label>接口端点</label><input id="providerModelEndpointPath" placeholder="文本默认 /chat/completions" /></div>
+              </div>
+              <div class="form-grid">
+                <div><label>状态</label><select id="providerModelStatus"><option value="enabled">启用</option><option value="disabled">停用</option></select></div>
+                <div><label>默认模型</label><select id="providerModelDefault"><option value="0">否</option><option value="1">是</option></select></div>
+              </div>
+              <div class="form-grid">
+                <div><label>上下文长度</label><input id="providerModelContextWindow" type="number" min="0" value="0" /></div>
+                <div><label>排序</label><input id="providerModelSortOrder" type="number" value="0" /></div>
+              </div>
+              <label>模型能力</label>
+              <div class="menu-editor capability-editor">
+                <label><input id="providerModelCapText" type="checkbox" checked /> 文本对话</label>
+                <label><input id="providerModelCapVision" type="checkbox" /> 多模态识图</label>
+                <label><input id="providerModelCapTools" type="checkbox" /> 工具调用</label>
+                <label><input id="providerModelCapReasoning" type="checkbox" /> 推理能力</label>
+              </div>
+              <input id="providerModelCapabilities" type="hidden" />
+              <div class="toolbar"><button id="newProviderModelBtn" class="secondary">新建</button><button id="testProviderModelBtn" class="secondary">测试连通</button><button id="saveProviderModelBtn">保存模型</button></div>
+              <p id="providerModelMsg" class="muted"></p>
+            </div>
+          </aside>
+        </div>
+
+        <div id="pricingRulesView" class="content management-page hidden">
+          <div class="management-head">
+            <div><h1>计费规则</h1><div class="page-subtitle">按服务商和模型维护按次或按 token 的积分价格</div></div>
+            <div class="management-actions"><button id="refreshPricingRulesBtn" class="secondary">刷新</button><button id="syncPricingRulesBtn" class="secondary">同步总后台</button><button id="openPricingRuleDrawerBtn">+ 新增规则</button></div>
+          </div>
+          <div class="card table-card">
+            <div class="table-tools">
+              <div class="filter-bar">
+                <select id="pricingProviderFilter"><option value="">全部服务商</option></select>
+                <select id="pricingBillingFilter"><option value="">全部计费方式</option><option value="per_token">按 token</option><option value="per_request">按次</option></select>
+                <select id="pricingStatusFilter"><option value="">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
+                <button id="filterPricingRulesBtn" class="secondary">查询</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table><thead><tr><th>服务商</th><th>模型</th><th>计费方式</th><th>价格</th><th>状态</th><th>操作</th></tr></thead><tbody id="pricingRuleRows"></tbody></table>
+            </div>
+            <div class="table-footer" id="pricingRuleFooter">共 0 条</div>
+          </div>
+          <div id="pricingRuleDrawerBackdrop" class="form-drawer-backdrop hidden"></div>
+          <aside id="pricingRuleDrawer" class="form-drawer hidden" aria-label="计费规则编辑">
+            <div class="form-drawer-head"><h2>计费规则</h2><button id="closePricingRuleDrawerBtn" class="ghost">关闭</button></div>
+            <div class="form-drawer-body">
+              <input id="pricingRuleId" type="hidden" />
+              <label>模型</label><select id="pricingProviderModelId"></select>
+              <label>计费方式</label><select id="pricingBillingType"><option value="per_token">按 token</option><option value="per_request">按次</option></select>
+              <div class="form-grid">
+                <div><label>输入积分 / M tokens</label><input id="pricingInputPoints" type="number" min="0" step="0.000001" value="0" /></div>
+                <div><label>输出积分 / M tokens</label><input id="pricingOutputPoints" type="number" min="0" step="0.000001" value="0" /></div>
+              </div>
+              <div class="form-grid">
+                <div><label>积分 / 次</label><input id="pricingRequestPoints" type="number" min="0" step="0.000001" value="0" /></div>
+                <div><label>状态</label><select id="pricingStatus"><option value="enabled">启用</option><option value="disabled">停用</option></select></div>
+              </div>
+              <div class="toolbar"><button id="newPricingRuleBtn" class="secondary">新建</button><button id="savePricingRuleBtn">保存规则</button></div>
+              <p id="pricingRuleMsg" class="muted"></p>
+            </div>
+          </aside>
+        </div>
+
+        <div id="platformView" class="grid hidden">
+          <div class="card" data-platform-panel="platformBrand">
+            <h2>后台品牌</h2>
+            <label>后台系统名称</label><input id="settingSystemName" placeholder="Agent AI" />
+            <label>后台副标题</label><input id="settingSystemSubtitle" placeholder="运营控制台" />
+            <div class="form-grid">
+              <div><label>按钮/主题色</label><input id="settingPrimaryColor" type="color" value="#1677ff" /></div>
+              <div><label>Logo 文字</label><input id="settingLogoText" maxlength="4" placeholder="可留空" /></div>
+            </div>
+            <h3>晶体六面文字</h3>
+            <p class="muted small">六个面与 Logo 完全独立，可分别填写或留空；每面最多 12 个字符。</p>
+            <div class="form-grid">
+              <div><label>正面</label><input id="settingCrystalFaceFront" maxlength="12" placeholder="留空不显示" /></div>
+              <div><label>背面</label><input id="settingCrystalFaceBack" maxlength="12" placeholder="留空不显示" /></div>
+            </div>
+            <div class="form-grid">
+              <div><label>右面</label><input id="settingCrystalFaceRight" maxlength="12" placeholder="留空不显示" /></div>
+              <div><label>左面</label><input id="settingCrystalFaceLeft" maxlength="12" placeholder="留空不显示" /></div>
+            </div>
+            <div class="form-grid">
+              <div><label>上面</label><input id="settingCrystalFaceTop" maxlength="12" placeholder="留空不显示" /></div>
+              <div><label>下面</label><input id="settingCrystalFaceBottom" maxlength="12" placeholder="留空不显示" /></div>
+            </div>
+            <div class="form-grid">
+              <div><label>登录页主标题</label><input id="settingLoginTitle" placeholder="Agent AI 管理后台" /></div>
+              <div><label>登录页副标题</label><input id="settingLoginSubtitle" placeholder="代理贴牌、云端构建与版本分发" /></div>
+            </div>
+            <details class="platform-login-copy-settings">
+              <summary>登录页详细文案</summary>
+              <div class="form-grid">
+                <div><label>英文眉题</label><input id="settingLoginKicker" placeholder="AI OPERATIONS PLATFORM" /></div>
+                <div><label>晶体交互提示</label><input id="settingLoginInteractionHint" placeholder="拖动旋转 · 双击恢复" /></div>
+              </div>
+              <div class="form-grid">
+                <div><label>登录面板眉题</label><input id="settingLoginPanelEyebrow" placeholder="安全访问" /></div>
+                <div><label>登录面板标题</label><input id="settingLoginPanelTitle" placeholder="用户登录" /></div>
+              </div>
+              <label>登录面板说明</label><input id="settingLoginPanelSubtitle" placeholder="登录管理控制台" />
+              <div class="form-grid">
+                <div><label>账号标签</label><input id="settingLoginAccountLabel" placeholder="账号" /></div>
+                <div><label>账号输入提示</label><input id="settingLoginAccountPlaceholder" placeholder="请输入管理员或代理商账号" /></div>
+              </div>
+              <div class="form-grid">
+                <div><label>密码标签</label><input id="settingLoginPasswordLabel" placeholder="密码" /></div>
+                <div><label>密码输入提示</label><input id="settingLoginPasswordPlaceholder" placeholder="请输入密码" /></div>
+              </div>
+              <div class="form-grid">
+                <div><label>登录按钮文字</label><input id="settingLoginSubmitText" placeholder="登录" /></div>
+                <div><label>安全提示</label><input id="settingLoginSecurityText" placeholder="连接已加密，请使用授权账号登录" /></div>
+              </div>
+              <h3>晶体周围能力卡</h3>
+              <div class="form-grid"><div><label>能力卡 1 标题</label><input id="settingLoginSignalTitle0" /></div><div><label>能力卡 1 说明</label><input id="settingLoginSignalSubtitle0" /></div></div>
+              <div class="form-grid"><div><label>能力卡 2 标题</label><input id="settingLoginSignalTitle1" /></div><div><label>能力卡 2 说明</label><input id="settingLoginSignalSubtitle1" /></div></div>
+              <div class="form-grid"><div><label>能力卡 3 标题</label><input id="settingLoginSignalTitle2" /></div><div><label>能力卡 3 说明</label><input id="settingLoginSignalSubtitle2" /></div></div>
+              <div class="form-grid"><div><label>能力卡 4 标题</label><input id="settingLoginSignalTitle3" /></div><div><label>能力卡 4 说明</label><input id="settingLoginSignalSubtitle3" /></div></div>
+              <h3>底部能力栏</h3>
+              <div class="form-grid"><div><label>能力栏 1 标题</label><input id="settingLoginCapabilityTitle0" /></div><div><label>能力栏 1 说明</label><input id="settingLoginCapabilitySubtitle0" /></div></div>
+              <div class="form-grid"><div><label>能力栏 2 标题</label><input id="settingLoginCapabilityTitle1" /></div><div><label>能力栏 2 说明</label><input id="settingLoginCapabilitySubtitle1" /></div></div>
+              <div class="form-grid"><div><label>能力栏 3 标题</label><input id="settingLoginCapabilityTitle2" /></div><div><label>能力栏 3 说明</label><input id="settingLoginCapabilitySubtitle2" /></div></div>
+              <div class="form-grid"><div><label>能力栏 4 标题</label><input id="settingLoginCapabilityTitle3" /></div><div><label>能力栏 4 说明</label><input id="settingLoginCapabilitySubtitle3" /></div></div>
+            </details>
+            <div class="form-grid">
+              <div><label>登录面板色</label><input id="settingLoginPanelColor" type="color" value="#0b2142" /></div>
+              <div><label>登录背景图 URL</label><input id="settingLoginBackgroundUrl" placeholder="留空使用纯 CSS 动态主视觉" /></div>
+            </div>
+            <div class="asset-row platform-login-background-row">
+              <img id="settingLoginBackgroundPreview" class="preview" alt="后台登录背景预览" />
+              <div>
+                <input id="settingLoginBackgroundFile" type="file" accept="image/*" class="hidden" />
+                <div class="toolbar"><button class="secondary" id="settingLoginBackgroundUploadBtn" type="button">上传登录背景</button><button class="secondary" id="clearSettingLoginBackgroundBtn" type="button">使用动态主视觉</button></div>
+                <div class="muted small">背景图为可选覆盖项；留空时使用纯 CSS 网格、轨道和 3D 晶体，品牌名称由上方配置动态展示。</div>
+              </div>
+            </div>
+            <div class="toolbar"><button id="savePlatformSettingsBtn">保存平台设置</button></div>
+            <p id="platformMsg" class="action-feedback hidden" aria-live="polite"></p>
+          </div>
+          <div class="card" id="buildCenterSettingsCard" data-platform-panel="platformBuildCenter">
+            <h2>官方构建中心</h2>
+            <label>构建中心地址</label><input id="settingBuildCenterUrl" placeholder="https://center.okpa.cn" />
+            <label>Supplier ID</label><input id="settingBuildCenterSupplierId" placeholder="supplier_xxx" />
+            <label>Token</label><input id="settingBuildCenterToken" type="password" placeholder="由 Agent 官方供应商接入页面生成" />
+            <div class="toolbar"><button id="testBuildCenterBtn" class="secondary">校验连接</button><button id="saveBuildCenterBtn">保存接入配置</button></div>
+            <p id="buildCenterMsg" class="muted"></p>
+          </div>
+          <div class="card" data-platform-panel="platformStorage">
+            <h2>安装包存储</h2>
+            <label>产物托管方式</label>
+            <select id="settingArtifactStorageMode">
+              <option value="local">本地服务器托管</option>
+              <option value="oss">阿里云 OSS 托管</option>
+            </select>
+            <div class="form-grid">
+              <div><label>AccessKeyId</label><input id="settingOssAccessKeyId" autocomplete="off" placeholder="用于上传 OSS" /></div>
+              <div><label>AccessKey Secret</label><input id="settingOssAccessKeySecret" type="password" autocomplete="off" placeholder="留空不修改" /></div>
+            </div>
+            <div class="form-grid">
+              <div><label>Bucket 名称</label><input id="settingOssBucket" placeholder="请输入 OSS Bucket 名称" /></div>
+              <div><label>Endpoint</label><input id="settingOssEndpoint" placeholder="请输入 OSS 外网 Endpoint" /></div>
+            </div>
+            <label>Public Base URL</label><input id="settingOssPublicBaseUrl" placeholder="留空自动使用 https://Bucket.Endpoint" />
+            <label>存储路径前缀</label><input id="settingOssPrefix" placeholder="可选，例如 uploads/ai" />
+            <p class="muted small">选择 OSS 托管后，测试包和正式包都会上传到该 OSS；客户端更新地址也会指向 OSS。Bucket 需要可公共读取。</p>
+            <div class="toolbar"><button id="saveArtifactStorageBtn">保存存储配置</button></div>
+            <p id="artifactStorageMsg" class="muted"></p>
+          </div>
+          <div class="card" data-platform-panel="platformEmail">
+            <h2>邮件服务</h2>
+            <div class="form-grid">
+              <div><label>SMTP Host</label><input id="settingSmtpHost" placeholder="smtp.example.com" autocomplete="off" /></div>
+              <div><label>SMTP 端口</label><input id="settingSmtpPort" type="number" min="1" max="65535" value="465" /></div>
+            </div>
+            <label><input id="settingSmtpSecure" type="checkbox" /> 使用 SSL/TLS</label>
+            <div class="form-grid">
+              <div><label>SMTP 账号</label><input id="settingSmtpUser" autocomplete="off" placeholder="user@example.com" /></div>
+              <div><label>SMTP 密码/授权码</label><input id="settingSmtpPass" type="password" autocomplete="off" placeholder="留空不修改" /></div>
+            </div>
+            <div class="form-grid">
+              <div><label>发件人名称</label><input id="settingSmtpFromName" placeholder="Agent AI" /></div>
+              <div><label>发件邮箱</label><input id="settingSmtpFromEmail" type="email" placeholder="noreply@example.com" /></div>
+            </div>
+            <p class="muted small">用于终端用户邮箱验证码和密码找回。常见企业邮箱使用 465 + SSL/TLS，部分服务商使用 587 + STARTTLS 时请关闭 SSL/TLS。</p>
+            <div class="form-grid">
+              <div><label>测试收件邮箱</label><input id="settingSmtpTestEmail" type="email" autocomplete="off" placeholder="test@example.com" /></div>
+            </div>
+            <div class="toolbar"><button id="testSmtpSettingsBtn" class="secondary">发送测试邮件</button><button id="saveSmtpSettingsBtn">保存邮件服务</button></div>
+            <p id="smtpSettingsMsg" class="muted"></p>
+          </div>
+          <div class="hidden" aria-hidden="true">
+            <input id="settingModelGatewayBaseUrl" type="hidden" />
+            <input id="settingModelUsageBaseUrl" type="hidden" />
+            <input id="settingModelGatewayKey" type="hidden" />
+            <input id="settingModelPointsPerUsd" type="hidden" />
+          </div>
+          <div class="card" data-platform-panel="platformBrand">
+            <h2>设置说明</h2>
+            <p class="muted">保存后会立即影响登录后的后台系统名称、左侧品牌标识和按钮主题色。供应商本地部署时，可在“官方构建中心”中填写 Agent 官方分配的接入配置，校验成功后即可提交打包任务。</p>
+          </div>
+        </div>
+
+        <div id="authStatusView" class="content hidden">
+          <div class="page-head">
+            <div><h1>授权状态</h1><div class="page-subtitle">官方授权决定供应商可用能力，本地权限只能在授权范围内继续细分</div></div>
+            <div class="inline-actions"><button class="secondary" id="refreshAuthStatusBtn">刷新授权</button></div>
+          </div>
+          <div class="card">
+            <h2>授权主体</h2>
+            <div id="authStatusSummary" class="plan-grid"></div>
+            <p id="authStatusMessage" class="muted"></p>
+          </div>
+          <div class="card">
+            <h2>官方授权能力</h2>
+            <div id="authAbilityCards" class="plan-grid"></div>
+          </div>
+        </div>
+
+        <div id="permissionsView" class="content hidden">
+          <div class="page-head">
+            <div><h1>权限管理</h1><div class="page-subtitle">维护角色模板、账号分组授权和账号最终权限预览</div></div>
+            <div class="inline-actions"><button class="secondary" id="refreshPermissionCatalogBtn">刷新权限</button></div>
+          </div>
+          <div class="notice">
+            <div><strong>权限中心二期</strong><div class="small">角色模板用于账号默认权限；账号加入启用分组后，以分组权限作为更精确的授权边界。</div></div>
+          </div>
+          <div class="permission-workspace">
+            <div class="permission-tabs">
+              <button class="permission-tab-btn active" data-permission-tab="roleTemplates">角色模板</button>
+              <button class="permission-tab-btn" data-permission-tab="groupPermissions">分组授权</button>
+              <button class="permission-tab-btn" data-permission-tab="permissionPreview">权限预览</button>
+              <button class="permission-tab-btn" data-permission-tab="permissionCatalog">权限字典</button>
+            </div>
+
+            <div id="roleTemplatesPermissionPanel" class="permission-panel">
+              <div class="role-template-workspace">
+                <div class="permission-main">
+                  <div class="role-template-selector">
+                    <div>
+                      <label>当前模板</label><select id="roleTemplateSelect"></select>
+                    </div>
+                    <p class="muted permission-side-note">先在这里选择要编辑的模板；“模板信息”和“模板权限”分别保存，互不混淆。</p>
+                  </div>
+                </div>
+
+                <div class="permission-tabs">
+                  <button class="permission-tab-btn active" data-role-template-tab="info">模板信息</button>
+                  <button class="permission-tab-btn" data-role-template-tab="permissions">模板权限</button>
+                </div>
+
+                <div id="roleTemplateInfoSubPanel" class="permission-panel">
+                  <div class="permission-side" style="max-width:560px">
+                    <h2>模板信息</h2>
+                    <p class="muted permission-side-note">只维护模板名称、说明、状态和排序；所有模板都可以自由选择权限。</p>
+                    <label>模板名称</label><input id="roleTemplateName" placeholder="例如：运营" />
+                    <label>模板说明</label><input id="roleTemplateDescription" placeholder="说明该模板适用的人群和边界" />
+                    <input id="roleTemplateBaseRole" type="hidden" value="admin" />
+                    <label>状态</label><select id="roleTemplateStatus"><option value="enabled">启用</option><option value="disabled">停用</option></select>
+                    <label>排序</label><input id="roleTemplateSortOrder" type="number" value="0" />
+                    <div class="permission-actions"><button id="newRoleTemplateBtn" class="secondary">新建模板</button><button id="saveRoleTemplateBtn">保存模板信息</button></div>
+                    <p id="roleTemplateMsg" class="muted"></p>
+                  </div>
+                </div>
+
+                <div id="roleTemplatePermissionsSubPanel" class="permission-panel hidden">
+                  <div class="permission-main">
+                    <div class="page-head" style="margin-bottom:12px">
+                      <div><h2>模板权限</h2><div class="page-subtitle">所有权限均可自由选择；模板名称等信息请到“模板信息”页保存。</div></div>
+                      <button id="saveRoleTemplatePermissionsBtn" class="secondary">保存权限</button>
+                    </div>
+                    <p id="roleTemplatePermissionMsg" class="action-feedback hidden" role="status"></p>
+                    <div id="roleTemplatePermissionList"></div>
+                    <div class="permission-bottom-actions"><button id="saveRoleTemplatePermissionsBottomBtn">保存权限</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="groupPermissionsPermissionPanel" class="permission-panel hidden">
+              <div class="permission-shell">
+                <div class="permission-side">
+                  <h2>分组授权</h2>
+                  <div class="group-rule-note"><strong>权限生效规则</strong><span>未加入启用分组时使用角色模板；加入启用分组后，分组权限覆盖角色模板；加入多个启用分组时，各分组权限取并集。</span><span>启用分组即使未勾选任何权限，也表示明确撤权，不会回退角色模板。</span></div>
+                  <label>账号分组</label><select id="permissionGroupSelect"></select>
+                  <label>当前权限数</label><input id="permissionGroupCount" readonly />
+                  <div class="permission-actions"><button id="savePermissionGroupBtn">保存分组权限</button></div>
+                  <p id="permissionGroupMsg" class="muted"></p>
+                </div>
+                <div class="permission-main">
+                  <h2>分组权限</h2>
+                  <p class="muted permission-side-note">这里配置的是分组级权限。保存后，组内账号请到“权限预览”确认最终结果。</p>
+                  <div id="permissionGroupPermissionList"></div>
+                </div>
+              </div>
+            </div>
+
+            <div id="permissionPreviewPermissionPanel" class="permission-panel hidden">
+              <div class="permission-side">
+                <h2>账号权限预览</h2>
+                <div class="form-grid">
+                  <div><label>后台账号</label><select id="permissionPreviewUserSelect"></select></div>
+                  <div><label>生效来源</label><input id="permissionPreviewSource" readonly /></div>
+                </div>
+                <div class="permission-actions"><button id="loadPermissionPreviewBtn" class="secondary">刷新预览</button></div>
+                <p id="permissionPreviewMsg" class="muted"></p>
+              </div>
+              <div id="permissionPreviewSummary" class="permission-summary"></div>
+              <div id="permissionPreviewList"></div>
+            </div>
+
+            <div id="permissionCatalogPermissionPanel" class="permission-panel hidden">
+              <div class="permission-main">
+                <h2>权限点字典</h2>
+                <p class="muted permission-side-note">统一查看权限点、岗位适用范围、主体能力和官方授权限制。</p>
+                <div id="permissionCatalogList"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="securityView" class="card hidden" style="max-width:520px">
+          <h2>修改密码</h2>
+          <label>原密码</label><input id="oldPassword" type="password" autocomplete="current-password" />
+          <label>新密码</label><input id="newPassword" type="password" autocomplete="new-password" placeholder="至少 8 位" />
+          <label>确认新密码</label><input id="confirmPassword" type="password" autocomplete="new-password" />
+          <div class="toolbar"><button id="changePasswordBtn">更新密码</button></div>
+          <p id="passwordMsg" class="muted"></p>
+        </div>
+
+        <div id="updatesView" class="content hidden">
+          <div class="page-head">
+            <div><h1>系统更新</h1><div class="page-subtitle">检查并应用 AI 管理后台的新版本</div></div>
+            <div class="inline-actions"><button class="secondary" id="checkUpdateBtn">检查更新</button><button id="applyUpdateBtn">立即升级</button></div>
+          </div>
+          <div id="selfUpdateMessage" class="notice hidden"></div>
+          <div class="update-grid">
+            <div class="metric"><span class="muted">当前版本</span><strong id="selfCurrentVersion">-</strong></div>
+            <div class="metric"><span class="muted">远端版本</span><strong id="selfLatestVersion">-</strong></div>
+            <div class="metric"><span class="muted">升级状态</span><strong id="selfUpdateState">-</strong></div>
+          </div>
+          <div class="card">
+            <h2>更新源</h2>
+            <label>Manifest 地址</label><input id="selfManifestUrlInput" placeholder="https://updates.okpa.cn/agent/ai-admin/latest.json" />
+            <div class="toolbar"><button class="secondary" id="saveUpdateSourceBtn">保存更新源</button><button class="secondary" id="resetUpdateSourceBtn">使用默认源</button></div>
+            <p id="selfManifestUrl" class="muted mono">-</p>
+            <p id="selfUpdateSourceMsg" class="muted"></p>
+          </div>
+          <div class="card">
+            <h2>发布说明</h2>
+            <p id="selfReleaseNotes" class="muted">暂无发布说明</p>
+          </div>
+          <div class="card">
+            <h2>近期更新</h2>
+            <div id="selfUpdateHistory" class="release-history"></div>
+          </div>
+          <div class="card">
+            <h2>升级日志</h2>
+            <pre id="selfUpdateLog" class="update-log">暂无日志</pre>
+          </div>
+        </div>
+
+        <div id="diagnosticsView" class="content hidden">
+          <div class="page-head">
+            <div><h1>系统诊断</h1><div class="page-subtitle">复制公网地址、更新目录和最近日志，用于远程排查</div></div>
+            <div class="inline-actions"><button class="secondary" id="refreshDiagnosticsBtn">刷新诊断</button><button class="secondary" id="copyDiagnosticsBtn">复制诊断</button><button class="secondary" id="downloadDiagnosticsBtn">下载诊断</button></div>
+          </div>
+          <div class="card">
+            <h2>关键自检地址</h2>
+            <div id="diagnosticChecks" class="plan-grid" style="grid-template-columns:1fr"></div>
+          </div>
+          <div class="card">
+            <h2>诊断详情</h2>
+            <pre id="diagnosticLog" class="update-log">点击刷新诊断</pre>
+          </div>
+        </div>
+
+        <div id="plannedView" class="content hidden">
+          <div class="page-head">
+            <div><h1 id="plannedTitle">规划模块</h1><div id="plannedSubtitle" class="page-subtitle">该能力会按业务优先级逐步实现</div></div>
+          </div>
+          <div class="card">
+            <span class="roadmap">产品规划中</span>
+            <h2 id="plannedCardTitle">即将接入</h2>
+            <p id="plannedDescription" class="muted">当前先预留后台入口，方便后续围绕代理商售卖、用户授权、额度计费和能力预置继续扩展。</p>
+          </div>
+          <div class="plan-grid" id="plannedCards"></div>
+        </div>
+      </main>
+    </div>
+    <div id="updateReminderBackdrop" class="update-reminder-backdrop hidden" role="presentation">
+      <section id="updateReminderDialog" class="update-reminder-dialog" role="dialog" aria-modal="true" aria-labelledby="updateReminderTitle">
+        <div class="update-reminder-head">
+          <div>
+            <span class="update-reminder-kicker">系统必须更新</span>
+            <h2 id="updateReminderTitle">发现系统新版本</h2>
+            <p class="muted">请先完成系统升级。升级成功并恢复服务后，才能继续使用运营后台。</p>
+          </div>
+        </div>
+        <div class="update-reminder-version">
+          <div><span>当前版本</span><strong id="updateReminderCurrentVersion">-</strong></div>
+          <span class="update-reminder-arrow">→</span>
+          <div><span>最新版本</span><strong id="updateReminderLatestVersion">-</strong></div>
+        </div>
+        <div class="update-reminder-content">
+          <div class="update-reminder-content-head"><strong>本次更新内容</strong><span id="updateReminderPublishedAt" class="muted small"></span></div>
+          <div id="updateReminderNotes" class="update-reminder-notes">暂无更新说明</div>
+        </div>
+        <p id="forcedUpdateMessage" class="forced-update-message muted">升级过程中服务会自动重启，通常需要 10-30 秒恢复。</p>
+        <div class="update-reminder-actions">
+          <button id="applyForcedUpdateBtn" type="button">立即更新</button>
+        </div>
+      </section>
+    </div>
+    <div id="modelUpdateReminderBackdrop" class="update-reminder-backdrop hidden" role="presentation">
+      <section class="update-reminder-dialog" role="dialog" aria-modal="true" aria-labelledby="modelUpdateReminderTitle">
+        <div class="update-reminder-head">
+          <div>
+            <span class="update-reminder-kicker">发现模型服务新增配置</span>
+            <h2 id="modelUpdateReminderTitle">模型服务更新提醒</h2>
+            <p class="muted">总后台发布了新配置，可按分类同步；本地自定义条目不会被覆盖。</p>
+          </div>
+          <button id="closeModelUpdateReminderIconBtn" class="ghost update-reminder-close" type="button" aria-label="关闭模型更新提醒">×</button>
+        </div>
+        <div id="modelUpdateReminderList" class="model-update-reminder-list"></div>
+        <p id="modelUpdateReminderMessage" class="model-update-reminder-message muted"></p>
+        <div class="update-reminder-actions model-update-reminder-actions">
+          <button id="closeModelUpdateReminderBtn" class="secondary" type="button">稍后处理</button>
+          <button id="applyModelUpdateReminderBtn" type="button">立即更新</button>
+        </div>
+      </section>
+    </div>
+    <div id="curatedUpdateReminderBackdrop" class="update-reminder-backdrop hidden" role="presentation">
+      <section class="update-reminder-dialog" role="dialog" aria-modal="true" aria-labelledby="curatedUpdateReminderTitle">
+        <div class="update-reminder-head">
+          <div>
+            <span class="update-reminder-kicker">发现官方精选技能更新</span>
+            <h2 id="curatedUpdateReminderTitle">精选技能更新提醒</h2>
+            <p class="muted">总后台发布了新增、升级或下架的技能。立即同步后，可由当前账号决定是否上架以及面向哪些会员。</p>
+          </div>
+          <button id="closeCuratedUpdateReminderIconBtn" class="ghost update-reminder-close" type="button" aria-label="关闭技能更新提醒">×</button>
+        </div>
+        <div id="curatedUpdateReminderList" class="model-update-reminder-list"></div>
+        <p id="curatedUpdateReminderMessage" class="model-update-reminder-message muted"></p>
+        <div id="curatedSyncProgress" class="curated-sync-progress hidden" aria-live="polite">
+          <div class="curated-sync-progress-head"><strong id="curatedSyncProgressStage">准备同步</strong><span id="curatedSyncProgressPercent">0%</span></div>
+          <div class="progress-track"><div id="curatedSyncProgressFill" class="progress-fill"></div></div>
+          <div class="curated-sync-progress-detail"><span id="curatedSyncProgressMessage">正在创建同步任务…</span><span id="curatedSyncProgressCount"></span></div>
+        </div>
+        <div class="update-reminder-actions model-update-reminder-actions">
+          <button id="closeCuratedUpdateReminderBtn" class="secondary" type="button">稍后处理</button>
+          <button id="applyCuratedUpdateReminderBtn" type="button">立即同步</button>
+        </div>
+      </section>
+    </div>
+    <div id="curatedMcpUpdateReminderBackdrop" class="update-reminder-backdrop hidden" role="presentation">
+      <section class="update-reminder-dialog" role="dialog" aria-modal="true" aria-labelledby="curatedMcpUpdateReminderTitle">
+        <div class="update-reminder-head">
+          <div>
+            <span class="update-reminder-kicker">发现官方精选 MCP 更新</span>
+            <h2 id="curatedMcpUpdateReminderTitle">精选 MCP 更新提醒</h2>
+            <p class="muted">总后台发布了新增、升级或下架的 MCP。同步后仍由当前账号决定是否上架，客户端安装后默认停用。</p>
+          </div>
+          <button id="closeCuratedMcpUpdateReminderIconBtn" class="ghost update-reminder-close" type="button" aria-label="关闭 MCP 更新提醒">×</button>
+        </div>
+        <div id="curatedMcpUpdateReminderList" class="model-update-reminder-list"></div>
+        <p id="curatedMcpUpdateReminderMessage" class="model-update-reminder-message muted" aria-live="polite"></p>
+        <div id="curatedMcpReminderProgress" class="curated-sync-progress hidden" aria-live="polite">
+          <div class="curated-sync-progress-head"><strong id="curatedMcpReminderProgressStage">准备同步</strong><span id="curatedMcpReminderProgressPercent">0%</span></div>
+          <div class="progress-track"><div id="curatedMcpReminderProgressFill" class="progress-fill"></div></div>
+          <div class="curated-sync-progress-detail"><span id="curatedMcpReminderProgressMessage">正在创建同步任务…</span><span id="curatedMcpReminderProgressCount"></span></div>
+        </div>
+        <div class="update-reminder-actions model-update-reminder-actions">
+          <button id="closeCuratedMcpUpdateReminderBtn" class="secondary" type="button">稍后处理</button>
+          <button id="applyCuratedMcpUpdateReminderBtn" type="button">立即同步</button>
+        </div>
+      </section>
+    </div>
+    <div id="curatedAgentUpdateReminderBackdrop" class="update-reminder-backdrop hidden" role="presentation">
+      <section class="update-reminder-dialog" role="dialog" aria-modal="true" aria-labelledby="curatedAgentUpdateReminderTitle">
+        <div class="update-reminder-head">
+          <div>
+            <span class="update-reminder-kicker">发现官方精选专家更新</span>
+            <h2 id="curatedAgentUpdateReminderTitle">精选专家更新提醒</h2>
+            <p class="muted">总后台发布了新增、升级或下架的专家。同步后内容保持只读，上架前仍会校验技能与 MCP 依赖权限。</p>
+          </div>
+          <button id="closeCuratedAgentUpdateReminderIconBtn" class="ghost update-reminder-close" type="button" aria-label="关闭专家更新提醒">×</button>
+        </div>
+        <div id="curatedAgentUpdateReminderList" class="model-update-reminder-list"></div>
+        <p id="curatedAgentUpdateReminderMessage" class="model-update-reminder-message muted" aria-live="polite"></p>
+        <div id="curatedAgentReminderProgress" class="curated-sync-progress hidden" aria-live="polite">
+          <div class="curated-sync-progress-head"><strong id="curatedAgentReminderProgressStage">准备同步</strong><span id="curatedAgentReminderProgressPercent">0%</span></div>
+          <div class="progress-track"><div id="curatedAgentReminderProgressFill" class="progress-fill"></div></div>
+          <div class="curated-sync-progress-detail"><span id="curatedAgentReminderProgressMessage">正在创建同步任务…</span><span id="curatedAgentReminderProgressCount"></span></div>
+        </div>
+        <div class="update-reminder-actions model-update-reminder-actions">
+          <button id="closeCuratedAgentUpdateReminderBtn" class="secondary" type="button">稍后处理</button>
+          <button id="applyCuratedAgentUpdateReminderBtn" type="button">立即同步</button>
+        </div>
+      </section>
+    </div>
+    <div id="operationToastRegion" class="operation-toast-region" aria-live="polite" aria-atomic="true"></div>
+    <div id="buildLogBackdrop" class="build-log-backdrop hidden"></div>
+    <aside id="buildLogDrawer" class="build-log-drawer hidden" aria-label="构建日志">
+      <div class="build-log-head">
+        <div class="build-log-title">
+          <h2>构建日志</h2>
+          <div id="buildLogMeta" class="muted small">选择构建任务后查看日志</div>
+          <div id="buildLogProgress"></div>
+        </div>
+        <div class="build-log-actions">
+          <button id="copyBuildLogBtn" class="secondary">复制</button>
+          <button id="closeBuildLogBtn" class="secondary">关闭</button>
+        </div>
+      </div>
+      <div class="build-log-body"><pre id="logBox">选择构建任务后查看日志</pre></div>
+    </aside>
+    <div id="sourceHistoryBackdrop" class="build-log-backdrop hidden"></div>
+    <aside id="sourceHistoryDrawer" class="build-log-drawer source-history-drawer hidden" role="dialog" aria-modal="true" aria-label="Agent 更新历史">
+      <div class="build-log-head">
+        <div class="build-log-title">
+          <h2>Agent 更新历史</h2>
+          <div id="sourceHistoryMeta" class="muted small">查看当前可打包 Agent 版本历史</div>
+        </div>
+        <div class="build-log-actions">
+          <button id="closeSourceHistoryBtn" class="secondary">关闭</button>
+        </div>
+      </div>
+      <div class="build-log-body source-history-body" tabindex="0"><div id="sourceHistoryList" class="release-history"></div></div>
+    </aside>
+  </section>
+  <script>window.CENTER_SUPPLIER_MANAGEMENT_ENABLED = ${CENTER_SUPPLIER_MANAGEMENT_ENABLED ? 'true' : 'false'};</script>
+  <script src="/admin/static/js/views/organizations.js?v=__ADMIN_ASSET_VERSION__"></script>
+  <script src="/admin/static/js/admin.js?v=__ADMIN_ASSET_VERSION__"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+.supplier-license-notice { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin: 12px 0 0; padding: 12px; color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; font-size: 13px; }
+.supplier-license-notice > svg { flex: none; }
+.supplier-license-notice > div { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 6px 16px; min-width: 0; }
+.supplier-license-notice strong { font-weight: 650; }
+.supplier-license-notice small { font-size: 12px; }
+.supplier-license-notice .text-button { flex: none; color: inherit; }
+.supplier-license-notice.is-warning { color: #92400e; background: #fffbeb; border-color: #fde68a; }
+.supplier-license-notice.is-expired { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+.settings-summary-grid .supplier-license-notice strong { margin: 0; font-size: 13px; }
+.settings-summary-grid .supplier-license-notice span,
+.settings-summary-grid .supplier-license-notice small { color: inherit; }
+@media (max-width: 700px) { .supplier-license-notice { gap: 8px; } .supplier-license-notice > div { display: grid; gap: 5px; } }

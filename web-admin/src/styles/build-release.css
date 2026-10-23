@@ -1,0 +1,109 @@
+.artifact-download-primary.is-release {
+  color: #047857;
+}
+
+.artifact-release-state {
+  color: #047857;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.artifact-release-state.is-failed {
+  color: #b91c1c;
+}
+
+.build-artifacts-panel.is-release {
+  border-color: #a7f3d0;
+}
+
+.build-artifacts-panel.is-release > header > div,
+.build-artifacts-panel.is-release header > a {
+  color: #047857;
+}
+
+.build-artifacts-panel.release-pending {
+  gap: 4px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.build-artifacts-panel.release-pending span {
+  color: #3b82f6;
+  font-size: 11px;
+}
+
+.build-table {
+  min-width: 1180px;
+}
+
+.build-status-cell {
+  width: 230px;
+  max-width: 230px;
+}
+
+.build-status-detail {
+  display: block;
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 长文本单元格：默认截断，悬浮显示全文，点击复制 */
+.cell-copy {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+}
+.cell-copy-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cell-copy.mono .cell-copy-text {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.cell-copy-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: #818cf8;
+  background: #eef2ff;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.14s ease, background 0.14s ease;
+}
+tr:hover .cell-copy-btn,
+.cell-copy:hover .cell-copy-btn {
+  opacity: 1;
+}
+.cell-copy-btn:hover {
+  background: #e0e7ff;
+}
+
+.build-release-label {
+  display: inline-flex;
+  margin-left: 6px;
+  padding: 2px 7px;
+  color: #047857;
+  font-size: 9px;
+  font-weight: 750;
+  background: #ecfdf5;
+  border-radius: 999px;
+}
+
+.build-release-label.is-failed {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+

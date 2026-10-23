@@ -1,0 +1,20 @@
+.smtp-settings-section { display: grid; gap: 20px; }
+.smtp-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.smtp-section-heading h3, .smtp-section-heading p { margin: 0; }
+.smtp-section-heading p { margin-top: 5px; color: var(--muted-color, #6b7280); font-size: 12px; font-weight: 400; }
+.smtp-secure-toggle { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; margin: 0; padding: 8px 11px; color: #384258; font-size: 12px; font-weight: 650; background: #f8fafc; border: 1px solid var(--border); border-radius: 9px; }
+.smtp-secure-toggle input { width: 16px; height: 16px; margin: 0; accent-color: var(--brand); }
+.smtp-config-grid label { margin-top: 0; }
+.smtp-test-panel { display: grid; gap: 14px; padding: 16px; background: #f8fafc; border: 1px solid #e4e8ef; border-radius: 11px; }
+.smtp-test-heading { display: grid; gap: 4px; }
+.smtp-test-heading strong { color: #273247; font-size: 13px; }
+.smtp-test-heading span { color: var(--muted-color, #6b7280); font-size: 12px; font-weight: 400; }
+.smtp-test-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 16px; }
+.smtp-test-row label { display: grid; gap: 7px; min-width: 0; margin: 0; color: #384258; font-size: 12px; font-weight: 650; }
+.smtp-test-row .secondary-button { min-width: 196px; height: 42px; white-space: nowrap; }
+
+@media (max-width: 720px) {
+  .smtp-section-heading { flex-direction: column; gap: 12px; }
+  .smtp-test-row { grid-template-columns: 1fr; }
+  .smtp-test-row .secondary-button { width: 100%; min-width: 0; }
+}

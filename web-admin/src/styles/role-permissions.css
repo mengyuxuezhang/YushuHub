@@ -1,0 +1,57 @@
+.role-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.role-actions .secondary-button {
+  flex: 1;
+}
+
+.permission-group h3 small {
+  margin-left: 5px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.permission-group h3 .text-button {
+  font-size: 11px;
+}
+
+.capability-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.capability-group {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.capability-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.capability-group > header div {
+  display: flex;
+  flex-direction: column;
+}
+
+.capability-group > header span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.capability-group .capability-list {
+  padding: 8px;
+}
+.permission-explanation{display:grid;gap:5px;margin-bottom:20px;padding:16px 18px;color:#3730a3;background:#eef2ff;border:1px solid #c7d2fe;border-radius:14px}
+.permission-explanation strong{font-size:14px}
+.permission-explanation p{margin:0;color:#475569;font-size:12px;line-height:1.7}
+.permission-explanation span{color:#6366f1;font-size:11px}

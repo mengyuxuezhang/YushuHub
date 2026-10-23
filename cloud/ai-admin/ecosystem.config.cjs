@@ -1,0 +1,31 @@
+module.exports = {
+  apps: [
+    {
+      name: 'agent-ai-admin',
+      script: 'cloud/ai-admin/server.mjs',
+      cwd: '/www/wwwroot/agent-ai-admin',
+      interpreter: 'node',
+      env: {
+        NODE_ENV: 'production',
+        AI_ADMIN_HOST: '127.0.0.1',
+        AI_ADMIN_PORT: '7077',
+        AI_ADMIN_USER: 'admin',
+        AI_ADMIN_PASSWORD: 'change-me-before-run',
+        AI_BUILD_MODE: 'worker',
+        AI_WORKER_TOKEN: 'change-me-before-run',
+        AI_DB_HOST: '127.0.0.1',
+        AI_DB_PORT: '3306',
+        AI_DB_USER: 'agent_ai',
+        AI_DB_PASSWORD: 'change-me-before-run',
+        AI_DB_NAME: 'agent_ai',
+        AI_UPDATE_ROOT: '/www/wwwroot/agent-update/ai',
+        AI_UPDATE_BASE_URL: 'https://example.com/agent/ai',
+        AI_PREVIEW_ROOT: '/www/wwwroot/agent-update/ai-staging',
+        AI_PREVIEW_BASE_URL: 'https://example.com/agent/ai-staging',
+        AI_ADMIN_PUBLIC_URL: 'https://example.com',
+      },
+      max_restarts: 10,
+      restart_delay: 3000,
+    },
+  ],
+}

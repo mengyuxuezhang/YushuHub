@@ -1,0 +1,171 @@
+import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const repoRoot = path.resolve(__dirname, '..')
+
+const targets = [
+  'src/services/model-key-scope.mjs',
+  'src/services/model-provider-keys.mjs',
+  'src/services/client-project-policy.mjs',
+  'src/routes/client-project-policy.mjs',
+  'src/services/worker-authentication.mjs',
+  'src/services/worker-authentication.test.mjs',
+  'src/services/organization-expiry.mjs',
+  'src/services/organization-expiry.test.mjs',
+  'src/services/supplier-license.mjs',
+  'src/services/center-supplier-authorization.mjs',
+  'src/repositories/model-providers.mjs',
+  'src/services/pricing-current-plan-migration.mjs',
+  'src/services/provider-model-deletion.mjs',
+  'src/services/provider-model-save.mjs',
+  'src/services/provider-model-save.test.mjs',
+  'src/services/model-service-v2-sync.mjs',
+  'src/repositories/model-operations.mjs',
+  'src/repositories/pricing-plans.mjs',
+  'src/services/voice-deletion.mjs',
+  'src/services/minimax-adapter.mjs',
+  'src/services/minimax-speech-timing.mjs',
+  'src/services/private-voices.mjs',
+  'src/routes/voice-resources.mjs',
+  'src/services/user-usage-report.mjs',
+  'src/services/user-usage-permissions.mjs',
+  'src/repositories/user-usage-report.mjs',
+  'src/routes/user-usage-report.mjs',
+  'src/config/paths.mjs',
+  'src/config/load-local-env.mjs',
+  'src/config/load-local-env.test.mjs',
+  'src/config/env.mjs',
+  'src/config/constants.mjs',
+  'src/db/pool.mjs',
+  'src/db/schema.mjs',
+  'src/utils/normalize.mjs',
+  'src/utils/crypto.mjs',
+  'src/utils/time.mjs',
+  'src/utils/version.mjs',
+  'src/utils/version.test.mjs',
+  'src/utils/build-center-url.mjs',
+  'src/utils/build-center-url.test.mjs',
+  'src/utils/slug.mjs',
+  'src/utils/parse.mjs',
+  'src/utils/http.mjs',
+  'src/utils/public-url.mjs',
+  'src/utils/public-url.test.mjs',
+  'src/utils/log.mjs',
+  'src/utils/fs.mjs',
+  'src/middleware/auth.mjs',
+  'src/middleware/auth.test.mjs',
+  'src/services/redeem-codes.mjs',
+  'src/services/redeem-codes.test.mjs',
+  'src/services/list-search.mjs',
+  'src/services/list-search.test.mjs',
+  'src/services/redeem-code-input.mjs',
+  'src/services/redeem-code-input.test.mjs',
+  'src/services/end-user-accounts.mjs',
+  'src/services/end-user-accounts.test.mjs',
+  'src/services/memberships.mjs',
+  'src/services/payment-providers.mjs',
+  'src/services/payments.mjs',
+  'src/services/model-proxy-lifecycle.mjs',
+  'src/services/model-proxy-errors.mjs',
+  'src/services/model-proxy-errors.test.mjs',
+  'src/services/curated-skills.mjs',
+  'src/services/curated-skill-package.mjs',
+  'src/services/media-billing.mjs',
+  'src/services/market-catalog-sync.mjs',
+  'src/routes/curated-skills.test.mjs',
+  'src/services/builtin-curated-skills.mjs',
+  'src/services/supplier-quotas.mjs',
+  'src/services/supplier-quotas.test.mjs',
+  'src/services/model-service-sync.mjs',
+  'src/services/model-service-sync.test.mjs',
+  'src/services/access-control.mjs',
+  'src/services/access-control.test.mjs',
+  'src/services/organizations.mjs',
+  'src/services/role-template-lifecycle.mjs',
+  'src/services/role-template-lifecycle.test.mjs',
+  'src/services/organizations.test.mjs',
+  'src/services/upload-storage.mjs',
+  'src/services/release-history.mjs',
+  'src/services/storage-retention.mjs',
+  'src/services/upload-storage.test.mjs',
+  'src/services/custom-homepage.mjs',
+  'src/services/custom-homepage-seo.mjs',
+  'src/services/custom-homepage.test.mjs',
+  'src/services/client-notices.mjs',
+  'src/services/client-notice-federation.mjs',
+  'src/services/client-notices.test.mjs',
+  'src/services/enterprise-retirement.test.mjs',
+  'src/services/supplier-license-contract.mjs',
+  'src/services/supplier-license-contract.test.mjs',
+  'src/repositories/organizations.mjs',
+  'src/routes/redeem-codes.mjs',
+  'src/routes/redeem-codes.test.mjs',
+  'src/routes/auth.mjs',
+  'src/routes/platform-settings.mjs',
+  'src/routes/custom-homepage.mjs',
+  'src/routes/client-api.mjs',
+  'src/routes/client-notices.mjs',
+  'src/routes/memberships.mjs',
+  'src/routes/payments.mjs',
+  'src/routes/model-service.mjs',
+  'src/routes/curated-skills.mjs',
+  'src/routes/curated-mcps.mjs',
+  'src/routes/curated-mcps.test.mjs',
+  'src/routes/curated-agents.mjs',
+  'src/routes/curated-agents.test.mjs',
+  'src/routes/organizations.mjs',
+  'src/routes/organizations.test.mjs',
+  'src/routes/users.mjs',
+  'src/routes/users.test.mjs',
+  'src/routes/admin-business.mjs',
+  'src/routes/admin-business.test.mjs',
+  'src/routes/builds.mjs',
+  'src/routes/builds.test.mjs',
+  'cloud/ai-admin/server.mjs',
+  'cloud/ai-admin/db/schema.mjs',
+  'web/js/admin.js',
+  'web/js/views/organizations.js',
+  'scripts/install-wizard.mjs',
+  'scripts/install-wizard.cjs',
+  'scripts/reset-admin-password.mjs',
+  'scripts/smoke-test-frontend.mjs',
+  'scripts/smoke-test-imports.mjs',
+  'scripts/smoke-test-memberships.mjs',
+  'scripts/smoke-test-redeem-codes.mjs',
+  'scripts/smoke-test-payments.mjs',
+  'scripts/audit-distribution.mjs',
+  'scripts/audit-distribution.test.mjs',
+  'scripts/e2e-curated-mcp.mjs',
+  'scripts/e2e-organization-permissions.mjs',
+  'src/services/model-proxy-lifecycle.test.mjs',
+  'src/services/curated-skills.test.mjs',
+]
+
+let failed = 0
+for (const rel of targets) {
+  const file = path.join(repoRoot, rel)
+  if (!existsSync(file)) {
+    console.error(`MISSING: ${rel}`)
+    failed++
+    continue
+  }
+  const result = spawnSync(process.execPath, ['--check', file], { stdio: 'pipe' })
+  if (result.status !== 0) {
+    console.error(`FAIL: ${rel}`)
+    if (result.stderr) process.stderr.write(result.stderr)
+    failed++
+  } else {
+    console.log(`OK:   ${rel}`)
+  }
+}
+
+if (failed > 0) {
+  console.error(`\n${failed} file(s) failed syntax check.`)
+  process.exit(1)
+} else {
+  console.log(`\nAll ${targets.length} files passed syntax check.`)
+}

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent AI</title>
+  <link rel="stylesheet" href="/site/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">
+      <span class="brand-mark">A</span>
+      <span>Agent AI</span>
+    </a>
+    <nav class="nav">
+      <a href="#platform">平台能力</a>
+      <a href="#workflow">部署流程</a>
+      <a class="admin-link" href="/admin">管理后台</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Agent AI Admin</p>
+        <h1>面向供应商的 AI 客户端运营与构建管理平台</h1>
+        <p class="lead">统一管理桌面端构建、终端用户、兑换码、模型服务与平台配置，让交付、运营和测试流程保持在同一个后台里。</p>
+        <div class="actions">
+          <a class="primary-action" href="/admin">进入管理后台</a>
+          <a class="secondary-action" href="#platform">了解能力</a>
+        </div>
+      </div>
+      <div class="hero-panel" aria-label="平台状态概览">
+        <div class="panel-row">
+          <span>构建任务</span>
+          <strong>统一调度</strong>
+        </div>
+        <div class="panel-row">
+          <span>终端用户</span>
+          <strong>注册登录</strong>
+        </div>
+        <div class="panel-row">
+          <span>模型服务</span>
+          <strong>多供应商配置</strong>
+        </div>
+      </div>
+    </section>
+
+    <section id="platform" class="section">
+      <div class="section-heading">
+        <p class="eyebrow">Platform</p>
+        <h2>后台覆盖从配置到交付的关键环节</h2>
+      </div>
+      <div class="feature-grid">
+        <article>
+          <h3>桌面端构建</h3>
+          <p>维护品牌资源、项目配置、测试版与正式版构建任务，并跟踪构建日志与发布状态。</p>
+        </article>
+        <article>
+          <h3>用户与兑换码</h3>
+          <p>支持终端用户注册登录、兑换码发放、兑换来源追踪和基础额度管理。</p>
+        </article>
+        <article>
+          <h3>模型服务配置</h3>
+          <p>集中配置模型供应商、密钥池、模型定价和客户端可用模型策略。</p>
+        </article>
+        <article>
+          <h3>平台设置</h3>
+          <p>管理邮件、更新源、构建中心、自更新与品牌资源等运行参数。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="workflow" class="section workflow">
+      <div>
+        <p class="eyebrow">Workflow</p>
+        <h2>新部署建议</h2>
+        <p>将域名根路径作为官网入口，反向代理到 Admin Node 服务；管理员通过 <code>/admin</code> 进入后台，客户端继续访问同域下的 <code>/api</code>、<code>/updates</code> 等服务接口。</p>
+      </div>
+      <a class="primary-action compact" href="/admin">打开 /admin</a>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>Agent AI</span>
+    <span>管理后台入口：<a href="/admin">/admin</a></span>
+  </footer>
+</body>
+</html>

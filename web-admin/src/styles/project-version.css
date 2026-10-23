@@ -1,0 +1,15 @@
+.project-version-summary{display:grid;gap:8px;margin:2px 0 14px;padding:12px;background:#f8fafc;border:1px solid #e5eaf2;border-radius:10px}
+.project-version-summary.current{background:#f0fdf4;border-color:#bbf7d0}
+.project-version-summary.stale{background:#fffbeb;border-color:#fde68a}
+.project-version-summary.unknown{background:#f8fafc;border-color:#e2e8f0}
+.project-version-summary dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0}
+.project-version-summary dl div{min-width:0}
+.project-version-summary dt{margin-bottom:3px;color:var(--muted);font-size:10px}
+.project-version-summary dd{margin:0;overflow:hidden;color:#334155;font-size:12px;font-weight:750;text-overflow:ellipsis;white-space:nowrap}
+.project-version-summary footer{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0;border:0}
+.project-version-summary footer span{color:var(--muted);font-size:10px}
+.project-version-state{font-size:11px;font-weight:750}
+.project-version-summary.current .project-version-state{color:#047857}
+.project-version-summary.stale .project-version-state{color:#b45309}
+.project-version-summary.unknown .project-version-state{color:#64748b}
+@media(max-width:520px){.project-version-summary dl{grid-template-columns:1fr}}

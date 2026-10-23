@@ -1,0 +1,23 @@
+.toast-region { position: fixed; z-index: 1000; top: 20px; right: 20px; display: grid; width: min(390px, calc(100vw - 32px)); gap: 10px; pointer-events: none; }
+.toast-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px; min-height: 52px; padding: 12px 13px; color: #1f2937; background: #fff; border: 1px solid var(--border); border-left: 4px solid #64748b; border-radius: 11px; box-shadow: 0 18px 44px rgb(15 23 42 / 16%); pointer-events: auto; }
+.toast-item.is-success { border-left-color: #10b981; }
+.toast-item.is-success > svg { color: #059669; }
+.toast-item.is-error { border-left-color: #ef4444; }
+.toast-item.is-error > svg { color: #dc2626; }
+.toast-item.is-warning { border-left-color: #f59e0b; }
+.toast-item.is-warning > svg { color: #d97706; }
+.toast-item.is-info { border-left-color: #6366f1; }
+.toast-item.is-info > svg { color: #4f46e5; }
+.toast-item button { display: grid; padding: 4px; color: #94a3b8; background: transparent; border: 0; place-items: center; }
+.dialog-backdrop { position: fixed; z-index: 1100; inset: 0; display: grid; padding: 20px; background: rgb(15 23 42 / 48%); backdrop-filter: blur(3px); place-items: center; }
+.confirm-dialog { width: min(430px, 100%); padding: 26px; background: #fff; border-radius: 17px; box-shadow: 0 25px 70px rgb(15 23 42 / 28%); }
+.confirm-dialog h2 { margin: 18px 0 8px; font-size: 18px; line-height: 1.5; }
+.confirm-dialog p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.confirm-dialog .dialog-actions button { font-size: 14px; }
+.dialog-icon.is-danger { color: #dc2626; background: #fef2f2; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.primary-button.danger-button, .secondary-button.danger-button { color: #fff; background: #dc2626; border-color: #dc2626; }
+.primary-button.danger-button:hover:not(:disabled), .secondary-button.danger-button:hover:not(:disabled) { color: #fff; background: #b91c1c; border-color: #b91c1c; }
+.danger-button:focus-visible { outline: 2px solid #b91c1c; outline-offset: 3px; }
+.skeleton { min-width: 80px; min-height: 36px; background: linear-gradient(90deg, #eef1f6 25%, #f8f9fb 45%, #eef1f6 65%); background-size: 300% 100%; border-radius: 7px; animation: shimmer 1.2s infinite; }
+.spinning { animation: spin .8s linear infinite; }

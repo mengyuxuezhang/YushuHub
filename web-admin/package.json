@@ -1,0 +1,29 @@
+{
+  "name": "agent-ai-admin-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "mock-api": "node tests/fixtures/mock-api-server.mjs",
+    "architecture": "node scripts/check-architecture.mjs",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "build": "npm run typecheck && vite build",
+    "test:e2e": "vitest run tests/app-shell.test.ts"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.31.0",
+    "pinia": "^4.0.3",
+    "vue": "^3.5.41",
+    "vue-router": "^5.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.8",
+    "happy-dom": "^20.11.2",
+    "typescript": "5.9.3",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10",
+    "vue-tsc": "^3.3.9"
+  }
+}

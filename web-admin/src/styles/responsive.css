@@ -1,0 +1,32 @@
+@media (max-width: 1050px) {
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .login-page { grid-template-columns: 1fr; }
+  .login-story { display: none; }
+}
+
+@media (max-width: 720px) {
+  .admin-shell, .admin-shell.is-collapsed { grid-template-columns: 68px minmax(0, 1fr); }
+  .brand-copy, .nav-item span, .sidebar-action span, .nav-section h2 { display: none; }
+  .admin-sidebar { padding-inline: 9px; }
+  .topbar { padding-inline: 16px; }
+  .account-copy { display: none; }
+  .page-container { padding: 18px; }
+  .metric-grid, .content-grid { grid-template-columns: 1fr; }
+  .page-heading { align-items: flex-start; flex-direction: column; }
+  .operations-card { grid-template-columns: 1fr; }
+  .login-panel { padding: 28px; }
+  .management-heading { align-items: flex-start; }
+  .heading-actions { justify-content: flex-start; }
+  .list-toolbar { align-items: stretch; flex-direction: column; }
+  .search-control { min-width: 0; }
+  .result-count { margin-left: 0; }
+  .query-toolbar .query-field { flex: none; width: 100%; max-width: none; }
+  .query-toolbar .search-control { width: 100%; min-width: 0; }
+  .query-toolbar > select:not(.query-field) { width: 100%; max-width: none; }
+  .query-actions { width: 100%; }
+  .query-actions button { flex: 1; }
+  .form-grid-v2, .dependency-columns, .market-choice-grid { grid-template-columns: 1fr; }
+  .drawer-header, .drawer-footer { padding-inline: 17px; }
+  .drawer-body { padding-inline: 14px; }
+}
+

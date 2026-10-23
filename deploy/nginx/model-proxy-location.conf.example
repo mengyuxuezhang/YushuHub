@@ -1,0 +1,21 @@
+# Place this exact-match location in the same server block as the generic
+# Agent AI Admin reverse proxy. It must be declared alongside, not inside,
+# the existing `location ^~ /` block.
+location = /api/client/model/v1/chat/completions {
+    proxy_pass http://127.0.0.1:7467;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Request-Id $request_id;
+    proxy_http_version 1.1;
+
+    # Current provider default is 120 seconds. Keep the nginx read timeout
+    # above the configured provider header timeout.
+    proxy_connect_timeout 15s;
+    proxy_send_timeout 180s;
+    proxy_read_timeout 180s;
+
+    # Forward SSE frames immediately instead of buffering the model stream.
+    proxy_buffering off;
+    add_header X-Accel-Buffering no;
+}
