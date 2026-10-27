@@ -112,12 +112,12 @@ npm ci
 AI_ADMIN_HOST=127.0.0.1
 AI_ADMIN_PORT=7077
 AI_ADMIN_USER=admin
-AI_ADMIN_PASSWORD=replace-with-a-strong-password
+AI_ADMIN_PASSWORD=change-me-before-run
 
 AI_DB_HOST=127.0.0.1
 AI_DB_PORT=3306
 AI_DB_USER=agent_ai
-AI_DB_PASSWORD=replace-with-your-database-password
+AI_DB_PASSWORD=change-me-before-run
 AI_DB_NAME=agent_ai
 
 AI_ADMIN_PUBLIC_URL=http://127.0.0.1:7077
