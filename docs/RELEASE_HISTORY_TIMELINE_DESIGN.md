@@ -1,6 +1,6 @@
 # 版本历史时间轴设计
 
-日期：2026-10-28。开发分支：`design/release-history-timeline`，起点为最新 `origin/master` 的 `9098511`。本分支用于设计评审，未合入主分支或部署。
+日期：2026-10-28。开发分支：`design/release-history-timeline`，起点为最新 `origin/master` 的 `9098511`。本文件保留设计评审过程，正式发布状态以 RELEASE_1.9.58.md 为准。
 
 ## 设计目标
 
