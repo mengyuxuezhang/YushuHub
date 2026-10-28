@@ -1,10 +1,5 @@
 import type { ReleaseHistoryItem } from '@/api/delivery-system'
 
-export function releaseCommitUrl(item: ReleaseHistoryItem) {
-  return /^[a-f0-9]{40}$/.test(item.commit || '') && /^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/.test(item.repository || '')
-    ? `https://github.com/${item.repository}/commit/${item.commit}` : ''
-}
-
 export function historyDate(value?: string) {
   const timestamp = value ? Date.parse(value) : NaN
   if (!Number.isFinite(timestamp)) return { timestamp: 0, month: 'undated', monthLabel: '日期未记录', day: '', weekday: '', time: '' }

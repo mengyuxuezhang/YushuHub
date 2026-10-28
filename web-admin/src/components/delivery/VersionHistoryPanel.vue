@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { CalendarDays, ChevronDown, ChevronUp, GitCommitHorizontal, History, Search, X } from '@lucide/vue'
+import { CalendarDays, ChevronDown, ChevronUp, History, Search, X } from '@lucide/vue'
 import DataPagination from '@/components/common/DataPagination.vue'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import type { ReleaseHistoryItem } from '@/api/delivery-system'
-import { historyDate, prepareHistory, historyMonths, releaseCommitUrl } from '@/utils/release-timeline'
+import { historyDate, prepareHistory, historyMonths } from '@/utils/release-timeline'
 
 const props = withDefaults(defineProps<{
   title: string
@@ -46,7 +46,7 @@ async function changePage(value: number) {
   if (panel.value && panel.value.getBoundingClientRect().top < 0) panel.value.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 function toggle(version: string) { const next = new Set(expanded.value); next.has(version) ? next.delete(version) : next.add(version); expanded.value = next }
-function fullNotes(item: ReleaseHistoryItem) { return item.releaseNotesZh?.trim() || item.releaseNotes?.trim() || item.gitNotesZh?.trim() || item.gitNotes?.trim() || '未找到可展示的版本说明，可通过下方 Git 提交查看原始记录。' }
+function fullNotes(item: ReleaseHistoryItem) { return item.releaseNotesZh?.trim() || item.releaseNotes?.trim() || item.gitNotesZh?.trim() || item.gitNotes?.trim() || '暂无版本更新说明。' }
 function notes(item: ReleaseHistoryItem) {
   const text = fullNotes(item)
   return !expanded.value.has(item.version) && text.length > 190 ? `${text.slice(0, 190)}…` : text
@@ -89,7 +89,6 @@ function notes(item: ReleaseHistoryItem) {
                 <p class="history-notes">{{ notes(item) }}</p>
                 <button v-if="fullNotes(item).length > 190" class="text-button history-expand" type="button" :aria-expanded="expanded.has(item.version)" @click="toggle(item.version)">{{ expanded.has(item.version) ? '收起说明' : '展开完整说明' }}<component :is="expanded.has(item.version) ? ChevronUp : ChevronDown" :size="14" /></button>
                 <details v-if="item.releaseNotesZh || (!item.releaseNotes?.trim() && item.gitNotesZh)"><summary class="text-button">查看原文</summary><p class="history-notes">{{ item.releaseNotesZh ? item.releaseNotes : item.gitNotes }}</p></details>
-                <small v-if="item.commit" class="history-provenance"><GitCommitHorizontal :size="13" /><a v-if="releaseCommitUrl(item)" class="mono-text" :href="releaseCommitUrl(item)" target="_blank" rel="noopener noreferrer" :aria-label="`查看 v${item.version} 的 Git 提交`">{{ item.commit.slice(0, 8) }}</a><span v-else>{{ item.commit.slice(0, 8) }}</span><span v-if="item.gitTag">{{ item.gitTag }}</span><span v-if="item.dateSource === 'commit'">日期取自 Git 提交</span></small>
               </article>
             </li>
           </ol>
