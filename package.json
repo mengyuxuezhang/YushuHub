@@ -1,7 +1,7 @@
 {
   "name": "agent-ai-admin",
   "private": true,
-  "version": "1.9.58",
+  "version": "1.9.59",
   "description": "羽枢 · YushuHub：面向 Agent 应用的运营管理与品牌交付平台",
   "author": "李杰（梦羽学长） <204429778@qq.com>",
   "license": "SEE LICENSE IN LICENSE",
