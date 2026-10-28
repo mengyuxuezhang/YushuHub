@@ -1,4 +1,4 @@
-import { applySelfUpdate, changePassword, createBuild, getAgentSourceVersion, listBuildPage, listWorkers, publishBuild, saveProject, saveSettings, saveSelfUpdateSource, uploadProjectAsset } from '@/api/delivery-system'
+import { applySelfUpdate, changePassword, createBuild, getAgentSourceVersion, getSelfUpdateStatus, listBuildPage, listWorkers, publishBuild, saveProject, saveSettings, saveSelfUpdateSource, uploadProjectAsset } from '@/api/delivery-system'
 import { projectMenuRows, serializeProjectMenus } from '@/utils/project-menus'
 import { buildArtifactLinks, buildFileUrl, buildPublicUrl, primaryBuildArtifact } from '@/utils/build-artifacts'
 import { diagnosticsFilename, formatDiagnosticsReport } from '@/utils/diagnostics-export'
@@ -9,6 +9,13 @@ import { deliverySearchValues } from '@/composables/delivery/useDeliverySystem'
 const ok = (data: unknown) => Promise.resolve(new Response(JSON.stringify({ success: true, data }), { status: 200, headers: { 'content-type': 'application/json' } }))
 
 describe('delivery and system API contracts', () => {
+  it('opts into complete histories only for the timeline reads', async () => {
+    const f = vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok({}))
+    await getAgentSourceVersion(true)
+    await getSelfUpdateStatus(true)
+    await getSelfUpdateStatus()
+    expect(f.mock.calls.map(call => String(call[0]))).toEqual(['/api/source-version?history=all', '/api/self-update/status?history=all', '/api/self-update/status'])
+  })
   it('forces personal mode when persisting project branding', async () => {
     const f = vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok({}))
     await saveProject({ id: 'enterprise-app', clientMode: 'enterprise' })

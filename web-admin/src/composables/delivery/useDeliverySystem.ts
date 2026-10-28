@@ -106,14 +106,14 @@ export function useDeliverySystem(section: DeliverySection) {
       if (section === "workers") {
         const [workers, sourceInfo] = await Promise.all([
           api.listWorkers(),
-          api.getAgentSourceVersion().catch((error) => ({ configured: false, version: "", history: [], error: toUserMessage(error) })),
+          api.getAgentSourceVersion(true).catch((error) => ({ configured: false, version: "", history: [], error: toUserMessage(error) })),
         ]);
         rows.value = workers;
         sourceVersionInfo.value = sourceInfo;
       }
       if (section === "settings") settings.value = await api.getSettings();
       if (section === "updates") {
-        updateStatus.value = await api.getSelfUpdateStatus();
+        updateStatus.value = await api.getSelfUpdateStatus(true);
         form.manifestUrl = updateStatus.value.manifestUrl || "";
       }
       if (section === "diagnostics")
@@ -315,7 +315,8 @@ export function useDeliverySystem(section: DeliverySection) {
   async function saveUpdateSource() {
     saving.value = true;
     try {
-      updateStatus.value = await api.saveSelfUpdateSource(String(form.manifestUrl || "").trim());
+      await api.saveSelfUpdateSource(String(form.manifestUrl || "").trim());
+      updateStatus.value = await api.getSelfUpdateStatus(true);
       feedback.notify("更新源已保存并重新检查版本", "success");
     } catch (e) {
       feedback.notify(toUserMessage(e), "error");
@@ -326,7 +327,7 @@ export function useDeliverySystem(section: DeliverySection) {
   async function checkUpdate() {
     saving.value = true;
     try {
-      updateStatus.value = await api.getSelfUpdateStatus();
+      updateStatus.value = await api.getSelfUpdateStatus(true);
       form.manifestUrl = updateStatus.value.manifestUrl || form.manifestUrl || "";
       feedback.notify("更新检测已完成", "success");
     } catch (e) {

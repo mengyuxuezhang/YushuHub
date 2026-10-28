@@ -18,5 +18,5 @@ defineProps<{ d: ReturnType<typeof useDeliverySystem> }>()
     <section class="panel-card"><h2>最新版本说明</h2><p class="release-notes">{{ d.updateStatus.value.releaseNotes || '暂无更新说明' }}</p><div class="update-action-row"><button class="secondary-button" :disabled="d.saving.value" @click="d.checkUpdate"><RefreshCw :size="15" />检测更新</button><button class="primary-button" :disabled="!d.updateStatus.value.updateAvailable || d.saving.value" @click="d.applyUpdate"><Rocket :size="15" />立即升级</button></div></section>
     <section class="panel-card"><h2>最近检查日志</h2><pre>{{ d.updateStatus.value.lastLog || '暂无日志' }}</pre></section>
   </div>
-  <VersionHistoryPanel title="管理后台历史更新" description="显示更新源最近发布的 50 个管理后台版本及更新内容。" :latest-version="d.updateStatus.value.latestVersion" :items="d.updateStatus.value.history || []" empty-text="当前更新清单暂未提供历史版本" />
+  <VersionHistoryPanel title="管理后台历史更新" description="按月份回看管理后台的功能变化，快速查找每次更新。" :loading="d.loading.value" :current-version="d.updateStatus.value.runningVersion || d.updateStatus.value.currentVersion" :latest-version="d.updateStatus.value.latestVersion" :items="d.updateStatus.value.history || []" empty-text="当前更新清单暂未提供历史版本" />
 </template>

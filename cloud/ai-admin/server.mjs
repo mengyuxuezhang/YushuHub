@@ -413,7 +413,7 @@ function normalizeSourceVersionManifest(raw) {
   if (current.version && !history.some((item) => item.version === current.version)) {
     history.unshift({ version: current.version, publishedAt: current.publishedAt, releaseNotes: current.releaseNotes })
   }
-  return { ...current, history: mergeReleaseHistory(current, history, readReleaseHistory(path.join(repoRoot, 'docs', 'AGENT_UPDATE_HISTORY.json'))) }
+  return { ...current, history: mergeReleaseHistory(current, history, readReleaseHistory(path.join(repoRoot, 'docs', 'AGENT_UPDATE_HISTORY.json')), Infinity) }
 }
 
 function validateDesktopSourceInfo(info) {
@@ -435,10 +435,11 @@ async function getSourceVersionInfo() {
     const info = validateDesktopSourceInfo(normalizeSourceVersionManifest(await fetchJson(url)))
     if (!info.sourceOnly || !/^[a-f0-9]{40}$/.test(info.commit)) throw new Error('invalid canonical Desktop source manifest')
     const historyFile = path.join(repoRoot, 'data', 'agent-release-history.json')
-    info.history = mergeReleaseHistory(info, info.history, readReleaseHistory(historyFile))
+    const completeHistory = mergeReleaseHistory(info, info.history, [...readReleaseHistory(historyFile), ...readReleaseHistory(path.join(repoRoot, 'docs', 'AGENT_UPDATE_HISTORY.json'))], Infinity)
+    info.history = completeHistory.slice(0, 50)
     try {
       await fsp.mkdir(path.dirname(historyFile), { recursive: true })
-      await fsp.writeFile(`${historyFile}.tmp`, `${JSON.stringify(info.history, null, 2)}\n`, 'utf8')
+      await fsp.writeFile(`${historyFile}.tmp`, `${JSON.stringify(completeHistory, null, 2)}\n`, 'utf8')
       await fsp.rename(`${historyFile}.tmp`, historyFile)
     } catch (error) {
       console.warn(`[ai-admin] could not persist Agent release history: ${error.message}`)
@@ -532,7 +533,7 @@ function validateManifest(manifest, fallbackHistory = []) {
   }
 }
 
-async function getSelfUpdateStatus() {
+async function getSelfUpdateStatus({ fullHistory = false } = {}) {
   const runningVersion = PACKAGE_VERSION
   const diskVersion = await getAdminVersion()
   const manifestUrl = await getConfiguredSelfUpdateManifestUrl()
@@ -557,12 +558,13 @@ async function getSelfUpdateStatus() {
   if (!manifestUrl) return status
   const officialHistory = /^https?:\/\/(?:updates\.okpa\.cn|8\.147\.134\.68)\/agent\/ai-admin\/latest\.json$/.test(manifestUrl)
     ? readReleaseHistory(path.join(repoRoot, 'docs', 'UPDATE_HISTORY.json')) : []
-  const manifest = validateManifest(await fetchJson(manifestUrl), officialHistory)
+  const rawManifest = await fetchJson(manifestUrl)
+  const manifest = validateManifest(rawManifest, officialHistory)
   status.latestVersion = manifest.version
   status.updateAvailable = compareVersions(manifest.version, runningVersion) > 0
   status.releaseNotes = manifest.releaseNotes
   status.publishedAt = manifest.publishedAt
-  status.history = manifest.history
+  status.history = fullHistory ? mergeReleaseHistory(manifest, rawManifest.history, officialHistory, Infinity) : manifest.history
   return status
 }
 

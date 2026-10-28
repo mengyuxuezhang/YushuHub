@@ -33,8 +33,8 @@ export const listBuildPage = (query: PageQuery = {}) => {
   return api<PageResult<any>>(`/api/builds${suffix ? `${suffix}&` : "?"}sync=1&view=list`);
 };
 export const listWorkers = () => api<any[]>("/api/workers");
-export const getAgentSourceVersion = () =>
-  api<AgentSourceVersionInfo>("/api/source-version");
+export const getAgentSourceVersion = (fullHistory = false) =>
+  api<AgentSourceVersionInfo>(`/api/source-version${fullHistory ? '?history=all' : ''}`);
 export const createBuild = (projectId: string, version = "") =>
   api<any>("/api/builds", json({ projectId, version }));
 export const retryBuild = (id: string) =>
@@ -52,7 +52,7 @@ export const saveSettings = (input: Record<string, unknown>) =>
 export const testSmtp = (email: string) =>
   api<any>("/api/platform-settings/smtp-test", json({ email }));
 export const getDiagnostics = () => api<any>("/api/diagnostics");
-export const getSelfUpdateStatus = () => api<any>("/api/self-update/status");
+export const getSelfUpdateStatus = (fullHistory = false) => api<any>(`/api/self-update/status${fullHistory ? '?history=all' : ''}`);
 export const saveSelfUpdateSource = (manifestUrl: string) =>
   api<any>("/api/self-update/config", json({ manifestUrl }));
 export const applySelfUpdate = () => api<any>("/api/self-update/apply", json({}));

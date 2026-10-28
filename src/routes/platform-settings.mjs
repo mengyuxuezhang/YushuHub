@@ -4,6 +4,8 @@ import { nowIso } from '../utils/time.mjs'
 import { readSelfUpdateLog, appendSelfUpdateLog } from '../utils/log.mjs'
 import { flattenPermissionCatalog } from '../services/permission-catalog.mjs'
 import { scopedOrganizationLicense } from '../services/organization-expiry.mjs'
+import { readAgentReleaseHistory } from '../services/release-history.mjs'
+import { repoRoot } from '../config/paths.mjs'
 
 export function registerSystemRoutes(app, deps) {
   const {
@@ -29,7 +31,8 @@ export function registerSystemRoutes(app, deps) {
   app.get('/api/source-version', requireAuth, async (_req, res, next) => {
     try {
       const info = await getSourceVersionInfo()
-      res.json({ success: true, data: { ...info, configured: Boolean(info.version), checkedAt: nowIso() } })
+      const history = _req.query?.history === 'all' ? readAgentReleaseHistory(info, repoRoot) : info.history
+      res.json({ success: true, data: { ...info, history, configured: Boolean(info.version), checkedAt: nowIso() } })
     } catch (err) {
       next(err)
     }
@@ -37,7 +40,8 @@ export function registerSystemRoutes(app, deps) {
 
   app.get('/api/self-update/status', requireAuth, requireAdmin, requirePermission('self_update.manage', '系统更新'), async (_req, res) => {
     try {
-      res.json({ success: true, data: await getSelfUpdateStatus() })
+      const info = await getSelfUpdateStatus({ fullHistory: _req.query?.history === 'all' })
+      res.json({ success: true, data: info })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err), data: { lastLog: await readSelfUpdateLog() } })
     }

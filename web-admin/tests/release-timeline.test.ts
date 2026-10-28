@@ -1,0 +1,56 @@
+import { createApp, nextTick } from 'vue'
+import VersionHistoryPanel from '@/components/delivery/VersionHistoryPanel.vue'
+import { historyDate, prepareHistory } from '@/utils/release-timeline'
+
+describe('release timeline', () => {
+  it('uses Beijing month boundaries and retains undated entries', () => {
+    expect(historyDate('2026-09-30T18:00:00Z')).toMatchObject({ month: '2026-10', day: '01', time: '02:00' })
+    expect(historyDate('invalid')).toMatchObject({ month: 'undated' })
+    const items = prepareHistory([{ version: '1.0.0' }, { version: '1.0.1', publishedAt: '2026-10-01T00:00:00Z' }, { version: '1.0.0' }])
+    expect(items.map(item => item.version)).toEqual(['1.0.1', '1.0.0'])
+  })
+
+  it('searches beyond the first 50 releases, filters months, and progressively reveals the full history', async () => {
+    const items = Array.from({ length: 65 }, (_, index) => ({ version: `1.0.${index}`, publishedAt: new Date(Date.UTC(2026, 7, index + 1)).toISOString(), releaseNotes: index ? '改进使用体验' : '首个版本，支持原始记录查找' }))
+    const host = document.createElement('div')
+    const app = createApp(VersionHistoryPanel, { title: '管理后台历史更新', description: '更新记录', latestVersion: '1.0.64', currentVersion: '1.0.63', items })
+    app.mount(host)
+    const click = async (label: string) => { [...host.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.includes(label))!.click(); await nextTick() }
+    try {
+      expect(host.querySelectorAll('.history-entry')).toHaveLength(12)
+      expect(host.querySelector('.latest-badge')?.textContent).toBe('最新版')
+      expect(host.querySelector('.current-badge')?.textContent).toContain('当前运行')
+      const input = host.querySelector<HTMLInputElement>('input')!
+      input.value = '原始记录'; input.dispatchEvent(new Event('input')); await nextTick()
+      expect(host.querySelectorAll('.history-entry')).toHaveLength(1)
+      expect(host.querySelector('.history-version h4')?.textContent).toBe('v1.0.0')
+      input.value = ''; input.dispatchEvent(new Event('input')); await nextTick()
+      await click('2026 年 8 月')
+      expect(host.querySelectorAll('.history-month')).toHaveLength(1)
+      expect(host.querySelector('.history-result')?.textContent).toContain('31')
+      await click('全部记录')
+      for (let i = 0; i < 5; i++) await click('加载更早版本')
+      expect(host.querySelectorAll('.history-entry')).toHaveLength(65)
+      expect(host.querySelector('.history-end')?.textContent).toContain('全部已收录')
+      input.value = '无匹配关键词'; input.dispatchEvent(new Event('input')); await nextTick()
+      expect(host.textContent).toContain('没有找到匹配的版本')
+      await click('清除筛选')
+      expect(host.querySelectorAll('.history-entry')).toHaveLength(12)
+    } finally { app.unmount() }
+  })
+
+  it('expands the original long notes and keeps HTML as plain text', async () => {
+    const notes = '完整更新说明。'.repeat(40) + '<script>alert(1)</script>'
+    const host = document.createElement('div')
+    const app = createApp(VersionHistoryPanel, { title: 'Agent 版本更新记录', description: '', items: [{ version: '3.0.0', releaseNotes: notes }] })
+    app.mount(host)
+    try {
+      const button = host.querySelector<HTMLButtonElement>('.history-expand')!
+      expect(host.querySelector('.history-notes')?.textContent).not.toBe(notes)
+      button.click(); await nextTick()
+      expect(host.querySelector('.history-notes')?.textContent).toBe(notes)
+      expect(button.getAttribute('aria-expanded')).toBe('true')
+      expect(host.querySelector('script')).toBeNull()
+    } finally { app.unmount() }
+  })
+})
