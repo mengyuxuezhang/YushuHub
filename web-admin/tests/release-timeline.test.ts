@@ -10,14 +10,14 @@ describe('release timeline', () => {
     expect(items.map(item => item.version)).toEqual(['1.0.1', '1.0.0'])
   })
 
-  it('searches beyond the first 50 releases, filters months, and progressively reveals the full history', async () => {
+  it('searches beyond the first 50 releases, filters months, and supports next page, page jump and page-size changes', async () => {
     const items = Array.from({ length: 65 }, (_, index) => ({ version: `1.0.${index}`, publishedAt: new Date(Date.UTC(2026, 7, index + 1)).toISOString(), releaseNotes: index ? '改进使用体验' : '首个版本，支持原始记录查找' }))
     const host = document.createElement('div')
     const app = createApp(VersionHistoryPanel, { title: '管理后台历史更新', description: '更新记录', latestVersion: '1.0.64', currentVersion: '1.0.63', items })
     app.mount(host)
     const click = async (label: string) => { [...host.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.includes(label))!.click(); await nextTick() }
     try {
-      expect(host.querySelectorAll('.history-entry')).toHaveLength(12)
+      expect(host.querySelectorAll('.history-entry')).toHaveLength(10)
       expect(host.querySelector('.latest-badge')?.textContent).toBe('最新版')
       expect(host.querySelector('.current-badge')?.textContent).toContain('当前运行')
       const input = host.querySelector<HTMLInputElement>('input')!
@@ -29,13 +29,22 @@ describe('release timeline', () => {
       expect(host.querySelectorAll('.history-month')).toHaveLength(1)
       expect(host.querySelector('.history-result')?.textContent).toContain('31')
       await click('全部记录')
-      for (let i = 0; i < 5; i++) await click('加载更早版本')
-      expect(host.querySelectorAll('.history-entry')).toHaveLength(65)
-      expect(host.querySelector('.history-end')?.textContent).toContain('全部已收录')
+      host.querySelector<HTMLButtonElement>('[aria-label="下一页"]')!.click(); await nextTick()
+      expect(host.querySelector('.history-version h4')?.textContent).toBe('v1.0.54')
+      const jump = host.querySelector<HTMLInputElement>('[aria-label="跳转页码"]')!
+      jump.value = '7'; jump.dispatchEvent(new Event('input')); jump.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); await nextTick()
+      expect(host.querySelectorAll('.history-entry')).toHaveLength(5)
+      expect(host.querySelector('.history-version h4')?.textContent).toBe('v1.0.4')
+      expect(host.querySelector<HTMLButtonElement>('[aria-label="下一页"]')?.disabled).toBe(true)
+      const size = host.querySelector<HTMLSelectElement>('[aria-label="每页条数"]')!
+      size.value = '20'; size.dispatchEvent(new Event('change')); await nextTick()
+      expect(host.querySelectorAll('.history-entry')).toHaveLength(20)
+      expect(host.querySelector('.history-version h4')?.textContent).toBe('v1.0.64')
+      expect(host.querySelector('.data-pagination')?.textContent).toContain('第 1 / 4 页')
       input.value = '无匹配关键词'; input.dispatchEvent(new Event('input')); await nextTick()
       expect(host.textContent).toContain('没有找到匹配的版本')
       await click('清除筛选')
-      expect(host.querySelectorAll('.history-entry')).toHaveLength(12)
+      expect(host.querySelectorAll('.history-entry')).toHaveLength(20)
     } finally { app.unmount() }
   })
 

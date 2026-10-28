@@ -91,6 +91,17 @@ test('build center exposes the authoritative Desktop source version and bounded 
   assert.deepEqual(res.body, { success: true, data: sourceInfo })
 })
 
+test('downstream timeline can explicitly request the complete build-center archive', async () => {
+  const sourceInfo = { version: '3.0.73', history: [{ version: '3.0.73', releaseNotes: 'Canonical current notes' }] }
+  const handler = postHandler('/api/center/source-version', { getSourceVersionInfo: async () => sourceInfo })
+  const res = responseRecorder()
+  await handler({ body: { history: 'all' } }, res, error => { throw error })
+  assert.ok(res.body.data.history.length > 50)
+  assert.equal(res.body.data.history[0].releaseNotes, 'Canonical current notes')
+  assert.ok(res.body.data.history.some(item => item.version === '1.0.1'))
+  assert.equal(sourceInfo.history.length, 1)
+})
+
 test('worker heartbeat ignores builders outside the retained allowlist', async () => {
   let touched = false
   let queried = false

@@ -2,11 +2,12 @@
 import { computed, ref, watch } from 'vue'
 import { Box, ChevronRight, Layers, Monitor, PanelTop, Sparkles } from '@lucide/vue'
 import VersionHistoryPanel from '@/components/delivery/VersionHistoryPanel.vue'
-import adminHistory from '../../../docs/UPDATE_HISTORY.json'
-import agentHistory from '../../../docs/AGENT_UPDATE_HISTORY.json'
+import type { ReleaseHistoryItem } from '@/api/delivery-system'
+import adminHistory from '../../../docs/ADMIN_RELEASE_ARCHIVE.json'
+import agentHistory from '../../../docs/AGENT_RELEASE_ARCHIVE.json'
 const product = ref('admin')
 watch(product, () => window.scrollTo({ top: 0 }))
-const items = computed(() => product.value === 'admin' ? adminHistory : agentHistory)
+const items = computed(() => (product.value === 'admin' ? adminHistory : agentHistory) as ReleaseHistoryItem[])
 </script>
 <template>
   <div class="timeline-preview">

@@ -77,6 +77,8 @@ $publicDocs = @(
   "MODEL_PROXY_TIMEOUTS.md"
   "UPDATE_HISTORY.json"
   "AGENT_UPDATE_HISTORY.json"
+  "ADMIN_RELEASE_ARCHIVE.json"
+  "AGENT_RELEASE_ARCHIVE.json"
 )
 
 Get-ChildItem -LiteralPath $root -Force | Where-Object {
@@ -100,7 +102,7 @@ foreach ($doc in $publicDocs) {
 # Nested workspaces (for example web-admin) have their own dependency directories. They are
 # development artifacts and must never be copied into the supplier package.
 Get-ChildItem -LiteralPath $stage -Recurse -Directory -Force |
-  Where-Object { $_.Name -eq 'node_modules' } |
+  Where-Object { $_.Name -eq 'node_modules' -or $_.Name -eq '__pycache__' } |
   Sort-Object { $_.FullName.Length } -Descending |
   Remove-Item -Recurse -Force
 
@@ -108,6 +110,8 @@ Get-ChildItem -LiteralPath $stage -Recurse -Directory -Force |
 # them out also prevents security-fixture strings from becoming part of the supplier distribution.
 Get-ChildItem -LiteralPath $stage -Recurse -File | Where-Object {
   $_.Name -match '\.test\.mjs$' -or
+  $_.Name -eq 'sync-release-archives.py' -or
+  $_.Name -eq 'test_sync_release_archives.py' -or
   $_.FullName -eq (Join-Path $stage 'scripts\audit-distribution.mjs') -or
   $_.FullName -eq (Join-Path $stage 'scripts\audit-distribution.test.mjs') -or
   $_.FullName -eq (Join-Path $stage 'scripts\e2e-protected-skill.mjs') -or

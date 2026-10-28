@@ -35,7 +35,7 @@ import { canonicalizePublicUploadUrl } from '../../src/utils/public-url.mjs'
 import { migrateOfficialUpdateDatabaseSettings, migrateOfficialUpdateEnvFile } from '../../src/services/official-update-source-migration.mjs'
 import { readSelfUpdateRestartStatus, resolveCurrentPm2Process, scheduleVerifiedSelfRestart } from '../../src/services/self-update-runtime.mjs'
 import { imageUsageEvents } from '../../src/services/media-billing.mjs'
-import { mergeReleaseHistory, readReleaseHistory } from '../../src/services/release-history.mjs'
+import { mergeReleaseHistory, readReleaseHistory, readAdminReleaseHistory } from '../../src/services/release-history.mjs'
 import { cleanupFailedBuildStorage } from '../../src/services/storage-retention.mjs'
 import { migrateLegacyUploadStorage } from '../../src/services/upload-storage.mjs'
 import { ensureWorkerStagingDirectory, normalizeExistingWorkerStagingDirectories } from '../../src/services/worker-staging-permissions.mjs'
@@ -464,17 +464,18 @@ async function getSourceVersionInfo() {
   }
 }
 
-async function getVisibleSourceVersionInfo() {
+async function getVisibleSourceVersionInfo({ fullHistory = false } = {}) {
   const now = Date.now()
-  if (visibleSourceVersionCache.info && now - visibleSourceVersionCache.checkedAt < 60000) return visibleSourceVersionCache.info
+  if (!fullHistory && visibleSourceVersionCache.info && now - visibleSourceVersionCache.checkedAt < 60000) return visibleSourceVersionCache.info
   if (!CENTER_SUPPLIER_MANAGEMENT_ENABLED) {
     const config = await getBuildCenterConfig().catch(() => null)
     if (config?.enabled) {
       try {
-        const info = await buildCenterApi('/api/center/source-version', {}, config)
+        const info = await buildCenterApi('/api/center/source-version', fullHistory ? { history: 'all' } : {}, config)
         if (info?.version) {
-          visibleSourceVersionCache = { info: { ...info, configured: true, source: 'build-center' }, checkedAt: now }
-          return visibleSourceVersionCache.info
+          const result = { ...info, configured: true, source: 'build-center' }
+          visibleSourceVersionCache = { info: { ...result, history: Array.isArray(info.history) ? info.history.slice(0, 50) : [] }, checkedAt: now }
+          return fullHistory ? result : visibleSourceVersionCache.info
         }
       } catch (err) {
         console.warn('[ai-admin] Failed to fetch Agent source version from build center:', err instanceof Error ? err.message : err)
@@ -564,7 +565,7 @@ async function getSelfUpdateStatus({ fullHistory = false } = {}) {
   status.updateAvailable = compareVersions(manifest.version, runningVersion) > 0
   status.releaseNotes = manifest.releaseNotes
   status.publishedAt = manifest.publishedAt
-  status.history = fullHistory ? mergeReleaseHistory(manifest, rawManifest.history, officialHistory, Infinity) : manifest.history
+  status.history = fullHistory ? readAdminReleaseHistory({ ...manifest, history: rawManifest.history, manifestUrl }, repoRoot) : manifest.history
   return status
 }
 

@@ -1,0 +1,2946 @@
+[
+  {
+    "version": "3.0.73",
+    "publishedAt": "2026-10-28T05:55:20.363537Z",
+    "releaseNotes": "修复动画视频侧栏切换口播字幕或自动配音后显示区域缩短、底部出现大块空白的问题；调整开关焦点定位，保持正常滚动和键盘操作。",
+    "commit": "9933194d0d863318baaeac1638273128b18c4826",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.73",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.72",
+    "publishedAt": "2026-10-28T05:30:43.872620Z",
+    "releaseNotes": "新增消息队列“立即补充”，可在不中断当前任务和工具的情况下补充文字、图片与文件；补充消息以用户气泡按工作进度穿插显示，完善接收状态及异常处理。重绘电脑控制指针，与中文操作提示统一深蓝配色，优化点击、暂停与缩放显示。",
+    "commit": "8ff2a94cd1420da7ea65604cc1103ff57bc03bf1",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.72",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.71",
+    "publishedAt": "2026-10-27T07:34:49.704Z",
+    "releaseNotes": "动画视频工程直接保存到所选项目目录，分镜、HTML、素材和参数可整目录复制给AI参考复刻。补齐传统视频工具的独立工程文件，校验与渲染读取最新文件，避免侧栏参数更新覆盖外部修改；完善旧工程迁移、缺失文件与镜头错误提示。",
+    "commit": "602131015e1f32eb32974d291867dcf523ecebd6",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.71",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.70",
+    "publishedAt": "2026-10-27T02:17:06.035Z",
+    "releaseNotes": "修复多品牌客户端并行启动时快捷键冲突导致桌面伙伴、知识库等功能不可用的问题；完善功能启动隔离、失败重试与诊断提示。新增中文电脑控制悬浮提示，清楚展示Esc停止操作方式，支持暂停状态、多屏与缩放。",
+    "commit": "5679e8e30fbb4110cac2a1a0864898e9bae1b700",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.70",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.69",
+    "publishedAt": "2026-10-26T14:53:25.686272Z",
+    "releaseNotes": "优化桌面伙伴页面布局，收紧伙伴列表与左侧导航之间的过大留白，保留列表内部间距和窄窗口适配，提升宽屏空间利用率。",
+    "commit": "3f46cc08850cb9036ef2523834ee0ef8e08f68cb",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.69",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.68",
+    "publishedAt": "2026-10-26T03:53:15.912547Z",
+    "releaseNotes": "修复新安装或升级后首次启动长时间停留在初始化界面的问题；优化模型目录刷新与本地运行环境的启动顺序，完善超时重试和旧任务清理，减少需要重新加载或重启客户端的情况。",
+    "commit": "3a9e6e179e67f2c8a89373da6144a413a2470799",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.68",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.67",
+    "publishedAt": "2026-10-26T02:14:02.667523Z",
+    "releaseNotes": "精简桌面伙伴资源，移除4个人形3D伙伴及约78MiB原始模型，保留猫、狗、兔子和恐龙；已有伙伴资料兼容回退，保留会话与记忆。修复兔子重启或导入后形象被错误转换的问题。",
+    "commit": "39483e821d2f334d2de2493dd941b8eb91c009eb",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.67",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.66",
+    "publishedAt": "2026-10-26T00:10:19.051284Z",
+    "releaseNotes": "修复创作修改要求被长提示截断及Windows长路径导致完整消息读取失败，优先保留用户本轮要求并减少重复规范；新增Agent音色查询，支持按名称和描述自主选择当前可用音色并同步项目设置，保留既有声音与正常计费规则。",
+    "commit": "ababd360c840be3d821f44ba40c5e44aa3d327d7",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.66",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.65",
+    "publishedAt": "2026-10-25T03:59:52.2274333Z",
+    "releaseNotes": "新增59类视频视觉风格规范与按需技法参考，Agent可根据主题主动选择并读取相关代码，自主设计构图、色彩与动效；保持16类创作方向与既有模板兼容，不固定套版或强制配音字幕。完善参考画布确定性跳转、结尾处理与多画幅验证。",
+    "commit": "d8f4d1524b49b33e71558ec2754093a47ad6c936",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.65",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.64",
+    "publishedAt": "2026-10-24T14:41:05.908Z",
+    "releaseNotes": "新增日历定时：支持每日或指定星期多个时间点、固定时区及指定日期执行一次；可选择错过后补跑或跳过、任务重叠等待或跳过。Agent与界面使用统一计划，保留原间隔任务并完善重启恢复与触发去重。",
+    "commit": "659c49bc2e390f90f4e658d41ec8f74839381e7a",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.64",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.63",
+    "publishedAt": "2026-10-24T07:04:04.402418Z",
+    "releaseNotes": "修复内置浏览器发布入口无响应：完善新窗口和空白页跳转、表单提交及前台标签激活，保留多Agent页面隔离；规范网页浏览器标识，避免网站误识别为其桌面客户端，已通过抖音创作者中心实际开页验收。",
+    "commit": "c1748c60a21d7e94fe771216d5c6db47fa41b62d",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.63",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.62",
+    "publishedAt": "2026-10-24T02:43:50.702Z",
+    "releaseNotes": "普通聊天和桌面伙伴可直接创作视频、图文卡片、图片、混剪草稿、小程序及自动化工具，按任务自动显示对应侧栏；参数以schema供Agent自主选择并同步回显；修复Edge语音v2协议兼容，完善配音连接错误提示。",
+    "commit": "be8e92077908495e780d03e8af6be89730d2adc4",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.62",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.61",
+    "publishedAt": "2026-10-23T11:00:39Z",
+    "releaseNotes": "内置浏览器支持多Agent独立页面并行操作，隔离标签、元素引用、工作区和脚本会话；修复切换运行中聊天导致页面重置及后台回车丢失，完善任务切换与页面状态保留。",
+    "commit": "265c6fa257e76d2f5ced2aad0d3e3af6acae45b5",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.61",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.60",
+    "publishedAt": "2026-10-22T11:45:02.9151819Z",
+    "releaseNotes": "内置浏览器新增随窗口与固定尺寸模式，支持Agent自主调整网页视口和多尺寸验收；完善侧栏缩放预览与独立窗口保持，修复Windows高DPI下页面截图尺寸误判，优化动态页面元素引用使用指导。",
+    "commit": "662f899c8fbed646e91fefb12adbe8d9e8f0f5ba",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.60",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.59",
+    "publishedAt": "2026-10-21T10:55:59+08:00",
+    "releaseNotes": "新增动画视频720P与1080P清晰度，新项目默认1080P并优化编码码率；修复多截图会话摘要请求过大导致上下文持续增长，统一20MiB请求体限制，优化积分充值提示与上下文整理状态文案。",
+    "commit": "d567203a648e98e642393281a7126c0efc4c9a1b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.59",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.58",
+    "publishedAt": "2026-10-20T21:19:51+08:00",
+    "releaseNotes": "新增设置中的模型服务，支持用户接入自带 Chat Completions 模型，本机加密保存密钥并直连供应商；按项目远程控制注册和自定义模型，禁用后保留配置与历史，不自动切换收费模型，完善模型不可用提示及重新启用恢复。",
+    "commit": "607c2a75106678100937783710d231850556b581",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.58",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.57",
+    "publishedAt": "2026-10-19T09:08:01.604831Z",
+    "releaseNotes": "新增12套图文卡片真实模板示例、12类AI生图场景和8类混剪方向，支持放大预览与商业创作指导；完善新建和设置持久化，修复开发预加载不同步导致的图文新建失败；聊天处理过程每轮默认展开，回复结束自动折叠并保留最终结论。",
+    "commit": "741bdc02497d70e52490bf590b604c06c0de7659",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.57",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.56",
+    "publishedAt": "2026-10-19T06:21:42.644675Z",
+    "releaseNotes": "新增16类视频创作方向与商业成片指导，保留静态示意卡片并由AI自主设计；明确口播字幕与动态歌词等创意文字的区别，完善逐帧渲染进度，修复MCP分段通信丢失导致Agent长时间等待及视频时长输入反复重置。",
+    "commit": "6706b3ba303ce1115f036b91576467712a71dc21",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.56",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.55",
+    "publishedAt": "2026-10-18T01:12:48.203443Z",
+    "releaseNotes": "修复Windows动画视频沙箱入口路径误拦截及超时误报，修复音轨素材读取导致的渲染失败；统一客户端自定义协议注册并完善编码错误提示，同步开发启动配套产物，补齐构建机维护与安装包资源审计。",
+    "commit": "264ca8f3375e84141b15cb8baa5870e01a05c170",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.55",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.54",
+    "publishedAt": "2026-10-17T07:58:02.397620Z",
+    "releaseNotes": "统一桌面端公共字体、字号与文字层级，覆盖侧栏、聊天工作区、设置及能力页面；修复输入框、搜索框、选择框和复选框的边框、聚焦与选中样式，改善深浅色主题及缩放显示一致性。",
+    "commit": "74872e1cb5c56809851e6e4879d3a117858069d9",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.54",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.53",
+    "publishedAt": "2026-10-16T09:12:57.449945Z",
+    "releaseNotes": "优化动画视频连续演出与交付提示；改进长镜头画面编码，修复帧缓存超限与错误提示；支持Edge及MiniMax配音真实时间信息和音频复用，新增MiniMax词级时间与字幕同步编排。",
+    "commit": "0a4833d48a04120ae144419285da9e716262e105",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.53",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.52",
+    "publishedAt": "2026-10-13T10:33:09.630Z",
+    "releaseNotes": "视频创作支持聊天附件和项目素材引用，扩大HTML容量，新增独立声音编排与Agent自绘字幕；修复Edge配音接口、成片预览和Windows长路径Logo加载，增加明确的渲染诊断、发布时长校验及脚本分镜与画面质量指引。",
+    "commit": "2c1bc6ac8329d6ff7ff34c7e7a8b855d11b926b3",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.52",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.51",
+    "publishedAt": "2026-10-13T06:08:15.481Z",
+    "releaseNotes": "定时任务改为卡片布局，新增独立运行记录页面与任务详情记录，支持状态筛选、暂停开关和图标操作；统一聊天消息操作按钮样式，修复定时任务搜索图标显示黑点；桌面伙伴文字统一使用公共字号，提升说明、时间、标签、输入与按钮的可读性。",
+    "commit": "15f1c31b5541408c6447a28bf98dcf1b6960e946",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.51",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.50",
+    "publishedAt": "2026-10-13T05:07:17.400Z",
+    "releaseNotes": "新增会话级 Max 上下文模式、逐轮文件对照与对话回退、消息分叉及图标操作；优化工作区更改列表与搜索聚焦样式，移除子 Agent 悬浮汇总，减少长任务最小化恢复时思考和工具详情的渲染开销。",
+    "commit": "ceee547b551efdea1396da7e0090466604e51653",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.50",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.49",
+    "publishedAt": "2026-10-08T09:43:42.000Z",
+    "releaseNotes": "创作类会话改为引导式：视频创作、剪映混剪、图文卡片、AI 生图、网页小程序与自动化工具会先与你确认主题、素材和规格，确认完毕才开始生成，不再把首条消息直接当作创作内容。同时上下文用量改为输入区进度环（悬浮显示用量、点击查看分布），侧边栏菜单精简直显，权限记录移至设置页审计中心并支持导出，修复进度环悬浮背景与用量弹层被浮动按钮遮挡的问题。",
+    "commit": "5ab0b42e9b967c0c99ab769de4102b758ad958df",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.49",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.48",
+    "publishedAt": "2026-10-08T07:20:07.097Z",
+    "releaseNotes": "支持工作区公开 HTTPS 图片直链与 Mermaid 图表，增加 SVG、PNG、源码下载及滚轮缩放、拖动预览，修复图表滚动重复绘制；定时任务支持全局管理、每次新建对话、每日每周日历调度，并新增默认保持电脑唤醒允许熄屏的睡眠策略。",
+    "commit": "8377db987cea76b4d28e56dd233e3dda18f54c1b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.48",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.47",
+    "publishedAt": "2026-09-29T16:32:04.505Z",
+    "releaseNotes": "回退 3.0.46 的确认框修复并重新实现：新增共享应用内确认弹窗，关闭确认后自动恢复原输入框焦点；技能、MCP、专家、会话等删除确认不再调用系统原生弹窗，修复技能详情弹窗内确认框无法点击的问题。",
+    "commit": "f20adcaa3ba5c554ac212cdfe7a9e4795ae6e5de",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.47",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.46",
+    "publishedAt": "2026-09-29T10:27:44.980Z",
+    "releaseNotes": "修复删除或卸载操作调用系统确认框后输入框失去焦点的问题；技能删除改用应用内确认弹窗，关闭确认后可立即继续输入。",
+    "commit": "2c562ae0d9667a7f741bebc4c293af31b0dd2a21",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.46",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.45",
+    "publishedAt": "2026-09-29T08:05:23.890Z",
+    "releaseNotes": "修复首次安装或首次登录时运行环境初始化与桌面伙伴加载的启动竞态：首次启动会显示初始化提示，完成后再进入工作台，失败时支持重试。",
+    "commit": "6d47497ff695cc2542f4c47989edba713f48df7f",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.45",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.44",
+    "publishedAt": "2026-09-29T00:00:00+08:00",
+    "releaseNotes": "统一桌面工作区文字层级：放大右侧侧栏导航、文件、更改、浏览器、终端、权限、运行详情、子 Agent、会话记忆和手机预览中的文字，并提升视频设置与成品预览面板的标签和说明可读性；同时优化新建任务中的伙伴、专家、技能和模型选择控件。",
+    "commit": "57bc897dfe1c52add3b027ef87675b72b7842bae",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.44",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.43",
+    "publishedAt": "2026-09-25T17:10:00+08:00",
+    "releaseNotes": "优化桌面消息中心：新通知只在顶栏铃铛显示未读红点，不再占用聊天区域；通知详情改为更清晰的标题、摘要、正文和操作分区，修复按钮悬浮时文字与背景对比度不足的问题。",
+    "commit": "b512e0f02bbb374bf0c747331161860845335ffd",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.43",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.42",
+    "publishedAt": "2026-09-24T20:58:00+08:00",
+    "releaseNotes": "新增桌面消息中心：新建聊天页展示最新通知卡片，顶栏显示未读消息，设置中可按类别查看历史；已读、关闭状态跨设备同步，并优化工作台加载界面。",
+    "commit": "b7b927dedb0ab5b075551f223757fa353a324458",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.42",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.41",
+    "publishedAt": "2026-09-24T14:35:35+08:00",
+    "releaseNotes": "聊天附件按 PDF、文档、表格、压缩包、音视频和代码等类型显示易辨识图标，新建会话、工作区和桌面伙伴保持一致。超过单文件 10 MB 或累计副本 25 MB 的本地磁盘文件改为仅传经验证的原始路径，避免大文件复制占用内存；无可信磁盘路径的超限剪贴板附件会提示重新从本机选择或拖入。",
+    "commit": "7452bb2ba7cafe65ab4a4f27018d628162868619",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.41",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.40",
+    "publishedAt": "2026-09-24T11:23:58+08:00",
+    "releaseNotes": "统一新建聊天、工作区聊天和桌面伙伴的附件体验：支持 PDF、Word、Excel、音视频、ZIP 及其他文件的受限副本传递，并为 Agent 提供经验证的原始位置以理解文件所属项目；优化拖拽提示样式，修复双层虚线和附件技术信息出现在聊天正文的问题。",
+    "commit": "61136fc2d93c3bccdce84e9cbee77fe367753843",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.40",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.39",
+    "publishedAt": "2026-09-23T20:04:22+08:00",
+    "releaseNotes": "新增内置“第三方技能包转换”能力：可将其他 AI 平台的技能包整理为当前客户端可导入的技能 ZIP，支持网页指引型、浏览器脚本型及混合型转换，并提供路径穿越、重复条目、凭据泄漏、文件引用和脚本语法等静态安全门禁。",
+    "commit": "1f863c1721d639f29ef20e4110eeccf51684e923",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.39",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.38",
+    "publishedAt": "2026-09-23T11:53:02+08:00",
+    "releaseNotes": "修复普通聊天中 HTML 文件预览无法完整运行的问题：网页脚本、方向键等键盘交互和刷新后的本地状态现在可正常工作，并按会话与工作区隔离网页存储；预览仍无法访问桌面宿主、Node 或顶层导航能力。",
+    "commit": "c275e9072d415fa4ddb318bbd086a63d1091e5d8",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.38",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.37",
+    "publishedAt": "2026-09-22T11:16:13+08:00",
+    "releaseNotes": "配色主题升级为完整视觉主题：切换经典、落日余晖、暗夜霓虹、律动暗黑或冰晶幻境时，新建任务页会同步显示对应背景，并可在外观设置中关闭。修复背景右侧留白、深浅模式标题对比度和关闭背景后的启动闪图，同时修复人形桌面伙伴顶部消息气泡可能被裁切的问题。",
+    "commit": "156327c6862a824adb7c37817cdfd9260fdf7a7c",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.37",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.36",
+    "publishedAt": "2026-09-21T16:01:51+08:00",
+    "releaseNotes": "优化专家与技能市场：使用更紧凑的信息卡片，查看详情和安装操作仅在悬浮或键盘聚焦时出现，专家与技能详情统一为居中弹窗；聊天主界面取消默认专家，改为可选召唤，并修复专家较多时下拉列表顶部被遮挡的问题。",
+    "commit": "073c8e1f3e505affb61db2c65dcc3b8bca49243a",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.36",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.35",
+    "publishedAt": "2026-09-20T17:08:05+08:00",
+    "releaseNotes": "优化知识库与技能管理搜索体验，移除激活时叠加的粗外框，只保留统一圆角细焦点；应用中心补充微信小程序、移动应用、API / 后端服务三种创作场景，并将全部 8 张卡片的字符符号替换为尺寸、描边和主题一致的语义化 SVG 图标。",
+    "commit": "2519a588d891d2645de44e81fd17075c06c421f6",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.35",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.34",
+    "publishedAt": "2026-09-20T15:03:38+08:00",
+    "releaseNotes": "修复部分电脑上新建会话和历史会话均无法打开、错误提示需要绝对工作区路径的问题：隔离尚未创建或暂不可访问的内部能力目录，避免其影响用户已选择的普通工作区；未授权目录和无效内部目录仍保持安全拒绝。",
+    "commit": "4e5cfb12b978f58370bb6e444aad41bbea1c0473",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.34",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.33",
+    "publishedAt": "2026-09-20T12:15:00+08:00",
+    "releaseNotes": "扩展 Windows 构建能力：新增当前开发电脑作为第一优先构建节点，忙碌、离线或版本不兼容时自动回退原构建机；两台节点使用独立工作区、凭据和并发参数，提高代理商安装包构建的可用性。",
+    "commit": "0d89ee7385794cb77e041fcebe14a405d8e86d39",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.33",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.32",
+    "publishedAt": "2026-09-20T10:16:27+08:00",
+    "releaseNotes": "修复部分电脑中新建任务和历史任务的工作区路径被错误识别为相对路径、导致无法进入的问题：仅从本机已授权工作区安全恢复唯一匹配的绝对路径，歧义或未授权目录仍会拒绝。同步移除新建聊天和聊天输入框激活时多余的直角淡蓝色内框，只保留统一圆角焦点反馈。",
+    "commit": "8c833c6c6b5b0c71e4a7368fc87daff934f2f8f9",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.32",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.31",
+    "publishedAt": "2026-09-18T23:16:31+08:00",
+    "releaseNotes": "全面重构桌面端界面：统一侧栏、页面宽度、标题层级、按钮、卡片、标签、表单和状态反馈，重做视频、混剪、图文卡片与 AI 生图创作页面，并统一应用中心、资源管理、工作区和系统页面。设置页恢复独立导航、搜索与返回应用布局；登录、注册和找回密码继续沿用管理端配置。",
+    "commit": "ed76e150d8308d0265d535e19a07d5abff7f5d74",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.31",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.30",
+    "publishedAt": "2026-09-18T17:28:30+08:00",
+    "releaseNotes": "应用创作新增自动化工具：用户可用自然语言创建本地文件处理工具或网页自动化，由 Agent 自动选择实现方式、生成名称说明和运行参数；支持文件与文件夹选择、显式发布、参数化测试运行、中文输出及继续维护。网页自动化新增变量传入、硬超时、失败清理、受控浏览器恢复和多任务归属隔离，避免后台持续转圈或不同任务相互中止。",
+    "commit": "b829c37c7736a96504c3fcb77f3faa6ffc7cbed8",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.30",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.29",
+    "publishedAt": "2026-09-17T19:34:05+08:00",
+    "releaseNotes": "修复未手动选择工作区时，自动默认工作区偶发退化为相对路径并导致会话创建失败的问题；优化默认目录创建与会话启动顺序，失败重试会复用已创建目录，同时保持任意相对路径与未授权目录继续被安全拒绝。",
+    "commit": "99769e2ac723807065007051cf05d2c310a47930",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.29",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.28",
+    "publishedAt": "2026-09-17T16:57:13+08:00",
+    "releaseNotes": "新增“应用创作”与应用中心，首期支持通过普通 Agent 会话创建单文件网页小程序，提供实时隔离预览、显式发布、独立运行、继续修改、重命名和删除；预览与运行按应用隔离本地存储，并优化发布入口、会话恢复、默认权限、任务标题和输入框焦点边框。",
+    "commit": "ad9b3d5095ae7cf6c3632309edd5ec386646d9e2",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.28",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.27",
+    "publishedAt": "2026-09-17T13:24:47+08:00",
+    "releaseNotes": "新增四位可商用 3D 人形桌面伙伴，支持透明全身展示、动态角色预览、悬浮、拖拽、思考等状态动作和聊天动态头像；优化人形轮廓、气泡间距、场景复用与自然待机姿势，并修复樱田史利矢裤装异常高光。",
+    "commit": "b8fc0a44a3876d16d7ad08bd378a3b76271d8ffe",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.27",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.26",
+    "publishedAt": "2026-09-16T19:33:06+08:00",
+    "releaseNotes": "登录页全面升级：新增自然、极简、轨道、编辑四套品牌主题，支持后台配置品牌名、Logo及四项文案；新增与主题融合的自绘最小化、最大化和关闭按钮，并取消自定义背景图依赖。",
+    "commit": "c6125709310171b6fafc2c58e2da52d23595a25c",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.26",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.25",
+    "publishedAt": "2026-09-16T15:20:43+08:00",
+    "releaseNotes": "登录安全加固：桌面端登录新增一次性图形验证码，支持点击换图并在登录失败后自动刷新；验证码在服务端密码校验前强制验证，并配合账号与来源登录限速，降低脚本批量尝试密码的风险。",
+    "commit": "01e8cde86616ed8e15203c81caf886888fd1c16d",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.25",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.24",
+    "publishedAt": "2026-09-16T11:37:34+08:00",
+    "releaseNotes": "重构设置与管理界面：采用紧凑的桌面软件设置布局，统一固定分类、目录搜索、窄窗口导航和返回应用；优化外观、账户、MCP、手机、记忆、归档、诊断、更新与关于页面的信息层级。主题与输入偏好继续即时保存，并统一搜索框、下拉框及表单输入的细线焦点效果，修复双层粗边框。",
+    "commit": "d04eb74d0838425e4b84e954dc277060e2a939f8",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.24",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.23",
+    "publishedAt": "2026-09-15T20:26:42+08:00",
+    "releaseNotes": "统一重构动画视频、剪映混剪、图文卡片和 AI 生图四个创作入口，建立可复用的创作中心视觉体系；优化各功能说明、流程引导与工作区选择，并适配深浅色和窄窗口。整体界面更紧凑，新建按钮无需滚动即可看到，同时修复按钮悬浮状态文字对比度。",
+    "commit": "ff1d487eeb7686b005b2e0f31b92d45f499f406e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.23",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.22",
+    "publishedAt": "2026-09-15T18:01:41+08:00",
+    "releaseNotes": "新增剪映混剪：可导入本地视频或文件夹，由 Agent 分析画面并智能编排 1–10 份可编辑剪映草稿；支持 Edge 与 MiniMax 配音、私有音色训练和试听、同步字幕、本地背景音乐、自动识别剪映草稿目录、素材管理及草稿结果。聊天现可安全预览工作区外的本地图片，并优化混剪入口、设置侧栏和任务标题。",
+    "commit": "70be037513a52cd7740e91a4e72e92cb2e35ee20",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.22",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.21",
+    "publishedAt": "2026-09-15T10:57:52+08:00",
+    "releaseNotes": "动画视频新增本地 MP3 背景音乐：支持选择、更换、移除，指定裁剪起点、试听和音量调节；导出时按视频时长自动截取，并跨镜头连续混合旁白。修复窄侧栏成品预览空状态说明文字被裁切的问题。",
+    "commit": "95cf7eaab2e2a04228dd378967c60b6d84f0cde7",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.21",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.20",
+    "publishedAt": "2026-09-13T20:49:37+08:00",
+    "releaseNotes": "修复桌面伙伴在 Windows 显示缩放下反复拖动后透明窗口命中范围逐次扩大的问题；拖动时固定窗口逻辑尺寸，并在启动时自动恢复旧版保存的异常尺寸，避免桌面大面积区域被不可见窗口遮挡。",
+    "commit": "271cf9008fc8dfe3d101675ce88256c95733af9d",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.20",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.19",
+    "publishedAt": "2026-09-11T20:00:22+08:00",
+    "releaseNotes": "修复桌面伙伴在不同 Windows 显示缩放环境下缓慢拖动时逐渐被裁切、看似沉到桌面背景后的问题；拖动期间会正确解除并恢复异形窗口命中区域。修复长按伙伴不松手时窗口可能持续向下漂移并跑出屏幕的问题，静止光标不再重复移动窗口。",
+    "commit": "f1d6ffead966f6acc3b6c06ad7fc9d85e3006a7e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.19",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.18",
+    "publishedAt": "2026-09-11T16:02:49+08:00",
+    "releaseNotes": "桌面伙伴新增许可可追溯的 CC0 动画兔子与小恐龙，支持新建、编辑、侧边栏、首页召唤及悬浮窗的待机、观察、触摸、拖动、工作、成功和失败反馈；内置动画资源升级为逐角色图集合同。取消桌面伙伴展开会话小窗口最外层的半透明阴影承托层，保留清晰细边框。",
+    "commit": "b47c2cf77c36c605133eacd1a17c9e5cbaaee6db",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.18",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.17",
+    "publishedAt": "2026-09-11T14:20:01+08:00",
+    "releaseNotes": "修复桌面伙伴名称标签遮挡形象下沿的问题，让名称保持独立稳定、只有伙伴形象上下浮动；修复离开伙伴聊天后再次打开时内部记忆说明可能出现在聊天正文和标题中的问题，并兼容清理已有历史展示；优化新建伙伴按钮悬浮对比度，将记忆、成长、历史、知识技能和导入导出页面的内部技术术语改为普通用户易懂的说明。",
+    "commit": "81cba2f2e50b6c7aceed73cf2408c0c236103a69",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.17",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.16",
+    "publishedAt": "2026-09-11T09:36:33+08:00",
+    "releaseNotes": "桌面伙伴形象升级为许可可追溯的 CC0 动画猫狗，覆盖待机、观察、工作、成功、失败、触摸和拖动反馈；移除缺少完整动作的旧形象及静态自定义上传入口，并无损迁移现有伙伴配置。优化折叠态消息气泡与状态徽标的透明层级，消除灰色背景和遮挡。",
+    "commit": "76eb3ba5d9b826df082d505e57e53b64c5085044",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.16",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.15",
+    "publishedAt": "2026-09-11T00:31:05+08:00",
+    "releaseNotes": "新增桌面伙伴：支持多伙伴管理、独立长期会话、伙伴记忆与进化、知识库和技能绑定、专属工作目录、附件、上下文压缩及桌面快捷交互；重做主界面视觉与模型菜单，并优化任务列表分类、折叠、右键菜单和悬浮反馈。当前桌面伙伴的桌面形象部分暂未开发完成，现有形象与动画体验将在后续版本继续完善。",
+    "commit": "857ac571edf38eea8df3eb32cd9d297aab8464af",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.15",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.14",
+    "publishedAt": "2026-09-09T11:53:11+08:00",
+    "releaseNotes": "兼容管理后台将用户消费倍率设为 0.00：模型目录不再拒绝零倍率定价载荷，模型选择器正确显示 0.00×；实际积分扣减仍由后台计费项售价决定。",
+    "commit": "ba7f583daf653a69bca4ebcaf5a1564470ae2457",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.14",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.13",
+    "publishedAt": "2026-09-08T23:41:29+08:00",
+    "releaseNotes": "修复模型目录刷新期间 Runtime 停止与替代启动并发，避免新会话复用即将关闭的本地代理端口而持续重试；目录更新后聊天会等待旧 Runtime 完整退出，再以最新模型配置恢复。",
+    "commit": "8e81be6870b29c07fecd44f2b4340ff42349bf6c",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.13",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.12",
+    "publishedAt": "2026-09-08T20:40:00+08:00",
+    "releaseNotes": "修复动画视频 MiniMax 私有音色训练完成后点击试听没有反应的问题：桌面端现在允许播放后台返回的受控 MP3 试听音频，并在浏览器拒绝播放时显示明确错误提示。",
+    "commit": "af871061210a4984b6bf10258205a98ee7f5d150",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.12",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.11",
+    "publishedAt": "2026-09-08T17:49:51+08:00",
+    "releaseNotes": "动画视频配音全面接入后台托管的 MiniMax 语音服务，内置音色与用户私有音色分组展示，并支持录音上传、训练、试听和付费启用。试听价格可按实际字符数预估，失败时显示可操作原因；个人 MiniMax Key 不再进入新版调用链。",
+    "commit": "80af7efe5ae6f751ab1c35706e2bec4cd3fa306e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.11",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.10",
+    "publishedAt": "2026-09-08T00:09:54+08:00",
+    "releaseNotes": "提升 Windows 电脑控制的定位准确性与操作安全：默认优先使用 UI Automation 语义操作，明确要求鼠标时使用 UIA 定位与原生鼠标，并依次后备到 OCR 文字目标和截图像素。修复高 DPI、负坐标、窗口变化及相邻控件误吸附问题；操作结果不明时不再自动重复点击。",
+    "commit": "321b25791496115533ae779b1ecf6293de234d0b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.10",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.9",
+    "publishedAt": "2026-09-07T21:00:15+08:00",
+    "releaseNotes": "优化知识库菜单的激活与选中状态：输入框、下拉框和文本域改为单层细边框与轻量焦点光晕，模式卡片、标签、目录、历史和挂载项统一使用柔和强调边框，减少粗重与重复描边，同时保留清晰的键盘焦点。",
+    "commit": "b7edb0b88c9d8b5ba27f1654202bbb28dfb1d04b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.9",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.8",
+    "publishedAt": "2026-09-07T17:54:56+08:00",
+    "releaseNotes": "重设计版本升级提示窗口，优化信息层级、按钮、阴影与更新说明。完善知识库目录操作：Markdown 路径按知识库、文件夹和标题自动生成，新增友好的重名提示；新建、编辑、移动和删除知识库、文件夹及文档后立即刷新，无需退出重进。",
+    "commit": "f84a1c42d7d4a8730ebcd01a69b5386d8602babe",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.8",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.7",
+    "publishedAt": "2026-09-07T11:20:00+08:00",
+    "releaseNotes": "完善知识库标签创建、选择、清空与颜色设置，统一界面和右栏 SVG 图标。修复回写模式选中效果与窄栏布局，修复资料浏览中打开文档无响应及刷新后丢失目标的问题。保留 PDF 解析依赖内置修复。",
+    "commit": "4719b604f8d07d4249b79cffcf6b1d30cb133663",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.7",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.6",
+    "publishedAt": "2026-09-05T19:30:00+08:00",
+    "releaseNotes": "修复 3.0.5 安装包启动即崩溃的问题：知识库 PDF 解析依赖此前未随主程序打包，现改为整体内置，安装后即可正常启动并导入 PDF 资料。",
+    "commit": "406e56d517afb673c73ec9099fbdd8701a2627f0",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.6",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.5",
+    "publishedAt": "2026-09-05T12:00:00+08:00",
+    "releaseNotes": "新增独立知识库：支持多格式资料导入、目录整理、全文检索、版本恢复、会话与终端挂载及受控回写。重构知识库首页、创建弹窗和详情工作区，统一深浅色与右栏样式；项目、会话和标签支持搜索选择，增强草稿保护、键盘焦点和危险操作确认，并修复首次挂载失败问题。",
+    "commit": "5ab23d78cfe854e2aca7149d5679dcebb945f255",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.5",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.4",
+    "publishedAt": "2026-09-03T17:31:16+08:00",
+    "releaseNotes": "修复动画视频配音失败与停止无效问题：MiniMax 配音现在会准确区分 API Key、余额、额度、音色权限、内容和服务异常并给出处理建议；停止任务时会同步终止后台等待和完成通知，避免任务被再次唤醒。",
+    "commit": "46e6d93f578b5554f536675217f2bdd18a363f81",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.4",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.3",
+    "publishedAt": "2026-09-03T14:51:00+08:00",
+    "releaseNotes": "视频创作与图片创作升级为登录后固定一级菜单：动画视频保留先设置参数再开始创作的独立工作台；新增图文卡片与 AI 生图双工作台、右侧设置和成品预览。AI 生图限定 1K、1.5K、2K，并在聊天输入区直观管理参考图；图片与卡片产物写入当前工作目录，创作任务标题按实际需求生成。相关能力不再依赖管理端技能市场授权。",
+    "commit": "9d4aa350c0cf667abfc8325d380bca260a3e5d66",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.3",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.2",
+    "publishedAt": "2026-09-02T19:31:34+08:00",
+    "releaseNotes": "增强专家切换反馈：新建聊天选择市场专家时，示例问题区域会显示当前专家名，旧内容淡出、新内容逐条进入并带有轻微强调；系统开启减少动态效果时会安全取消动画，文案变化仍然保留。Rust Runtime 核心不变。",
+    "commit": "7eb33d44473436feecedb28a71671f63e7ee57dc",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.2",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.1",
+    "publishedAt": "2026-09-02T17:59:37+08:00",
+    "releaseNotes": "修复任务已经取消后，客户端重启恢复历史时仍错误显示为正在运行、再次点击停止无法结束的问题。Runtime 现在会在写入完成或取消终态前排空已入队消息，Desktop 同时兼容既有乱序会话记录，无需改写用户历史数据。",
+    "commit": "63d0dab1c778c97028385c87a686b1a305eb2473",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.1",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0",
+    "publishedAt": "2026-09-02T14:30:00+08:00",
+    "releaseNotes": "Desktop 进入 3.0.0 正式语义版本，不再使用 beta 后缀。内置图片工具升级为 Doubao Seedream 5.0 Pro，支持 1K、1.5K、2K 单图生成及最多 10 张参考图融合，移除旧 Lite 模型和组图参数；Rust Runtime 核心不变。",
+    "commit": "109c30112d88101d31c70c615e37c38e6e6b07d7",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.138",
+    "publishedAt": "2026-09-01T21:40:03+08:00",
+    "releaseNotes": "模型选择器改用后台独立配置的用户消费倍率，不再将售价/成本倍率作为用户价格感知；主界面标题栏新增积分余额，点击可进入账户资料页面。免费模型继续显示免费体验，旧管理端未下发倍率时安全降级；Rust Runtime 核心不变。",
+    "commit": "90c3edb11e5de56db8eb0d56f659c473f67d2b9b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.138",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.137",
+    "publishedAt": "2026-09-01T20:10:46+08:00",
+    "releaseNotes": "模型选择器改为简洁的名称与倍率列表，悬浮时展示模型介绍、能力和上下文等详情，并优化弹层圆角、留白与视觉层次；支持管理端下发的模型思考强度选项及跨厂商参数映射。客户端仅展示销售倍率，不暴露成本价；Rust Runtime 核心不变。",
+    "commit": "b951700ff917b4dcfa8dbf9e9e6c5e0beeea60d9",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.137",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.136",
+    "publishedAt": "2026-09-01T16:34:23+08:00",
+    "releaseNotes": "修复桌面端升级后内置技能说明仍停留在旧版本的问题。内置资源升级标记现在同时包含 Runtime 版本与 bundled 内容指纹；skill-creator 等内置技能内容变化后会在首次启动时自动覆盖旧提取文件，同内容后续启动保持快速路径，用户自建技能不受影响。Rust Agent 执行、会话、工具和权限核心逻辑不变。",
+    "commit": "86bebd31e085ec9c62905344dc08c201caddfca0",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.136",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.135",
+    "publishedAt": "2026-09-01T14:33:48+08:00",
+    "releaseNotes": "新增面向 Agent 的内置浏览器 TypeScript 自动化：覆盖鼠标、键盘、表单、导航、数据提取、页面脚本执行、确定性定位与多标签管理，并增强长操作连接、导航失败及弹窗页面可靠性。内置技能引导网页技能选择灵活观察、高速脚本或混合模式；自动工作目录改用毫秒时间命名。修复历史会话默认/全开权限在重新进入或重启后丢失。Rust Runtime 核心不变。",
+    "commit": "d19f1da80d8a1f52dc6fe4e5a88df9e79ab59713",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.135",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.134",
+    "publishedAt": "2026-08-31T17:50:59+08:00",
+    "releaseNotes": "内置浏览器新增原生富文本粘贴：可将 Markdown 转换工具复制的富文本粘贴到网页 contenteditable 编辑器，保留粗体、链接、表格以及目标编辑器接受的图片格式。工具通过短期元素引用定位可编辑目标，不读取、不回传或记录剪贴板正文，并继续沿用浏览器权限与审计边界。Rust Runtime 核心不变。",
+    "commit": "28433d73128d49d4f2375c81d3cfd793aa4ad94b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.134",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.133",
+    "publishedAt": "2026-08-31T14:18:20+08:00",
+    "releaseNotes": "新增聊天旁独立多标签预览工作台，支持 HTML、Markdown 的原文、渲染与分屏查看、工作区相对资源及系统默认应用打开；右侧工作区改为最右侧竖向活动栏，独立窗口保留横向导航。优化权限、运行详情、子 Agent、会话记忆与任务清单布局和反馈，修复折叠活动栏图标裁切及预览与文件栏同时展开时输入区模型、权限和发送操作溢出。Rust Runtime 核心不变。",
+    "commit": "d2c57d35fa8d2331873ef21ba4fa7154e43490d6",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.133",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.132",
+    "publishedAt": "2026-08-31T10:49:49+08:00",
+    "releaseNotes": "优化专家使用体验：精选专家详情安装按钮按专家名称显示；新建聊天将通用 Agent 更名为默认专家，新增独立默认头像和固定问法。修复默认专家、用户自建专家和多个精选专家之间头像与示例问题串用，精选展示元数据只关联已安装、明确托管且 runtimeName 精确匹配的专家。Rust Runtime 核心不变。",
+    "commit": "f5fa82daadb2566a01e5310b16eb5c7376fe7cd0",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.132",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.131",
+    "publishedAt": "2026-08-29T16:31:26+08:00",
+    "releaseNotes": "重做精选专家市场与详情展示，支持后台配置头像、标签、擅长领域和示例问题；点击示例可自动安装专家并进入新聊天。新建聊天同步显示专家头像和对应建议问题，专家详情居中展示。专家依赖的技能与 MCP 改为后台静默安装：不出现在用户管理列表，仍可被 Agent 发现；支持多专家共享、用户手动安装优先保留，并在卸载最后一个专家时联动清理。专家权限统一由聊天界面管理。Rust Runtime 核心不变。",
+    "commit": "656bdcab4b3e01d70a746c167b9799603534a341",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.131",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.130",
+    "publishedAt": "2026-08-29T14:35:01+08:00",
+    "releaseNotes": "修复内置浏览器中网页 JavaScript 弹窗已被页面自行关闭后，工具仍误判弹窗存在并持续阻塞后续点击的问题；Browser 服务现在同步清理弹窗关闭状态，并处理对话框在确认前已关闭的竞态，抖音、小红书等创作页面操作可继续执行。Rust Runtime 核心不变。",
+    "commit": "91dd0049b7d23e0381d23c97152c7bb1d777cc37",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.130",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.129",
+    "publishedAt": "2026-08-29T13:27:54+08:00",
+    "releaseNotes": "修复聊天输入区模型选择列表中，选中项背景遮挡上一模型能力标签的问题；模型卡片现在按标题、来源、描述及换行后的全部能力标签完整占位，并保持长列表滚动与不同显示缩放下布局稳定。Rust Runtime 核心不变。",
+    "commit": "7053ba0d6de44bd66548d03fab4e03711d53a56f",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.129",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.128",
+    "publishedAt": "2026-08-29T12:02:06+08:00",
+    "releaseNotes": "修复 Agent 工作期间消息加入队列在真实客户端因会话参数严格校验失败的问题，恢复多条消息按 Runtime 原生 FIFO 排队及停止时清空待发；修复长 Markdown 文件预览顶到 Windows 自绘标题栏后右上角关闭按钮无法点击。Rust Runtime 核心不变。",
+    "commit": "bf5a319f4ea65b9d71b9216df0236ffdc0c7d68c",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.128",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.127",
+    "publishedAt": "2026-08-29T10:11:06+08:00",
+    "releaseNotes": "优化长任务聊天体验：高频流式分片保持平滑逐字输出，处理计时持续递增；Agent 工作期间仍可继续输入，多条消息进入 Runtime 原生待发队列，并支持编辑、排序、删除和停止时一并取消。暂时停用可用性不足的内置 RPA Skill Builder，不影响浏览器 RPA 执行能力和用户已有自建流程。",
+    "commit": "b93dc64a9b2af82a8f5184b59d436f2e84b008f5",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.127",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.126",
+    "publishedAt": "2026-08-28T22:30:00+08:00",
+    "releaseNotes": "优化内置浏览器富文本输入，保留已有话题标签与光标选区，改善小红书话题联想、候选展示及 RPA 编辑器定位。补齐同源及嵌套 iframe 的元素发现、输入、点击、上传、拖拽与文本等待，修复坐标偏移和旧引用失效；跨域及沙箱隔离保持不变。改善停止操作失败与超时提示，允许重试，并增强异常诊断；Rust Runtime 核心不变。",
+    "commit": "1f30dbf8eeca77d42ae549a0c978354cdd466bc4",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.126",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.125",
+    "publishedAt": "2026-08-28T17:48:00+08:00",
+    "releaseNotes": "优化技能管理：已安装技能分为我的技能与内置技能，默认展示我的技能；修复市场卸载状态、重复卸载及本地目录冲突提示，技能详情支持自动换行。完善卸载结果一致性校验，避免误报成功。改善技能、MCP 和专家图标加载，增加有界缓存、并发去重和失败重试，降低慢网络下回退默认图标的概率。Rust Runtime 核心及交付文件收录规则不变。",
+    "commit": "1fcd27947c95b61e848562833c37e338d88ad6a0",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.125",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.124",
+    "publishedAt": "2026-08-28T16:15:00+08:00",
+    "releaseNotes": "优化聊天技能使用体验：选择技能后，聊天记录仅展示用户原文，不再追加技能提示，Agent 仍保留指定技能的使用意图，并兼容历史会话展示。修复技能详情抽屉大图标溢出遮挡内容，统一图标尺寸约束，保持窄窗口和正文预览正常。交付文件收录规则保持不变。",
+    "commit": "eb0ba6048fbe6b30fe4ddf89829c3fdee13aefed",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.124",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.123",
+    "publishedAt": "2026-08-28T15:00:00+08:00",
+    "releaseNotes": "修复精选资源图标加载：支持中央管理端上传图片及受限 Bing 缩略图，技能、MCP 和专家的市场与已安装图标保持一致。统一 MCP 和专家管理为技能同风格卡片，图标与标题同行，优化状态、操作按钮及窄窗口布局，保留配置、授权、启停和安装管理功能。",
+    "commit": "c9e0cd8ec8db22206c2588ee2ea973374991af59",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.123",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.122",
+    "publishedAt": "2026-08-28T12:52:00+08:00",
+    "releaseNotes": "新增聊天技能多选与斜杠入口，同一会话保留选择且不限制自动技能发现；未指定目录的聊天统一归入默认分组。优化授权卡片、处理步骤默认折叠及左右侧栏字体图标。工作区支持图片、视频和音频预览，默认显示文件、更改、浏览器，窄栏浏览器工具栏自适应；修复网页遮挡更多菜单，精简更改与快照展示，并统一主窗口和独立窗口控制按钮的完整悬浮效果。",
+    "commit": "5e3d22a47c3d3457cdb74a68db329047488d24eb",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.122",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.121",
+    "publishedAt": "2026-08-28T01:04:08+08:00",
+    "releaseNotes": "升级聊天展示：新增悬浮任务清单、处理计时、思考与工具步骤、子 Agent 和确认卡片，完成后默认折叠过程并突出最终交付；支持文件交付预览、打开和资源管理器定位，以及逐轮提问导航。优化技能与 MCP 的搜索筛选、卡片和抽屉管理，MCP 保留设置入口；统一展开箭头，修复短消息气泡宽度、工作区及侧栏文件夹和任务右键菜单。",
+    "commit": "c79d5f99130d9997cedc67e57142b976c8b74add",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.121",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.120",
+    "publishedAt": "2026-08-27T20:38:00+08:00",
+    "releaseNotes": "全面焕新桌面工作台：统一经典主题、窗口栏、侧边导航、设置与专家技能页面；优化新建会话、模型与权限选择、聊天思考和工具步骤、历史搜索、文件工作区及独立预览窗口；支持自定义主题配色和未选目录时自动创建工作目录，恢复账号级专家选择，并对齐精选专家、技能与 MCP 的管理端图片展示。",
+    "commit": "f7c7d207f57a9a5f3a8c1b68a15a6029b6cb85ef",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.120",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.119",
+    "publishedAt": "2026-08-26T17:49:28.686+08:00",
+    "releaseNotes": "修复 Agent 交付工作区本地图片时聊天区显示“图片不可用”的问题：现在兼容 Windows 绝对路径与相对路径在 Markdown 中产生的反斜杠和中文编码，可直接预览、放大和下载授权工作区内的 PNG、JPEG、GIF 与 WebP，同时继续拒绝工作区外路径、网络共享和远程图片。",
+    "commit": "198d202c8ecba41a40d04e12b7d16f10ef1a9963",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.119",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.118",
+    "publishedAt": "2026-08-25T18:27:45.354+08:00",
+    "releaseNotes": "修复精选技能与 MCP 的目录展示：管理后台分发的中文名称会优先显示，已安装或自动分发的精选项目在首次进入“我的技能”和“我的 MCP”时即可稳定出现，同时保持内部技术标识与用户已有技能正文不变。",
+    "commit": "0e8737b9f71c445e9146295e90e3bbd70b8c29e9",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.118",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.117",
+    "publishedAt": "2026-08-25T12:42:35.195+08:00",
+    "releaseNotes": "优化 MCP 与技能市场体验：精选 MCP 安装后立即启用并自动进入“我的 MCP”，支持继续编辑连接地址、命令、参数与环境变量；开放市场 MCP 安装后默认启用；统一“我的 MCP”卡片高度，并提高技能详情文字对比度。",
+    "commit": "99ffacc4a98567dde6fde556d123067ffa43eccb",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.117",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.116",
+    "publishedAt": "2026-08-24T14:49:15.182Z",
+    "releaseNotes": "修复贴牌客户端系统托盘仍显示默认图标的问题：管理端上传的 ICO 或 PNG 现在统一驱动 Windows 安装器、可执行文件、主窗口、拆分工作区窗口和系统托盘图标，同时保持旧品牌清单兼容。",
+    "commit": "c00aefdf9aea1639385f4940ecda17aa8fa6417b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.116",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.115",
+    "publishedAt": "2026-08-24T13:20:14.735Z",
+    "releaseNotes": "修复注册与找回密码请求在管理端未配置邮件服务时提示不准确的问题：客户端现在显示明确的邮件服务未配置提示，同时继续拦截任意远端错误详情，避免敏感服务信息进入界面。",
+    "commit": "1aa7b9da3206be762ebae0570be939a3eb8caff7",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.115",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.114",
+    "publishedAt": "2026-08-23T02:22:06.183Z",
+    "releaseNotes": "优化工作区体验：精调排版、主题配色与侧栏间距；工作区支持分离悬浮，窄布局提供纵向图标工具栏；工作区标题栏与聊天区对齐并移除重叠工具栏；文件菜单新增预览、复制相对路径与在资源管理器中显示。",
+    "commit": "e444d2db825e97d3ff82fdf30f1093086cf9cf64",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.114",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.113",
+    "publishedAt": "2026-08-22T06:24:04.892Z",
+    "releaseNotes": "增强内置浏览器 RPA 发布流程：支持向网页多选文件框一次上传最多 50 个工作区文件，保留单文件兼容与路径授权；新增声明式输入和上传动作、同源 iframe 元素识别，以及隐藏文件框和小红书发布控件定位，减少文件上传与发布按钮找不到的问题。",
+    "commit": "6e6151a600a424571578c61e8e256a5557cef25f",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.113",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.112",
+    "publishedAt": "2026-08-22T04:23:40.397Z",
+    "releaseNotes": "修复内置浏览器网页文件上传：优先通过浏览器 MCP 直接设置文件输入，常见上传按钮自动关联隐藏文件输入，无法解析时明确降级到 Computer Control 原生对话框。",
+    "commit": "19f11f4f27922d8f3d2561b68cceb041b1c4d266",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.112",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.111",
+    "publishedAt": "2026-08-22T03:57:44+08:00",
+    "releaseNotes": "修复 beta.110 安装包构建失败的问题：NSIS 安装脚本在卸载器编译阶段存在未被引用的函数定义，触发警告即错误导致打包中断；现改为宏内联展开，两个编译阶段均零警告通过，安装卸载防护逻辑保持不变。",
+    "commit": "c136ba976ed5c71e17a4015d4c87173bef014260",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.111",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.110",
+    "publishedAt": "2026-08-21T21:19:43+08:00",
+    "releaseNotes": "修复浏览器扩展导致无法卸载或升级的问题：原生宿主进程改从用户数据目录暂存运行，不再锁定安装目录；桌面端退出后宿主进程自动结束并注销浏览器原生注册，扩展重连改为指数退避；安装与卸载程序会先结束残留宿主进程并清理注册表与暂存文件，保障卸载与升级顺利完成。",
+    "commit": "412989e544f82b95b230125e92667e31409e0f84",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.110",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.109",
+    "publishedAt": "2026-08-21T16:43:19+08:00",
+    "releaseNotes": "修复 Windows 电脑操作视觉点击的小幅坐标偏移：统一 Windows Graphics Capture、PrintWindow、DWM 窗口边界与高 DPI 光标覆盖层的物理像素坐标，窗口移动或缩放后旧截图会安全失效；标准控件附近的视觉落点可通过 UIA 在 24 像素内有限吸附，正确点、歧义点和画布场景保持原坐标，并在动作后强制检查最新截图。",
+    "commit": "5f7ca4cb091214874d9b4b83dc996ebb2dcf98ff",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.109",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.108",
+    "publishedAt": "2026-08-21T13:00:00+08:00",
+    "releaseNotes": "导航精简：侧边栏移除“通用设置”与“关于我们”独立菜单，两项入口合并至账户中心新增的分类标签页中，功能保持不变。",
+    "commit": "adc92748309d4c746d25d3e77a5815edefc143c9",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.108",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.107",
+    "publishedAt": "2026-08-21T11:00:00+08:00",
+    "releaseNotes": "专家管理页简化：隐藏“产品主专家”“内置子专家”“高级配置”三个分类，仅保留“我的专家”与“精选市场”；MCP 管理与技能管理页面移除冗余说明文字，界面更简洁。",
+    "commit": "a6396c6eff7cab927194c20b0a223a338df463f7",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.107",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.106",
+    "publishedAt": "2026-08-20T19:50:00+08:00",
+    "releaseNotes": "界面文案优化：将界面中的“智能体”统一调整为“专家”，导航菜单“智能体管理”改为“专家”，专家市场等可见文案同步更名，内部功能与数据保持不变。专家管理页取消“工作区”作用域，仅保留全局专家目录，操作入口更聚焦。",
+    "commit": "e097a37cb3d12fe2ca51c9c0b3c12513bdc95ef8",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.106",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.105",
+    "publishedAt": "2026-08-20T16:50:00+08:00",
+    "releaseNotes": "图片生成体验完善：模型选择下拉仅展示文本类型模型，不再出现无法调用的图片模型；调用图片生成后 Agent 在对话中内联返回图片预览，支持点击放大与下载，无需再去本地目录寻找。附件能力增强：新建任务与聊天界面均支持拖拽上传图片或附件，聊天与新建任务的输入框支持识别剪切板中的文件与图片并自动暂存预览。",
+    "commit": "9bdd1a74507123144e86127c608bc10348fc203b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.105",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.104",
+    "publishedAt": "2026-08-20T13:20:00+08:00",
+    "releaseNotes": "新增图片生成基座能力：桌面端内置图片生成 MCP（agent_desktop_image，不可删除），暴露文生图、图生图与组图工具，基于管理端接入的 Doubao Seedream 5.0 lite 模型；生成产物自动保存到本机图片目录并为 Agent 返回可读本地路径，便于引导用户定位图片；水印默认关闭。",
+    "commit": "0bf6429b48c45c1014f4c9e9512b71a226bb27b2",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.104",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.103",
+    "publishedAt": "2026-08-20T00:00:00+08:00",
+    "releaseNotes": "修复 Windows 构建在 GitHub 网络波动时无法准备 scrcpy 组件的问题：scrcpy 3.3.3 固定资源改由中央依赖镜像提供，并继续执行压缩包与 scrcpy-server 的 SHA-256 校验；现有浏览器 RPA、宿主浏览器扩展和桌面功能保持不变。",
+    "commit": "f8a19f3c6ca6cd1a5a3cc7e496374e3b25c3527c",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.103",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.102",
+    "publishedAt": "2026-08-19T20:33:24+08:00",
+    "releaseNotes": "新增可迭代浏览器 RPA：Agent 可生成受限流程、连续执行、根据结构化错误调查页面变化，并将验证成功的流程保存或更新为全局技能；新增宿主浏览器扩展，登录态任务可操作 Edge 或 Chrome，支持点击、填表、滚动、悬浮、拖拽、标签页识别切换及新窗口续跑，公开调研仍优先使用内置浏览器。",
+    "commit": "f358f07656f3753d93490bf9bedc590381b00949",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.102",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.101",
+    "publishedAt": "2026-08-18T18:07:50+08:00",
+    "releaseNotes": "电脑操作改为客户端 Runtime 内置技能，不再依赖管理端授权下发；管理端不可达时仍可使用，现有安全确认、敏感输入保护、安全桌面限制与紧急停止机制保持不变。",
+    "commit": "56942dede9fc76f216b2f8a5ec8ba27837daccbf",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.101",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.100",
+    "publishedAt": "2026-08-18T00:00:00.000+08:00",
+    "releaseNotes": "修复多项目环境下视频成品预览显示 0:00 且无法播放的问题：视频工作台不再重复轮询引擎状态，状态未变化时保持组件稳定，成品预览按输出稳定加载，视频元素不会反复重建，时长与播放恢复正常；导出 MP4 与协议播放链路保持不变。",
+    "commit": "5800f86676483687f2872ab579cdfb6b01e76f6a",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.100",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.99",
+    "publishedAt": "2026-08-17T10:44:59.997+08:00",
+    "releaseNotes": "修复客户端冷启动后历史记录加载失败、首次任务长期停留在“正在启动”的问题：Runtime 启动现已纳入总超时并支持一次自动恢复，历史和新任务可在应用内重试；通用设置导出的脱敏诊断包新增模型桥、sidecar 握手、重试与启动耗时阶段，便于区分本地初始化与模型服务缓慢。",
+    "commit": "a121db48c4762ba09c613bfb8d945eb840d66253",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.99",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.98",
+    "publishedAt": "2026-08-16T16:48:32.818+08:00",
+    "releaseNotes": "新增浏览器 RPA 技能执行与自动修复：已安装技能可在内置浏览器中一次调用连续完成流程；定位器失效时 Agent 可基于结构化诊断仅修复失败步骤并续跑，修复按账户和流程版本安全持久化；新增统一安装校验、创作规范与可重复打包工具。",
+    "commit": "7edd6034ca71f33a4624aac809de3d5ddc22fedf",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.98",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.97",
+    "publishedAt": "2026-08-15T13:26:37.012+08:00",
+    "releaseNotes": "修复积分余额不足后又误报本地组件不可用的问题：模型请求返回 402 时保留积分不足提示，不再错误归类为 Runtime 故障；诊断报告同步区分模型业务拒绝与本地组件异常。",
+    "commit": "9e7ea7b5ada51c3a680162f7998a4e74f9683231",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.97",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.96",
+    "publishedAt": "2026-08-13T14:31:51.797Z",
+    "releaseNotes": "优化桌面工作区布局：将任务列表整合到主侧栏，支持侧栏折叠并精简新建任务页；收敛账户与扩展能力入口。重新设计全局记忆页面，支持文件展开与收起、新增记忆弹窗、低频说明折叠及轻量背景虚化。",
+    "commit": "020666d6c26b285daeaa43ed3786f148ea28e2dd",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.96",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.95",
+    "publishedAt": "2026-08-13T09:20:00.000Z",
+    "releaseNotes": "新增企业客户端账户模式：企业安装包仅允许企业预建员工登录，不显示自助注册；企业员工账户中心隐藏会员、积分兑换和个人消费入口，保留企业资料、安全与用量信息。智能体、MCP 和技能继续复用原有安装逻辑，并由管理端按企业或个人市场自动下发。",
+    "commit": "7b8dc32d6f62c8242e151c251d239e39bae51d33",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.95",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.94",
+    "publishedAt": "2026-08-13T02:12:31.069Z",
+    "releaseNotes": "修复计划模式完成后因退出审批协议缺失而静默停止的问题：计划完成时会显示明确的批准、修改或取消交互，并保持等待直到用户处理；同时在用户和 Agent 消息悬浮操作区显示消息时间，便于核对长任务执行顺序。",
+    "commit": "3f4f15221b8389e69eb0a9c2f4ffaf463fd2bc7a",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.94",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.93",
+    "publishedAt": "2026-08-12T09:05:33.575Z",
+    "releaseNotes": "优化 Windows 电脑操作稳定性：采用 UIA、OCR 与视觉坐标混合定位，统一高 DPI 和多屏坐标，支持应用启动、托盘窗口恢复、真实 Agent 鼠标与物理 ESC 急停；修复 MCP 启动超时、动作完成后重复操作及键盘动作缺少结果截图的问题。",
+    "commit": "15bf8bdeb708c4ebb79f81a4e27565b0049cdb8a",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.93",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.92",
+    "publishedAt": "2026-08-12T04:12:35.425Z",
+    "releaseNotes": "电脑操作能力接入管理端内置授权分发，正式安装客户端可自动启用电脑操作 MCP，并提供准确的未授权诊断；同时修复后台并行任务因交互请求被误取消、视频任务切换工作区跳回日常任务，以及任务完成后旧失败状态覆盖成功结果的问题。",
+    "commit": "afcd623fc104f79b03c21309cb5c1600e9a8ad97",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.92",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.91",
+    "publishedAt": "2026-08-12T00:34:29.769Z",
+    "releaseNotes": "修复长任务结束后后台命令完成通知被当作用户消息反复唤醒 Agent 的问题：内部通知不再产生空白气泡或重复答复；无工具工作的连续通知由本地保护结束，真实后台任务仍可继续执行。",
+    "commit": "f4e04d08656dbdb6ba6d8ee30f73bd28ba3aec9c",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.91",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.90",
+    "publishedAt": "2026-08-11T10:42:23.025Z",
+    "releaseNotes": "新增智能体执行模型与视觉委派：自定义智能体可固定使用指定模型；纯文本主模型遇到图片时可自动委派给视觉智能体识别并继续执行。同时修复超长历史会话标题导致任务列表和新建会话异常的问题。",
+    "commit": "078df9bae906794b4afed0609514656597d16497",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.90",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.89",
+    "publishedAt": "2026-08-11T18:00:00+08:00",
+    "releaseNotes": "修复纯文本模型在工具读取截图或图片后收到 image_url 而请求失败的问题：Desktop 模型代理会安全降级图片内容并保留文本与 UIA 信息；视觉模型仍可正常接收图片。",
+    "commit": "552babe02292825d9533a2877153879a76db1137",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.89",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.88",
+    "publishedAt": "2026-08-11T17:10:00+08:00",
+    "releaseNotes": "修复电脑控制 helper 在非交互构建会话中健康探针错误初始化 DPI/COM 的问题，使构建机健康检查可稳定通过。",
+    "commit": "3d9450188a7d29301bf72ed3400736c5dc2d613a",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.88",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.87",
+    "publishedAt": "2026-08-11T16:46:03+08:00",
+    "releaseNotes": "新增 Windows 电脑控制：可发现、启动并操作经用户授权的桌面应用，提供可视 Agent 鼠标、语义控件操作与紧急停止；截图改用 Windows Graphics Capture，修复黑屏，并优化模型选择弹层与内置 MCP 管理。",
+    "commit": "6fa1b72dfcd725b3900188764a16853f9b61ea66",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.87",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.86",
+    "publishedAt": "2026-08-11T13:36:37+08:00",
+    "releaseNotes": "修复任务列表“更多”按钮图标缺失；历史会话恢复期间会等待工作区就绪后再加载文件树，避免首次打开时误报路径超出授权工作区。",
+    "commit": "1796e163e32b54626d18ecf73d800ba214c76901",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.86",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.85",
+    "publishedAt": "2026-08-11T12:20:00+08:00",
+    "releaseNotes": "优化聊天流式输出：缩短内容同步间隔，并以平滑逐字方式呈现已接收文本，减少整段跳出带来的卡顿感。",
+    "commit": "215ce74c2bed0c50870a8b6dd884addd8d0e85e3",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.85",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.84",
+    "publishedAt": "2026-08-11T12:00:00+08:00",
+    "releaseNotes": "优化聊天界面响应式布局：独立工作区会充分利用可用宽度，安全确认与咨询卡片可随窗口收缩，统一聊天区域两侧底色并改善小窗口显示。",
+    "commit": "5f7a612c33e856630aea1e659db89c65c8738176",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.84",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.83",
+    "publishedAt": "2026-08-11T10:27:31+08:00",
+    "releaseNotes": "选择性采纳上游运行时稳定性改进，优化模型限流重试、任务队列、搜索与诊断；修复 MCP 大图和截图工具链、聊天图片预览，并恢复重启后多模态会话的识图能力。",
+    "commit": "841bb627a68c39a554ecfc1746396513e4893a0e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.83",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.82",
+    "publishedAt": "2026-08-10T21:40:00+08:00",
+    "releaseNotes": "修复移除附件时误报请求格式无效，新增输入区图片缩略图和文件卡片，并在已发送的用户消息中展示附件。",
+    "commit": "1ab80a53a4baca2493a1f66e4a00b45b3b6e9821",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.82",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.81",
+    "publishedAt": "2026-08-10T16:47:20+08:00",
+    "releaseNotes": "新增精选智能体依赖授权安装与只读删除，完善技能、MCP 及组合依赖校验，并统一智能体、技能和 MCP 市场卡片布局。",
+    "commit": "9e70cbaa2af3fc7c65d3e01098d704e33c666c9e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.81",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.80",
+    "publishedAt": "2026-08-10T14:20:15+08:00",
+    "releaseNotes": "修复视频模板保存与视频 MCP 分页稳定性，完善字幕背景、字号、位置和颜色调节，并优化视频任务标题与更新弹窗显示。",
+    "commit": "02cccf1e34168970129445426fea81b23cc7fc1f",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.80",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.79",
+    "publishedAt": "2026-08-10T12:15:00+08:00",
+    "releaseNotes": "新建普通任务和视频任务会先按首句即时命名，随后由运行时生成更简短的标题；用户手动修改标题后不会被自动覆盖。",
+    "commit": "26e69aa278bea3c25ce47421fb78abfe159e0aa1",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.79",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.78",
+    "publishedAt": "2026-08-10T10:45:00+08:00",
+    "releaseNotes": "恢复桌面端最近10个3.x版本的更新历史，并将有限历史安全传递到代理商项目更新清单。",
+    "commit": "75c1c12630c3def0443a4793390b90394692323c",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.78",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.77",
+    "publishedAt": "2026-08-10T10:18:38+08:00",
+    "releaseNotes": "简化管理端与桌面端发版边界，桌面端改为单一源码清单，并移除旧地址和双清单回退兼容。",
+    "commit": "5637c6f21731211222a9fefcaed17e19878ae35c",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.77",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.76",
+    "publishedAt": "2026-08-10T09:34:41+08:00",
+    "releaseNotes": "优化客户端更新弹窗背景遮罩，取消与 Windows 原生标题栏产生视觉割裂的背景模糊。",
+    "commit": "fb09516fb2f9cec78b6aa06b0419642a0d7c1de7",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.76",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.75",
+    "publishedAt": "2026-08-10T00:03:22+08:00",
+    "releaseNotes": "优化 Agent 提问确认卡片，并修复提交回答后 Agent 无法正确接收反馈的问题。",
+    "commit": "58082916106c1c2ca9a7c33fd2a9029da0b3d068",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.75",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.74",
+    "publishedAt": "2026-08-09T23:24:47+08:00",
+    "releaseNotes": "优化定时任务空状态和全局输入焦点样式，并修复组合控件出现双重焦点边框的问题。",
+    "commit": "0e4824dae4941802304ef9e4d3d28bb3f454171b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.74",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.73",
+    "publishedAt": "2026-08-09T22:16:21+08:00",
+    "releaseNotes": "统一优化智能体、技能、MCP、定时任务、手机控制、账户与通用设置页面。",
+    "commit": "7db0bbf4fcc101426c91d63bd6921b11aa7b4b70",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.73",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.72",
+    "publishedAt": "2026-08-08T23:22:07+08:00",
+    "releaseNotes": "视频设置移至工作区侧栏，系统模板和我的模板支持分页浏览。",
+    "commit": "20abb5c32d71ab8f04b0799209cbbe9b39d99e11",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.72",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.71",
+    "publishedAt": "2026-08-08T21:49:37+08:00",
+    "releaseNotes": "修复长任务仍在后台运行时误报本地组件不可用，并增强超时与失败诊断。",
+    "commit": "e16bbb78d3e7824376fd93f44e453a62938a047e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.71",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.70",
+    "publishedAt": "2026-08-08T18:59:02+08:00",
+    "releaseNotes": "优化长历史会话加载和后台运行表现，修复窄工作区中的消息裁剪。",
+    "commit": "766961a3ae331590984528cd9dd8af29a2ac3a95",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.70",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.69",
+    "publishedAt": "2026-08-08T17:17:24+08:00",
+    "releaseNotes": "增强全局脱敏诊断，覆盖聊天、工具、模型请求、重试限流、子任务和渲染异常。",
+    "commit": "205d403089841c37f67df2dc8ad126f3fb92b472",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.69",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.68",
+    "publishedAt": "2026-08-07T17:30:47+08:00",
+    "releaseNotes": "视频创作支持自定义时长、长视频分镜、分镜缓存、失败定位和单镜头重试。",
+    "commit": "e9ac3e8a390b8076a70049efefbc3816315ee459",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.68",
+    "recordType": "release"
+  },
+  {
+    "version": "3.0.0-beta.67",
+    "publishedAt": "2026-08-07T12:10:52+08:00",
+    "releaseNotes": "",
+    "commit": "984a2d6ba8c6ed4e3c5e077a753945edcaa18152",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.67",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.66",
+    "publishedAt": "2026-08-07T11:58:32+08:00",
+    "releaseNotes": "",
+    "commit": "d20bfc772a4f545b2d3d69b0413885a31c979566",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.66",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.65",
+    "publishedAt": "2026-08-07T10:29:52+08:00",
+    "releaseNotes": "",
+    "commit": "083d1669a452d0e472e572ec031b93fad27f566b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.65",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.64",
+    "publishedAt": "2026-08-06T22:48:01+08:00",
+    "releaseNotes": "",
+    "commit": "0d6958d7e1600b7b01495c0d21e854c56a0dcc85",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.64",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.63",
+    "publishedAt": "2026-08-06T17:37:05+08:00",
+    "releaseNotes": "",
+    "commit": "59b751eacb186e70df38efc85a74fee356036971",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.63",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.62",
+    "publishedAt": "2026-08-06T13:46:37+08:00",
+    "releaseNotes": "",
+    "commit": "883438cbac0e44ca0f91e6fe485a3ebd7e7889c8",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.62",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.61",
+    "publishedAt": "2026-08-06T13:12:04+08:00",
+    "releaseNotes": "",
+    "commit": "afbfa738adb317841ad7c4909a8c65d75862c0bd",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.61",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.60",
+    "publishedAt": "2026-08-05T23:09:29+08:00",
+    "releaseNotes": "",
+    "commit": "ff41e5d0c7ea399b17c3ad88d7bd6d7939363869",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.60",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.59",
+    "publishedAt": "2026-08-05T20:02:42+08:00",
+    "releaseNotes": "",
+    "commit": "a90a42ab8b1f852e294bf703dbdd4b544208be85",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.59",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.58",
+    "publishedAt": "2026-08-05T18:45:56+08:00",
+    "releaseNotes": "",
+    "commit": "c40759354dbb8f88c516cfa1974e8538c10af74e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.58",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.57",
+    "publishedAt": "2026-08-05T18:29:09+08:00",
+    "releaseNotes": "",
+    "commit": "46a39141f508b02fd6404defd43b0cfcb8723676",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.57",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.56",
+    "publishedAt": "2026-08-05T16:33:34+08:00",
+    "releaseNotes": "",
+    "commit": "471257533659db8ed27ce20cbf616ae3c33a8749",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.56",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.55",
+    "publishedAt": "2026-08-05T11:48:55+08:00",
+    "releaseNotes": "",
+    "commit": "436f6b84d16c96598d68f1552bd971e5e42cd4e5",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.55",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.54",
+    "publishedAt": "2026-08-05T08:36:09+08:00",
+    "releaseNotes": "",
+    "commit": "9ec967e7cc0d0177327955eccb5da4530d76f9fa",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.54",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.53",
+    "publishedAt": "2026-08-04T21:02:45+08:00",
+    "releaseNotes": "",
+    "commit": "9770ba656a20b15777259b641790abe50541946f",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.53",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.52",
+    "publishedAt": "2026-08-04T18:32:08+08:00",
+    "releaseNotes": "",
+    "commit": "872ce0a8f4a05acc03d723964fda0db6be8bb99b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.52",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.51",
+    "publishedAt": "2026-08-04T14:04:08+08:00",
+    "releaseNotes": "",
+    "commit": "05a662735ed1c32ce75573976847fe9c1104ba78",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.51",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.50",
+    "publishedAt": "2026-08-03T21:38:26+08:00",
+    "releaseNotes": "",
+    "commit": "b0eee7775c37cbfdc4db49ac5093e8484a578380",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.50",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.49",
+    "publishedAt": "2026-08-03T17:00:47+08:00",
+    "releaseNotes": "",
+    "commit": "81dbaac8c1061de6fb4d6c2bb286c3dfba5d21e3",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.49",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.48",
+    "publishedAt": "2026-08-03T14:03:11+08:00",
+    "releaseNotes": "",
+    "commit": "b4ad64b5ea96f228bf66593612c5409367148c59",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.48",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.47",
+    "publishedAt": "2026-08-02T21:35:55+08:00",
+    "releaseNotes": "",
+    "commit": "d1a24b360a46180dbbdfe6eb90b55c89d9d064de",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.47",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.46",
+    "publishedAt": "2026-08-02T14:11:42+08:00",
+    "releaseNotes": "",
+    "commit": "3db08aa9609eb8d8da8132c3907a61ad20257679",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.46",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.45",
+    "publishedAt": "2026-08-01T18:11:11+08:00",
+    "releaseNotes": "",
+    "commit": "108e102f49506bad814ab732bbdb39f2caf77e48",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.45",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.44",
+    "publishedAt": "2026-08-01T17:56:55+08:00",
+    "releaseNotes": "",
+    "commit": "f7fd32b722f6db0416af9e885435f3b3b40bc5b5",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.44",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.43",
+    "publishedAt": "2026-08-01T00:39:16+08:00",
+    "releaseNotes": "",
+    "commit": "c8e574a1dbf2ac8f58ed838350928326be48ea04",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.43",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.42",
+    "publishedAt": "2026-07-31T23:34:39+08:00",
+    "releaseNotes": "",
+    "commit": "c8dfdf5be6946b4a076e7ddcee5cccd37539b258",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.42",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.41",
+    "publishedAt": "2026-07-31T16:55:34+08:00",
+    "releaseNotes": "",
+    "commit": "1117ccaf2ba28c73e4a3678e3a1d04d77cc12a7a",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.41",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.40",
+    "publishedAt": "2026-07-31T15:36:03+08:00",
+    "releaseNotes": "",
+    "commit": "8c55acc3b67472e7c79a17fa824283659e9cc9d5",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.40",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.39",
+    "publishedAt": "2026-07-31T14:12:12+08:00",
+    "releaseNotes": "",
+    "commit": "584c26c5b63178c4a9a01e03293b1c75c0bfa8c0",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.39",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.38",
+    "publishedAt": "2026-07-31T09:13:54+08:00",
+    "releaseNotes": "",
+    "commit": "5b8508ac41d1afe40b1553e66dfd1334298ae1ac",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.38",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.37",
+    "publishedAt": "2026-07-31T01:19:24+08:00",
+    "releaseNotes": "",
+    "commit": "936026ed18dfa526d077e507475eb4496c82beb2",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.37",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.36",
+    "publishedAt": "2026-07-31T00:06:05+08:00",
+    "releaseNotes": "",
+    "commit": "cd356a4444945b73fcc8c7fdfbfce16d32c83c5e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.36",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.35",
+    "publishedAt": "2026-07-30T21:59:54+08:00",
+    "releaseNotes": "",
+    "commit": "87cab6f895d79dbca8b4372da16e51e173fd1647",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.35",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.34",
+    "publishedAt": "2026-07-30T19:06:22+08:00",
+    "releaseNotes": "",
+    "commit": "a2cf9344a0ad54be0ba5f05ecd67e53a16e0c4c5",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.34",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.33",
+    "publishedAt": "2026-07-30T16:36:20+08:00",
+    "releaseNotes": "",
+    "commit": "f9f953c6f24af00885ce3d0b5db0b275a12b9e55",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.33",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.32",
+    "publishedAt": "2026-07-29T22:28:24+08:00",
+    "releaseNotes": "",
+    "commit": "baf79634faa943b2b6627b11966326023c6ca576",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.32",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.31",
+    "publishedAt": "2026-07-29T17:40:54+08:00",
+    "releaseNotes": "",
+    "commit": "c95c9de4d93e5fe60315f50f47ab29b3a69de182",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.31",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.30",
+    "publishedAt": "2026-07-29T16:16:15+08:00",
+    "releaseNotes": "",
+    "commit": "d735ba79eb4c1a00e4c4bd384538e47e0dac1a95",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.30",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.29",
+    "publishedAt": "2026-07-29T15:36:45+08:00",
+    "releaseNotes": "",
+    "commit": "6ba3e4de937f980fb7e957ac47a62afc2f8e9c4b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.29",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.28",
+    "publishedAt": "2026-07-29T12:38:04+08:00",
+    "releaseNotes": "",
+    "commit": "d891d146a8e515bb59f65a0efadc3d2d6cee6b1e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.28",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.27",
+    "publishedAt": "2026-07-29T09:15:04+08:00",
+    "releaseNotes": "",
+    "commit": "b1f15492147d132db626454ad295ee884eb57919",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.27",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.26",
+    "publishedAt": "2026-07-28T23:09:45+08:00",
+    "releaseNotes": "",
+    "commit": "43d279c5ee45ec5d098ee36b8a5540d8054e8862",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.26",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.25",
+    "publishedAt": "2026-07-28T21:20:10+08:00",
+    "releaseNotes": "",
+    "commit": "263442abc676260c41bdea52d56bf8ef1010528a",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.25",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.24",
+    "publishedAt": "2026-07-28T16:07:56+08:00",
+    "releaseNotes": "",
+    "commit": "05734899da36b25ea3263ec66fdfd1249a86f302",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.24",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.23",
+    "publishedAt": "2026-07-28T13:27:13+08:00",
+    "releaseNotes": "",
+    "commit": "7a4e18201cac12db687980cef0107388df68f070",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.23",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.22",
+    "publishedAt": "2026-07-28T11:04:14+08:00",
+    "releaseNotes": "",
+    "commit": "7d010e9d933d33fdfbefa07c9a5f7a03920f45b7",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.22",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.21",
+    "publishedAt": "2026-07-27T23:20:08+08:00",
+    "releaseNotes": "",
+    "commit": "77e1377190ce98f4c4c69b82a873afda60a0488e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.21",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.20",
+    "publishedAt": "2026-07-27T22:29:04+08:00",
+    "releaseNotes": "",
+    "commit": "ed14f29d516f88de484b2a43901a2accb4ba2629",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.20",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.19",
+    "publishedAt": "2026-07-27T20:10:19+08:00",
+    "releaseNotes": "",
+    "commit": "61b2437aee59fda0483b5e70661aa10592e7aaaa",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.19",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.18",
+    "publishedAt": "2026-07-27T18:56:03+08:00",
+    "releaseNotes": "",
+    "commit": "c5515da14ee0acc0af7f32b1af98bdb4ce554641",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.18",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.17",
+    "publishedAt": "2026-07-27T18:18:28+08:00",
+    "releaseNotes": "",
+    "commit": "246f4763ff5aff520f62c12e42aae2054120a89e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.17",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.16",
+    "publishedAt": "2026-07-27T17:49:17+08:00",
+    "releaseNotes": "",
+    "commit": "f1f0ab42fd427db162507b1082cf23a7838ad5fb",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.16",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.15",
+    "publishedAt": "2026-07-27T13:33:27+08:00",
+    "releaseNotes": "",
+    "commit": "b073ad269e93c986be278a5d96039d2ce4afad0e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.15",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.14",
+    "publishedAt": "2026-07-27T10:44:14+08:00",
+    "releaseNotes": "",
+    "commit": "d6f649d290f55f54c85dc4f39f35012e69dd9da8",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.14",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.13",
+    "publishedAt": "2026-07-26T15:22:58+08:00",
+    "releaseNotes": "",
+    "commit": "f645c9311cf4756a4acf2dc887a1118aae3f5a6a",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.13",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.12",
+    "publishedAt": "2026-07-25T12:48:02+08:00",
+    "releaseNotes": "",
+    "commit": "22cbde15eaf993b319e63f650aac78ded027a939",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.12",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.11",
+    "publishedAt": "2026-07-24T17:31:59+08:00",
+    "releaseNotes": "",
+    "commit": "32a461a038bd14c070c9dea897bd0e117210928b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.11",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.10",
+    "publishedAt": "2026-07-24T16:33:07+08:00",
+    "releaseNotes": "",
+    "commit": "b189cd95626587e9fa5a88e36374248d38e8a966",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.10",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.9",
+    "publishedAt": "2026-07-24T15:10:25+08:00",
+    "releaseNotes": "",
+    "commit": "0dc8fd9434a4d0d798610275ca9394008f7f90f6",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.9",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.8",
+    "publishedAt": "2026-07-24T13:58:11+08:00",
+    "releaseNotes": "",
+    "commit": "64450728bbbb145eb5fb3bae693621936ccb6f44",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.8",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.7",
+    "publishedAt": "2026-07-24T13:49:06+08:00",
+    "releaseNotes": "",
+    "commit": "5aeb5a7a7a83e43dd3dbc47822a911355131f82e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.7",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.6",
+    "publishedAt": "2026-07-24T13:37:29+08:00",
+    "releaseNotes": "",
+    "commit": "a18871ea177c858a429aa70372d97e101b929342",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.6",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.5",
+    "publishedAt": "2026-07-24T12:40:01+08:00",
+    "releaseNotes": "",
+    "commit": "fc31f62cf68c8efa8aa99777de3efade3d97e91e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.5",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.4",
+    "publishedAt": "2026-07-24T11:02:22+08:00",
+    "releaseNotes": "",
+    "commit": "76b759d7399c9babe2ff68b7268297a43c560fef",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.4",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.3",
+    "publishedAt": "2026-07-24T09:05:28+08:00",
+    "releaseNotes": "",
+    "commit": "02d2e4fec4d6c915766c4106323792533d867148",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.3",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.2",
+    "publishedAt": "2026-07-24T00:40:52+08:00",
+    "releaseNotes": "",
+    "commit": "759fa0865fb1e5c006b0d370259b3af0caa8894d",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.2",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "3.0.0-beta.1",
+    "publishedAt": "2026-07-23T22:26:28+08:00",
+    "releaseNotes": "",
+    "commit": "d75b6b2228c05933ab2ed9303dbd01a94ba92efa",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.0-beta.1",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.17",
+    "publishedAt": "2026-07-23T21:43:18+08:00",
+    "releaseNotes": "",
+    "commit": "7f17907f002bb1688109e13c1f8dad68bc4373e6",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v2.0.0-beta.17",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.97",
+    "publishedAt": "2026-07-14T17:03:42+08:00",
+    "releaseNotes": "",
+    "commit": "43aad98d262207f5f23d0df5f75232f6f3b5a8c0",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.97",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.96",
+    "publishedAt": "2026-07-14T16:12:47+08:00",
+    "releaseNotes": "",
+    "commit": "79cbb01ef83c9d9e636ad407057fe888b7f982e6",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.96",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.95",
+    "publishedAt": "2026-07-14T11:04:28+08:00",
+    "releaseNotes": "",
+    "commit": "3029afcb0c8a4c26eb6a038cc9ebde913b0e23cd",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.95",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.94",
+    "publishedAt": "2026-07-13T18:25:16+08:00",
+    "releaseNotes": "",
+    "commit": "5b8e05aef242700c2a4e453bb153d3329a9a77fc",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.94",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.93",
+    "publishedAt": "2026-07-13T17:08:57+08:00",
+    "releaseNotes": "",
+    "commit": "0c8468615d0d3b6a6bb2f50cc8bd5267fa3a7060",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.93",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.92",
+    "publishedAt": "2026-07-13T16:14:09+08:00",
+    "releaseNotes": "",
+    "commit": "5c7e13776578941c43a8af57da1e550f3e0c561a",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.92",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.91",
+    "publishedAt": "2026-07-13T15:40:57+08:00",
+    "releaseNotes": "",
+    "commit": "40a543708400bb896c25f11c9a61c668786d502e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.91",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.90",
+    "publishedAt": "2026-07-13T14:55:33+08:00",
+    "releaseNotes": "",
+    "commit": "54e46e38d348554616eae1f2e2f957e7f00aa5bb",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.90",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.89",
+    "publishedAt": "2026-07-13T14:30:27+08:00",
+    "releaseNotes": "",
+    "commit": "7abca8dd7bae89c5baf9534e80ce2980f608c4ee",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.89",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.88",
+    "publishedAt": "2026-07-13T10:56:16+08:00",
+    "releaseNotes": "",
+    "commit": "d4963acc27758d605329881a2593f05a98fa6ccf",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.88",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.87",
+    "publishedAt": "2026-07-11T18:45:00+08:00",
+    "releaseNotes": "",
+    "commit": "5d01d87434f0497b6da0b11892efdcd42aa8c6da",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.87",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.86",
+    "publishedAt": "2026-07-10T16:11:06+08:00",
+    "releaseNotes": "",
+    "commit": "fc85c5aa3a68571639faf80eedb7fe5e88c9cfe4",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.86",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.85",
+    "publishedAt": "2026-07-10T11:08:54+08:00",
+    "releaseNotes": "",
+    "commit": "87b4c0327d9bdbfd49cce596e7fead290659a68d",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.85",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.84",
+    "publishedAt": "2026-07-09T23:41:59+08:00",
+    "releaseNotes": "",
+    "commit": "fe7b50d607dcd525de5d1c0b190d18a59a76a0e5",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.84",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.83",
+    "publishedAt": "2026-07-09T18:14:47+08:00",
+    "releaseNotes": "",
+    "commit": "46a5ab9e280bc038fc1749b6cff09e63cdb42b2a",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.83",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.82",
+    "publishedAt": "2026-07-09T09:06:50.790Z",
+    "releaseNotes": "新增博查联网搜索：后台支持搜索模型、Key 池和按次计费，桌面端 Agent 增加 web_search 工具。",
+    "commit": "6f686291ac0bc6ac9f0cfc434e2e20442d7497c1",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.82",
+    "recordType": "git"
+  },
+  {
+    "version": "1.0.81",
+    "publishedAt": "2026-07-08T13:09:27.643Z",
+    "releaseNotes": "兑换码兑换请求携带客户端项目、渠道、设备和版本来源，管理后台可追踪兑换发生在哪个客户端和电脑。",
+    "commit": "1f490ef97e885f90906c960a09766178027d4396",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.81",
+    "recordType": "git"
+  },
+  {
+    "version": "1.0.80",
+    "publishedAt": "2026-07-08T10:12:21.146Z",
+    "releaseNotes": "注册流程增加邮箱验证码校验和密码二次确认。\n登录页新增邮箱找回密码流程，并接入管理端邮件验证码接口。\n优化找回密码错误提示，邮箱不存在或验证码错误时给出更明确提示。",
+    "commit": "90e9483c199b30ca3cfd8f5153f4eb7ee336ba01",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.80",
+    "recordType": "git"
+  },
+  {
+    "version": "1.0.79",
+    "publishedAt": "2026-07-08T07:57:52.233Z",
+    "releaseNotes": "聊天输入框支持直接粘贴剪贴板图片作为参考图片附件。",
+    "commit": "bf798aba93ceb5ea8357d481fe206ce4cf67e091",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.79",
+    "recordType": "git"
+  },
+  {
+    "version": "1.0.78",
+    "publishedAt": "2026-07-08T07:37:21.232Z",
+    "releaseNotes": "聊天输入区支持直接拖拽图片上传。\nAgent 文件变更支持显示本轮修改文件数量、unified diff 对比和撤销本轮修改。",
+    "commit": "5dc128871bf27858e9e8874139f54f9f8690df27",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.78",
+    "recordType": "git"
+  },
+  {
+    "version": "1.0.77",
+    "publishedAt": "2026-07-08T05:02:10.514Z",
+    "releaseNotes": "仅升级 Agent 桌面端版本号，用于验证管理后台是否能正常检测到新版更新。",
+    "commit": "15c41b0a23c939f34dcb688dfc43d7318b025c55",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.77",
+    "recordType": "git"
+  },
+  {
+    "version": "1.0.76",
+    "publishedAt": "2026-07-08T03:51:17.128Z",
+    "releaseNotes": "修复 AI 构建时登录 Logo 未落盘导致品牌配置环境变量过大的问题，避免 npm 启动时报 spawnSync npm E2BIG。",
+    "commit": "e17b091e78db749c88922b96c8cf4e9a1d4e061f",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.76",
+    "recordType": "git"
+  },
+  {
+    "version": "1.0.75",
+    "publishedAt": "2026-07-08T02:51:29.650Z",
+    "releaseNotes": "修复 AI 构建客户端本地配置目录命名：优先使用原始项目 ID，例如项目 777777 使用 .777777。\n升级后首次启动会从旧的 .supplier-*-项目ID 目录迁移已有配置、登录态和工作数据。",
+    "commit": "47646e300c92023fe404948c9c03aeca362d8810",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.75",
+    "recordType": "git"
+  },
+  {
+    "version": "1.0.74",
+    "publishedAt": "2026-07-08T01:59:56.723Z",
+    "releaseNotes": "修复定时任务查看时工具日志裸展示的问题，改为结构化折叠展示；定时任务工作目录支持选择文件夹；模型选择改为下拉选择。",
+    "commit": "58fe2245f29fe54da5c3bddc3eaedd38bb8f1a5c",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.74",
+    "recordType": "git"
+  },
+  {
+    "version": "1.0.73",
+    "publishedAt": "2026-07-08T00:39:31+08:00",
+    "releaseNotes": "",
+    "commit": "35c111f800404648477f3a57351dce08ea071bfd",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.73",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.72",
+    "publishedAt": "2026-07-07T17:10:34+08:00",
+    "releaseNotes": "",
+    "commit": "0fb8cd43416b02f0d5ea5c7087fd3e5ab684c8a4",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.72",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.71",
+    "publishedAt": "2026-07-06T15:56:18+08:00",
+    "releaseNotes": "",
+    "commit": "d9563fc0794837b35fc0fa3f25f81d83bca70c7e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.71",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.70",
+    "publishedAt": "2026-07-06T15:02:24+08:00",
+    "releaseNotes": "",
+    "commit": "7e544d1bf5077322ae72949f83b37eb602ef24f2",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.70",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.69",
+    "publishedAt": "2026-07-06T13:39:23+08:00",
+    "releaseNotes": "",
+    "commit": "135338f30157a55137ebbb46527b19396fef22f7",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.69",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.68",
+    "publishedAt": "2026-07-06T13:26:47+08:00",
+    "releaseNotes": "",
+    "commit": "5ac22ed51ed988edfccb7371058f126e568907df",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.68",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.67",
+    "publishedAt": "2026-07-06T13:06:54+08:00",
+    "releaseNotes": "",
+    "commit": "e181973a456f3c1b366f83460d7d67b6148fef28",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.67",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.66",
+    "publishedAt": "2026-07-05T16:18:12+08:00",
+    "releaseNotes": "",
+    "commit": "0c4723ae8dabc768b0e8e747995003eda7170c5b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.66",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.65",
+    "publishedAt": "2026-07-05T12:58:08+08:00",
+    "releaseNotes": "",
+    "commit": "45f8e2362ca74983ac389b376af42522110069e9",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.65",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.64",
+    "publishedAt": "2026-07-04T22:48:00+08:00",
+    "releaseNotes": "",
+    "commit": "44fe33e7d1031b8870aee15fb751674ad70bf71f",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.64",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.63",
+    "publishedAt": "2026-07-04T21:27:06+08:00",
+    "releaseNotes": "",
+    "commit": "0ad0920c35beaa7af31927cd198a6ea8d60bd3fa",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.63",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.62",
+    "publishedAt": "2026-07-03T12:55:35+08:00",
+    "releaseNotes": "",
+    "commit": "8d0e657264b5018365eb76a6c274818e66ca1c3f",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.61",
+    "publishedAt": "2026-07-03T12:16:22+08:00",
+    "releaseNotes": "",
+    "commit": "aaf096d1dbedf8c7ccea6301c7107c58731e8200",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.60",
+    "publishedAt": "2026-07-02T17:15:54+08:00",
+    "releaseNotes": "",
+    "commit": "edd221986d23d98e547834622db8b50dfa2b30ab",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.60",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.59",
+    "publishedAt": "2026-07-02T12:47:47+08:00",
+    "releaseNotes": "",
+    "commit": "e75ef576124eef3fab21a9bd52c5f891c0b3a759",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.59",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.58",
+    "publishedAt": "2026-07-01T19:28:53+08:00",
+    "releaseNotes": "",
+    "commit": "94317a6cc00eb2700c5d631de0e14fbef7ccdec9",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.58",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.57",
+    "publishedAt": "2026-07-01T15:00:25+08:00",
+    "releaseNotes": "",
+    "commit": "e9559f5ada4eb481444a0fd056bd699d547f724b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.56",
+    "publishedAt": "2026-06-30T22:16:38+08:00",
+    "releaseNotes": "",
+    "commit": "6eadbbff50442f17003d955df406132c3909de6b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.55",
+    "publishedAt": "2026-06-30T17:01:12+08:00",
+    "releaseNotes": "",
+    "commit": "b9d2689743d3d1c9aac65853ad6d94f6ec66f436",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.55",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.54",
+    "publishedAt": "2026-06-30T16:05:10+08:00",
+    "releaseNotes": "",
+    "commit": "5367eb47ca88e4f6965a8d7712468d891c777725",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.54",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.53",
+    "publishedAt": "2026-06-30T11:45:12+08:00",
+    "releaseNotes": "",
+    "commit": "35ce8df7c4428640f7c97957def8547a861e30fd",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.52",
+    "publishedAt": "2026-06-29T21:51:21+08:00",
+    "releaseNotes": "",
+    "commit": "6d1de6dc935c7773293fcec4d0e05997a6fb8ea9",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.51",
+    "publishedAt": "2026-06-29T21:08:43+08:00",
+    "releaseNotes": "",
+    "commit": "0712a81488c467f34df4b4abcbdbb078707d7322",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.50",
+    "publishedAt": "2026-06-29T20:54:04+08:00",
+    "releaseNotes": "",
+    "commit": "32eec1a2580596d14583c1f0096d729a70b7c875",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.50",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.49",
+    "publishedAt": "2026-06-27T11:04:07+08:00",
+    "releaseNotes": "",
+    "commit": "fd739b659bb87a020c0c80647a76e453fcf7d553",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.49",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.48",
+    "publishedAt": "2026-06-27T10:51:57+08:00",
+    "releaseNotes": "",
+    "commit": "4b71e7390eb15ef4d85d45b9ea4b1e7880e228a5",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.48",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.47",
+    "publishedAt": "2026-06-27T10:23:54+08:00",
+    "releaseNotes": "",
+    "commit": "1259e212de9ac16a356bc6182d5d11f166fc5eb2",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.47",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.46",
+    "publishedAt": "2026-06-26T17:45:50+08:00",
+    "releaseNotes": "",
+    "commit": "2eb63530f0776f45f195d942e7d11f6d2ac27cde",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.45",
+    "publishedAt": "2026-06-26T13:39:03+08:00",
+    "releaseNotes": "",
+    "commit": "413f8e9531446c75a460ad4a5de03a0125215bcc",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.45",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.44",
+    "publishedAt": "2026-06-25T16:35:34+08:00",
+    "releaseNotes": "",
+    "commit": "6d8c76caecc6532f079498c6169635410348c44f",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.43",
+    "publishedAt": "2026-06-25T16:12:54+08:00",
+    "releaseNotes": "",
+    "commit": "19d182d7908f7603e89100698045cb72e5ea0817",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.42",
+    "publishedAt": "2026-06-25T16:02:10+08:00",
+    "releaseNotes": "",
+    "commit": "43120882ab1ae1d924982b3e5785bd93caa19f00",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.41",
+    "publishedAt": "2026-06-23T19:27:21+08:00",
+    "releaseNotes": "",
+    "commit": "4609744d3cd49a972e6206ff41cb41a61841d7a2",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.41",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.40",
+    "publishedAt": "2026-06-23T17:33:28+08:00",
+    "releaseNotes": "",
+    "commit": "bb9a0098510b898da556f190f524c978fa35191e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.40",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.39",
+    "publishedAt": "2026-06-23T16:48:46+08:00",
+    "releaseNotes": "",
+    "commit": "1829fa9df84fb17b5a1a5d5a329204c924fb8e89",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.39",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.38",
+    "publishedAt": "2026-06-23T16:39:26+08:00",
+    "releaseNotes": "",
+    "commit": "f356f555b7c2b665a015ca52bc08623a0840ef90",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.38",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.37",
+    "publishedAt": "2026-06-23T16:30:02+08:00",
+    "releaseNotes": "",
+    "commit": "f9391cf354b24104238f2f734adeb58ae4658286",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.37",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.36",
+    "publishedAt": "2026-06-22T22:49:48+08:00",
+    "releaseNotes": "",
+    "commit": "51c1eb6a8c2153683ab5f99269d61bae770b52e7",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.36",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.35",
+    "publishedAt": "2026-06-22T21:13:33+08:00",
+    "releaseNotes": "",
+    "commit": "8d955a1841d6c61a9a21ab5e6e1f51535bb1f2b7",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.35",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.34",
+    "publishedAt": "2026-06-22T20:16:34+08:00",
+    "releaseNotes": "",
+    "commit": "ee7780c50a4db5022e354d498a05350fb1da91bc",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.34",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.33",
+    "publishedAt": "2026-06-22T19:43:35+08:00",
+    "releaseNotes": "",
+    "commit": "ace05f3f702e3bf698cb4072387c442a24f7d810",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.33",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.32",
+    "publishedAt": "2026-06-22T18:05:19+08:00",
+    "releaseNotes": "",
+    "commit": "05feb2dbf00b053fe32154aaf4249a44f130ad76",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.32",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.31",
+    "publishedAt": "2026-06-22T17:15:57+08:00",
+    "releaseNotes": "",
+    "commit": "a4e28444f2a409e7293918c8b7ab1b45fb954af4",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.31",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.30",
+    "publishedAt": "2026-06-22T17:10:33+08:00",
+    "releaseNotes": "",
+    "commit": "21761508784b75dea5ed659788635f16451dea3d",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.30",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.29",
+    "publishedAt": "2026-06-22T16:46:50+08:00",
+    "releaseNotes": "",
+    "commit": "2e70ddc1d044fef4d3b5482a9209d54371d085e0",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.29",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.28",
+    "publishedAt": "2026-06-22T11:49:02+08:00",
+    "releaseNotes": "",
+    "commit": "8a9fc15aeed7dec96289f54feccca60071a44911",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.28",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.27",
+    "publishedAt": "2026-06-18T12:49:32+08:00",
+    "releaseNotes": "",
+    "commit": "5cf6fdd52ac5594db534a769b00af6d1c8606818",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.27",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.26",
+    "publishedAt": "2026-06-17T17:26:54+08:00",
+    "releaseNotes": "",
+    "commit": "6124ac387188103b4e8467d30259b82e807b44be",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.26",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.25",
+    "publishedAt": "2026-06-17T16:50:26+08:00",
+    "releaseNotes": "",
+    "commit": "b7c16da523dc3aa9db3eb937979a89464d064e7f",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.25",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.24",
+    "publishedAt": "2026-06-17T15:19:27+08:00",
+    "releaseNotes": "",
+    "commit": "abec03de71d591a9bcbe490f08367780dd752dc5",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.24",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.23",
+    "publishedAt": "2026-06-17T14:40:32+08:00",
+    "releaseNotes": "",
+    "commit": "a4bbce39928e90c2d5b022211332c214d2428ef0",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.23",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.22",
+    "publishedAt": "2026-06-16T14:48:57+08:00",
+    "releaseNotes": "",
+    "commit": "e9d4b36e0e23720176e2a7cc62af51c593c5298f",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.22",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.21",
+    "publishedAt": "2026-06-16T14:24:22+08:00",
+    "releaseNotes": "",
+    "commit": "8d082f9271c1e6efe2604dc8253d12d96a4525fc",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.21",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.20",
+    "publishedAt": "2026-06-15T17:49:28+08:00",
+    "releaseNotes": "",
+    "commit": "2d5a82d12659903522165d6911894a31561b5467",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.20",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.19",
+    "publishedAt": "2026-06-15T17:18:54+08:00",
+    "releaseNotes": "",
+    "commit": "8c01c0fd30886043a3b24efbe51f150f9fe4193b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.19",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.18",
+    "publishedAt": "2026-06-15T17:03:17+08:00",
+    "releaseNotes": "",
+    "commit": "511a56289c3270471298d1efc0e5b9338a0d3f0b",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.18",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.17",
+    "publishedAt": "2026-06-15T11:55:52+08:00",
+    "releaseNotes": "",
+    "commit": "c3254cc47091e4a7e36bf4cd694bd9333fe82c03",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.17",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.16",
+    "publishedAt": "2026-06-14T16:23:31+08:00",
+    "releaseNotes": "",
+    "commit": "764055d7ae7db98c8411b318dfb5a7a802761dfb",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.16",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.15",
+    "publishedAt": "2026-06-14T15:51:25+08:00",
+    "releaseNotes": "",
+    "commit": "0c2c07c9935fbd1711207179ac8fa94e41d82e09",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.15",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.14",
+    "publishedAt": "2026-06-14T15:16:02+08:00",
+    "releaseNotes": "",
+    "commit": "6638849f8478612213f1332ce33330b2b3555f68",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.14",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.13",
+    "publishedAt": "2026-06-14T13:07:21+08:00",
+    "releaseNotes": "",
+    "commit": "fca83e7196b79951e1eca06c1e8e21ee702b2e2e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.13",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.12",
+    "publishedAt": "2026-06-14T12:56:23+08:00",
+    "releaseNotes": "",
+    "commit": "746ea0e55ccdea1d9cffe8afc6444a712fcf0df8",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.12",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.11",
+    "publishedAt": "2026-06-13T17:01:32+08:00",
+    "releaseNotes": "",
+    "commit": "f3bae7d76e8cbfac80159023757ac89c775b8fd9",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.11",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.10",
+    "publishedAt": "2026-06-13T16:44:37+08:00",
+    "releaseNotes": "",
+    "commit": "bd1183aac70c1e51eeb693bb7dc37f69bc78c708",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.10",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.9",
+    "publishedAt": "2026-06-13T14:43:40+08:00",
+    "releaseNotes": "",
+    "commit": "eff87879d79fa0400b1aa498b8d8e90b0e371c99",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.9",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.8",
+    "publishedAt": "2026-06-13T13:54:52+08:00",
+    "releaseNotes": "",
+    "commit": "f2fc43768b46161a2e00c8779813dfae41b56690",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.8",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.7",
+    "publishedAt": "2026-06-13T13:41:09+08:00",
+    "releaseNotes": "",
+    "commit": "24d459c3ca1004864f122b909962bf67d8d9e255",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.7",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.6",
+    "publishedAt": "2026-06-12T11:50:58+08:00",
+    "releaseNotes": "",
+    "commit": "0a94445ffd45bab6aa2814d6e11467a752562e26",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.6",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.5",
+    "publishedAt": "2026-06-11T18:16:07+08:00",
+    "releaseNotes": "",
+    "commit": "4f56ad8c7587a26f196138b976e92f2ba6632981",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.5",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.4",
+    "publishedAt": "2026-06-11T13:23:58+08:00",
+    "releaseNotes": "",
+    "commit": "191c7cfa6485586eef489f4da01145f727e71caa",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.4",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.3",
+    "publishedAt": "2026-06-11T13:12:39+08:00",
+    "releaseNotes": "",
+    "commit": "1fa36e7f59190dbb8a31dbafe851387a317ae276",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.3",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.2",
+    "publishedAt": "2026-06-11T12:51:02+08:00",
+    "releaseNotes": "",
+    "commit": "71a22ccb184be87155901d2c5213a5330ab2182d",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.2",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.1",
+    "publishedAt": "2026-06-11T12:25:40+08:00",
+    "releaseNotes": "",
+    "commit": "817a476a7f443186a273ccdf2275d4b253545924",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v1.0.1",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "1.0.0",
+    "publishedAt": "2026-06-10T16:58:41+08:00",
+    "releaseNotes": "",
+    "commit": "973f634ba0d2255c35b4d1eed2a833352bcd96a9",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "recordType": "git",
+    "dateSource": "commit"
+  }
+]

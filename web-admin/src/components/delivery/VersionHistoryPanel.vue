@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { ArrowDown, CalendarDays, Check, ChevronDown, ChevronUp, History, Search, X } from '@lucide/vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import { CalendarDays, Check, ChevronDown, ChevronUp, GitCommitHorizontal, History, Search, X } from '@lucide/vue'
+import DataPagination from '@/components/common/DataPagination.vue'
 import type { ReleaseHistoryItem } from '@/api/delivery-system'
-import { historyDate, prepareHistory, historyMonths } from '@/utils/release-timeline'
+import { historyDate, prepareHistory, historyMonths, releaseCommitUrl } from '@/utils/release-timeline'
 
 const props = withDefaults(defineProps<{
   title: string
@@ -14,43 +15,50 @@ const props = withDefaults(defineProps<{
   loading?: boolean
 }>(), { latestVersion: '', currentVersion: '', items: () => [], emptyText: '暂无历史版本记录', loading: false })
 
-const query = ref(''), month = ref('all'), visibleCount = ref(12)
+const query = ref(''), month = ref('all'), page = ref(1), pageSize = ref(10)
+const panel = ref<HTMLElement | null>(null)
 const expanded = ref(new Set<string>())
 const records = computed(() => prepareHistory(props.items))
 const months = computed(() => historyMonths(records.value))
 const filtered = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase()
   return records.value.filter(item => (month.value === 'all' || item.month === month.value)
-    && (!keyword || `${item.version} ${item.releaseNotes || ''}`.toLocaleLowerCase().includes(keyword)))
+    && (!keyword || `${item.version} ${item.releaseNotes || ''} ${item.commit || ''}`.toLocaleLowerCase().includes(keyword)))
 })
 const groups = computed(() => {
   const groups: { key: string; label: string; items: typeof records.value }[] = []
-  for (const item of filtered.value.slice(0, visibleCount.value)) {
+  for (const item of filtered.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)) {
     let group = groups.at(-1)
     if (!group || group.key !== item.month) { group = { key: item.month, label: item.monthLabel, items: [] }; groups.push(group) }
     group.items.push(item)
   }
   return groups
 })
-const shownCount = computed(() => Math.min(visibleCount.value, filtered.value.length))
-watch([query, month], () => { visibleCount.value = 12 })
+const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize.value)))
+watch([query, month, pageSize], () => { page.value = 1 })
+watch(totalPages, value => { if (page.value > value) page.value = value })
 watch(months, value => { if (month.value !== 'all' && !value.some(item => item.key === month.value)) month.value = 'all' })
 function reset() { query.value = ''; month.value = 'all' }
+async function changePage(value: number) {
+  page.value = Math.min(Math.max(1, value), totalPages.value)
+  await nextTick()
+  if (panel.value && panel.value.getBoundingClientRect().top < 0) panel.value.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}
 function toggle(version: string) { const next = new Set(expanded.value); next.has(version) ? next.delete(version) : next.add(version); expanded.value = next }
 function notes(item: ReleaseHistoryItem) {
-  const text = item.releaseNotes?.trim() || '此版本暂未提供更新说明。'
+  const text = item.releaseNotes?.trim() || '此版本保留了 Git 提交记录，暂未归档面向用户的更新说明。'
   return !expanded.value.has(item.version) && text.length > 190 ? `${text.slice(0, 190)}…` : text
 }
 </script>
 
 <template>
-  <section class="panel-card version-history-panel" :aria-label="title" :aria-busy="loading">
+  <section ref="panel" class="panel-card version-history-panel" :aria-label="title" :aria-busy="loading">
     <header class="history-header">
       <div class="version-history-heading"><span class="history-heading-icon"><History :size="22" /></span><div><div class="history-eyebrow">版本时间轴</div><h2>{{ title }}</h2><p>{{ description }}</p></div></div>
       <div class="history-total"><strong>{{ records.length }}</strong><span>个已收录版本</span></div>
     </header>
     <div class="history-toolbar">
-      <label class="history-search"><Search :size="17" /><input v-model="query" type="search" aria-label="搜索历史版本" placeholder="搜索版本号或更新内容" /><button v-if="query" type="button" aria-label="清空搜索" @click="query = ''"><X :size="15" /></button></label>
+      <label class="history-search"><Search :size="17" /><input v-model="query" type="search" aria-label="搜索历史版本" placeholder="搜索版本号、更新说明或提交" /><button v-if="query" type="button" aria-label="清空搜索" @click="query = ''"><X :size="15" /></button></label>
       <span class="history-result" role="status">{{ query.trim() || month !== 'all' ? `找到 ${filtered.length} 个版本` : '按发布时间 · 从新到旧' }}</span>
     </div>
     <div v-if="loading && !records.length" class="history-loading" role="status"><div v-for="n in 3" :key="n"></div><span>正在读取版本历史…</span></div>
@@ -73,14 +81,15 @@ function notes(item: ReleaseHistoryItem) {
               <div class="history-date"><time v-if="item.timestamp" :datetime="item.publishedAt"><strong>{{ historyDate(item.publishedAt).day }}</strong><span>{{ historyDate(item.publishedAt).weekday }}</span></time><span v-else>日期未记录</span></div>
               <span class="history-node" aria-hidden="true"><i></i></span>
               <article class="history-card">
-                <header><div class="history-version"><h4>v{{ item.version }}</h4><span v-if="item.version === latestVersion" class="history-badge latest-badge">最新版</span><span v-if="item.version === currentVersion" class="history-badge current-badge"><Check :size="11" />当前运行</span><span v-if="item.version.includes('-')" class="history-badge preview-badge">预发布</span></div><time v-if="item.timestamp" class="history-time" :datetime="item.publishedAt">{{ historyDate(item.publishedAt).time }}</time></header>
+                <header><div class="history-version"><h4>v{{ item.version }}</h4><span v-if="item.version === latestVersion" class="history-badge latest-badge">最新版</span><span v-if="item.version === currentVersion" class="history-badge current-badge"><Check :size="11" />当前运行</span><span v-if="item.recordType === 'unpublished'" class="history-badge preview-badge">未正式发布</span><span v-else-if="item.recordType === 'git'" class="history-badge git-badge">Git 版本记录</span><span v-else-if="item.version.includes('-')" class="history-badge preview-badge">预发布</span></div><time v-if="item.timestamp" class="history-time" :datetime="item.publishedAt" :title="item.dateSource === 'commit' ? 'Git 提交时间' : '发布时间'">{{ historyDate(item.publishedAt).time }}</time></header>
                 <p class="history-notes">{{ notes(item) }}</p>
                 <button v-if="(item.releaseNotes?.trim().length || 0) > 190" class="history-expand" type="button" :aria-expanded="expanded.has(item.version)" @click="toggle(item.version)">{{ expanded.has(item.version) ? '收起说明' : '展开完整说明' }}<component :is="expanded.has(item.version) ? ChevronUp : ChevronDown" :size="14" /></button>
+                <div v-if="item.commit" class="history-provenance"><GitCommitHorizontal :size="13" /><a v-if="releaseCommitUrl(item)" :href="releaseCommitUrl(item)" target="_blank" rel="noopener noreferrer" :aria-label="`查看 v${item.version} 的 Git 提交`">{{ item.commit.slice(0, 8) }}</a><span v-else>{{ item.commit.slice(0, 8) }}</span><span v-if="item.gitTag">{{ item.gitTag }}</span><span v-if="item.dateSource === 'commit'">日期取自 Git 提交</span></div>
               </article>
             </li>
           </ol>
         </section>
-        <footer v-if="filtered.length" class="history-footer"><span>已显示 {{ shownCount }} / {{ filtered.length }} 个版本</span><button v-if="shownCount < filtered.length" type="button" class="secondary-button" @click="visibleCount += 12"><ArrowDown :size="15" />加载更早版本</button><span v-else class="history-end"><Check :size="13" />已浏览全部已收录记录</span></footer>
+        <DataPagination v-if="filtered.length" class="history-pagination" :page="page" :page-size="pageSize" :total="filtered.length" :total-pages="totalPages" :loading="loading" allow-jump @update:page="changePage" @update:page-size="pageSize = $event" />
       </div>
     </div>
   </section>

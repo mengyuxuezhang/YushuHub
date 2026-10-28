@@ -12,7 +12,8 @@ import { preserveSubmittedLoginBrandFields } from '../services/login-brand.mjs'
 import { centerSupplierLicenseResponse } from '../services/supplier-license-contract.mjs'
 import { nowIso } from '../utils/time.mjs'
 import { safeProjectId, safeCenterId } from '../utils/slug.mjs'
-import { PUBLIC_UPDATE_ROOT, PUBLIC_PREVIEW_ROOT } from '../config/paths.mjs'
+import { PUBLIC_UPDATE_ROOT, PUBLIC_PREVIEW_ROOT, repoRoot } from '../config/paths.mjs'
+import { readAgentReleaseHistory } from '../services/release-history.mjs'
 import { PUBLIC_ADMIN_BASE_URL, PUBLIC_UPDATE_BASE_URL, PUBLIC_PREVIEW_BASE_URL } from '../config/env.mjs'
 import { resolvePublicUrlsForRequest } from '../utils/public-url.mjs'
 import { annotateWorkerSourceStatus, isManagedWorkerId, resolveWorkerHeartbeatBuildId } from '../services/worker-scheduling.mjs'
@@ -330,7 +331,8 @@ export function registerBuildRoutes(app, deps) {
 
   app.post('/api/center/source-version', requireCenterAuth, async (_req, res, next) => {
     try {
-      res.json({ success: true, data: await getSourceVersionInfo() })
+      const info = await getSourceVersionInfo()
+      res.json({ success: true, data: _req.body?.history === 'all' ? { ...info, history: readAgentReleaseHistory(info, repoRoot) } : info })
     } catch (err) {
       next(err)
     }

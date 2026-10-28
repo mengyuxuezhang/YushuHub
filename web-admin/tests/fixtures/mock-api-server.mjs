@@ -1,4 +1,5 @@
 import http from 'node:http'
+import fs from 'node:fs'
 
 const PORT = Number(process.env.ADMIN_MOCK_API_PORT || 7077)
 
@@ -52,6 +53,13 @@ const responses = {
   '/api/self-update/status': { configured: true, currentVersion: '1.2.3-test.ui.1', latestVersion: '1.2.3-test.ui.1', updateAvailable: false, manifestUrl: 'https://updates.example.com/admin/latest.json', releaseNotes: '测试版本/测试代码，请勿更新', history: [{ version: '1.2.3-test.ui.1', publishedAt: '2026-08-14T08:00:00Z', releaseNotes: '测试版本/测试代码，请勿更新' }, { version: '1.2.2', publishedAt: '2026-08-13T08:00:00Z', releaseNotes: '修复智能体保存问题。' }], lastLog: 'Version check completed: no update available.' },
   '/api/diagnostics': { generatedAt: new Date().toISOString(), version: '1.2.3-test.ui.1', node: 'v24.14.0', pm2Name: 'agent-ai-admin-test', listen: 'http://127.0.0.1:7467', apiCheckUrl: 'https://example.com/api/me', clientRegisterUrl: 'https://example.com/api/client/auth/register', updateCheckExampleUrl: 'https://example.com/updates/<项目ID>/latest.yml', updateCheckUrls: [{ projectId: 'project-personal', latestUrl: 'https://example.com/updates/project-personal/latest.yml' }], recentBuilds: [{ id: 'build-2', projectId: 'project-personal', status: 'succeeded' }] },
   '/api/logout': null,
+}
+
+if (process.env.ADMIN_HISTORY_PREVIEW === '1') {
+  const readArchive = name => JSON.parse(fs.readFileSync(new URL(`../../../docs/${name}`, import.meta.url), 'utf8'))
+  const admin = readArchive('ADMIN_RELEASE_ARCHIVE.json'), agent = readArchive('AGENT_RELEASE_ARCHIVE.json')
+  responses['/api/self-update/status'] = { configured: true, runningVersion: admin[0].version, currentVersion: admin[0].version, latestVersion: admin[0].version, updateAvailable: false, manifestUrl: 'https://updates.example.com/admin/latest.json', releaseNotes: admin[0].releaseNotes, history: admin, lastLog: '本地交互预览：已读取 Git 版本档案。' }
+  responses['/api/source-version'] = { configured: true, ...agent[0], history: agent }
 }
 
 const usageMetrics={inputTokens:null,outputTokens:150,cachedTokens:0,images:2,audioCharacters:20,audioSeconds:1.5,completeness:{inputTokens:1}};

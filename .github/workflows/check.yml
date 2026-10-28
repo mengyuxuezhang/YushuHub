@@ -18,6 +18,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run check
       - run: npm run test:distribution
+      - run: python3 -m unittest discover -s scripts -p test_sync_release_archives.py -v
   frontend:
     runs-on: ubuntu-latest
     defaults:

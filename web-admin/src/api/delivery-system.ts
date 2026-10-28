@@ -6,6 +6,11 @@ export interface ReleaseHistoryItem {
   version: string;
   publishedAt?: string;
   releaseNotes?: string;
+  commit?: string;
+  repository?: string;
+  gitTag?: string;
+  recordType?: 'release' | 'git' | 'unpublished';
+  dateSource?: 'commit';
 }
 
 export interface AgentSourceVersionInfo extends ReleaseHistoryItem {

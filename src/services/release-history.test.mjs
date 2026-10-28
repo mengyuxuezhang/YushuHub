@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mergeReleaseHistory, readAgentReleaseHistory } from './release-history.mjs'
+import { mergeReleaseHistory, readAgentReleaseHistory, readAdminReleaseHistory } from './release-history.mjs'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -44,4 +44,27 @@ test('Agent timeline combines the rolling feed, accumulated archive and bundled 
   const history = readAgentReleaseHistory({ version: '3.0.2', releaseNotes: 'Latest', history: [{ version: '3.0.1', releaseNotes: 'Source notes' }] }, root)
   assert.deepEqual(history.map(item => item.version), ['3.0.2', '3.0.1', '3.0.0'])
   assert.equal(history[1].releaseNotes, 'Source notes')
+})
+
+test('full archive fills Git provenance without replacing published notes or their date source', () => {
+  const commit = 'a'.repeat(40)
+  const [item] = mergeReleaseHistory({ version: '1.9.57', releaseNotes: 'Official wording', publishedAt: '2026-10-27T08:00:00Z' }, [], [{ version: '1.9.57', releaseNotes: 'Archived wording', publishedAt: '2026-10-27T07:00:00Z', commit, repository: 'example/admin', gitTag: 'v1.9.57', dateSource: 'commit' }], Infinity)
+  assert.equal(item.commit, commit)
+  assert.equal(item.releaseNotes, 'Official wording')
+  assert.equal(item.publishedAt, '2026-10-27T08:00:00Z')
+  assert.equal(item.dateSource, undefined)
+})
+
+test('Git-only and unpublished records appear only in full official history, never in a custom source', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'admin-history-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  fs.mkdirSync(path.join(root, 'docs'))
+  fs.writeFileSync(path.join(root, 'docs', 'ADMIN_RELEASE_ARCHIVE.json'), JSON.stringify([{ version: '1.9.55', recordType: 'unpublished' }, { version: '1.0.0', recordType: 'git', commit: 'b'.repeat(40) }]))
+  const current = { version: '1.9.57', history: [] }
+  const official = readAdminReleaseHistory({ ...current, manifestUrl: 'https://updates.okpa.cn/agent/ai-admin/latest.json' }, root)
+  assert.equal(official.length, 3)
+  assert.equal(official[1].recordType, 'unpublished')
+  const custom = readAdminReleaseHistory({ ...current, manifestUrl: 'https://example.com/latest.json' }, root)
+  assert.deepEqual(custom.map(item => item.version), ['1.9.57'])
+  assert.equal(mergeReleaseHistory(current, []).length, 1)
 })

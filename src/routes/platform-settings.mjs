@@ -30,7 +30,7 @@ export function registerSystemRoutes(app, deps) {
 
   app.get('/api/source-version', requireAuth, async (_req, res, next) => {
     try {
-      const info = await getSourceVersionInfo()
+      const info = await getSourceVersionInfo({ fullHistory: _req.query?.history === 'all' })
       const history = _req.query?.history === 'all' ? readAgentReleaseHistory(info, repoRoot) : info.history
       res.json({ success: true, data: { ...info, history, configured: Boolean(info.version), checkedAt: nowIso() } })
     } catch (err) {
