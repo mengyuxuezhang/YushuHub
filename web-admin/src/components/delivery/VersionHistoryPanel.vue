@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { CalendarDays, Check, ChevronDown, ChevronUp, GitCommitHorizontal, History, Search, X } from '@lucide/vue'
+import { CalendarDays, ChevronDown, ChevronUp, GitCommitHorizontal, History, Search, X } from '@lucide/vue'
 import DataPagination from '@/components/common/DataPagination.vue'
+import StatusBadge from '@/components/common/StatusBadge.vue'
 import type { ReleaseHistoryItem } from '@/api/delivery-system'
 import { historyDate, prepareHistory, historyMonths, releaseCommitUrl } from '@/utils/release-timeline'
 
@@ -23,7 +24,7 @@ const months = computed(() => historyMonths(records.value))
 const filtered = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase()
   return records.value.filter(item => (month.value === 'all' || item.month === month.value)
-    && (!keyword || `${item.version} ${item.releaseNotes || ''} ${item.commit || ''}`.toLocaleLowerCase().includes(keyword)))
+    && (!keyword || `${item.version} ${item.releaseNotes || ''} ${item.gitNotes || ''} ${item.commit || ''}`.toLocaleLowerCase().includes(keyword)))
 })
 const groups = computed(() => {
   const groups: { key: string; label: string; items: typeof records.value }[] = []
@@ -45,8 +46,9 @@ async function changePage(value: number) {
   if (panel.value && panel.value.getBoundingClientRect().top < 0) panel.value.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 function toggle(version: string) { const next = new Set(expanded.value); next.has(version) ? next.delete(version) : next.add(version); expanded.value = next }
+function fullNotes(item: ReleaseHistoryItem) { return item.releaseNotes?.trim() || item.gitNotes?.trim() || '未找到可展示的版本说明，可通过下方 Git 提交查看原始记录。' }
 function notes(item: ReleaseHistoryItem) {
-  const text = item.releaseNotes?.trim() || '此版本保留了 Git 提交记录，暂未归档面向用户的更新说明。'
+  const text = fullNotes(item)
   return !expanded.value.has(item.version) && text.length > 190 ? `${text.slice(0, 190)}…` : text
 }
 </script>
@@ -54,18 +56,18 @@ function notes(item: ReleaseHistoryItem) {
 <template>
   <section ref="panel" class="panel-card version-history-panel" :aria-label="title" :aria-busy="loading">
     <header class="history-header">
-      <div class="version-history-heading"><span class="history-heading-icon"><History :size="22" /></span><div><div class="history-eyebrow">版本时间轴</div><h2>{{ title }}</h2><p>{{ description }}</p></div></div>
-      <div class="history-total"><strong>{{ records.length }}</strong><span>个已收录版本</span></div>
+      <div class="version-history-heading"><span class="entity-avatar history-heading-icon"><History :size="22" /></span><div><div class="eyebrow">版本时间轴</div><h2>{{ title }}</h2><p>{{ description }}</p></div></div>
+      <div class="history-total"><strong class="metric-value">{{ records.length }}</strong><small>个已收录版本</small></div>
     </header>
-    <div class="history-toolbar">
-      <label class="history-search"><Search :size="17" /><input v-model="query" type="search" aria-label="搜索历史版本" placeholder="搜索版本号、更新说明或提交" /><button v-if="query" type="button" aria-label="清空搜索" @click="query = ''"><X :size="15" /></button></label>
-      <span class="history-result" role="status">{{ query.trim() || month !== 'all' ? `找到 ${filtered.length} 个版本` : '按发布时间 · 从新到旧' }}</span>
+    <div class="list-toolbar query-toolbar history-toolbar">
+      <label class="search-control history-search"><Search :size="17" /><input v-model="query" role="searchbox" aria-label="搜索历史版本" placeholder="搜索版本号、更新说明或提交" /><button v-if="query" class="text-button" type="button" aria-label="清空搜索" @click="query = ''"><X :size="15" /></button></label>
+      <span class="result-count history-result" role="status">{{ query.trim() || month !== 'all' ? `找到 ${filtered.length} 个版本` : '按发布时间 · 从新到旧' }}</span>
     </div>
     <div v-if="loading && !records.length" class="history-loading" role="status"><div v-for="n in 3" :key="n"></div><span>正在读取版本历史…</span></div>
     <div v-else-if="!records.length" class="version-history-empty"><History :size="30" /><strong>{{ emptyText }}</strong><span>版本发布后，更新记录会在这里持续积累。</span></div>
     <div v-else class="history-workspace">
       <aside class="history-index">
-        <div class="history-index-title"><CalendarDays :size="14" />月份筛选</div>
+        <small class="history-index-title"><CalendarDays :size="14" />月份筛选</small>
         <nav aria-label="历史版本月份">
           <button type="button" :class="{ active: month === 'all' }" :aria-pressed="month === 'all'" @click="month = 'all'"><span>全部记录</span><small>{{ records.length }}</small></button>
           <button v-for="item in months" :key="item.key" type="button" :class="{ active: month === item.key }" :aria-pressed="month === item.key" @click="month = item.key"><span>{{ item.label }}</span><small>{{ item.count }}</small></button>
@@ -78,13 +80,14 @@ function notes(item: ReleaseHistoryItem) {
           <h3 class="history-month-heading"><span>{{ group.label }}</span><i></i></h3>
           <ol class="version-timeline">
             <li v-for="item in group.items" :key="item.version" class="history-entry" :class="{ latest: item.version === latestVersion }">
-              <div class="history-date"><time v-if="item.timestamp" :datetime="item.publishedAt"><strong>{{ historyDate(item.publishedAt).day }}</strong><span>{{ historyDate(item.publishedAt).weekday }}</span></time><span v-else>日期未记录</span></div>
+              <div class="history-date"><time v-if="item.timestamp" :datetime="item.publishedAt"><strong>{{ historyDate(item.publishedAt).day }}</strong><small>{{ historyDate(item.publishedAt).weekday }}</small></time><span v-else>日期未记录</span></div>
               <span class="history-node" aria-hidden="true"><i></i></span>
-              <article class="history-card">
-                <header><div class="history-version"><h4>v{{ item.version }}</h4><span v-if="item.version === latestVersion" class="history-badge latest-badge">最新版</span><span v-if="item.version === currentVersion" class="history-badge current-badge"><Check :size="11" />当前运行</span><span v-if="item.recordType === 'unpublished'" class="history-badge preview-badge">未正式发布</span><span v-else-if="item.recordType === 'git'" class="history-badge git-badge">Git 版本记录</span><span v-else-if="item.version.includes('-')" class="history-badge preview-badge">预发布</span></div><time v-if="item.timestamp" class="history-time" :datetime="item.publishedAt" :title="item.dateSource === 'commit' ? 'Git 提交时间' : '发布时间'">{{ historyDate(item.publishedAt).time }}</time></header>
+              <article class="panel-card history-card">
+                <header><div class="history-version"><h4>v{{ item.version }}</h4><span v-if="item.version === latestVersion" class="soft-tag latest-badge">最新版</span><StatusBadge v-if="item.version === currentVersion" status="enabled" label="当前运行" class="current-badge" /><StatusBadge v-if="item.recordType === 'unpublished'" status="draft" label="未正式发布" /><StatusBadge v-else-if="item.recordType === 'git'" status="neutral" label="Git 版本记录" /><StatusBadge v-else-if="item.version.includes('-')" status="draft" label="预发布" /></div><time v-if="item.timestamp" class="history-time" :datetime="item.publishedAt" :title="item.dateSource === 'commit' ? 'Git 提交时间' : '发布时间'">{{ historyDate(item.publishedAt).time }}</time></header>
+                <small v-if="!item.releaseNotes?.trim() && item.gitNotes" class="cell-note">{{ item.gitNotesSource === 'tag' ? 'Git 标签说明（原文）' : 'Git 提交说明（原文）' }}</small>
                 <p class="history-notes">{{ notes(item) }}</p>
-                <button v-if="(item.releaseNotes?.trim().length || 0) > 190" class="history-expand" type="button" :aria-expanded="expanded.has(item.version)" @click="toggle(item.version)">{{ expanded.has(item.version) ? '收起说明' : '展开完整说明' }}<component :is="expanded.has(item.version) ? ChevronUp : ChevronDown" :size="14" /></button>
-                <div v-if="item.commit" class="history-provenance"><GitCommitHorizontal :size="13" /><a v-if="releaseCommitUrl(item)" :href="releaseCommitUrl(item)" target="_blank" rel="noopener noreferrer" :aria-label="`查看 v${item.version} 的 Git 提交`">{{ item.commit.slice(0, 8) }}</a><span v-else>{{ item.commit.slice(0, 8) }}</span><span v-if="item.gitTag">{{ item.gitTag }}</span><span v-if="item.dateSource === 'commit'">日期取自 Git 提交</span></div>
+                <button v-if="fullNotes(item).length > 190" class="text-button history-expand" type="button" :aria-expanded="expanded.has(item.version)" @click="toggle(item.version)">{{ expanded.has(item.version) ? '收起说明' : '展开完整说明' }}<component :is="expanded.has(item.version) ? ChevronUp : ChevronDown" :size="14" /></button>
+                <small v-if="item.commit" class="history-provenance"><GitCommitHorizontal :size="13" /><a v-if="releaseCommitUrl(item)" class="mono-text" :href="releaseCommitUrl(item)" target="_blank" rel="noopener noreferrer" :aria-label="`查看 v${item.version} 的 Git 提交`">{{ item.commit.slice(0, 8) }}</a><span v-else>{{ item.commit.slice(0, 8) }}</span><span v-if="item.gitTag">{{ item.gitTag }}</span><span v-if="item.dateSource === 'commit'">日期取自 Git 提交</span></small>
               </article>
             </li>
           </ol>

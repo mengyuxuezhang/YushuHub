@@ -9,8 +9,8 @@ defineProps<{ d: ReturnType<typeof useDeliverySystem> }>()
 
 <template>
   <section class="agent-version-hero panel-card">
-    <div class="agent-version-icon"><PackageCheck :size="24" /></div>
-    <div><span>Agent 客户端最新版本</span><strong>{{ d.sourceVersionInfo.value.version ? `v${d.sourceVersionInfo.value.version}` : d.loading.value ? '正在读取…' : '暂未获取' }}</strong><p>{{ d.sourceVersionInfo.value.releaseNotes || d.sourceVersionInfo.value.error || '从官方构建中心读取可用于构建的 Agent 客户端源码版本。' }}</p></div>
+    <div class="entity-avatar agent-version-icon"><PackageCheck :size="24" /></div>
+    <div><span>Agent 客户端最新版本</span><strong class="metric-value">{{ d.sourceVersionInfo.value.version ? `v${d.sourceVersionInfo.value.version}` : d.loading.value ? '正在读取…' : '暂未获取' }}</strong><p>{{ d.sourceVersionInfo.value.releaseNotes || d.sourceVersionInfo.value.error || '从官方构建中心读取可用于构建的 Agent 客户端源码版本。' }}</p></div>
     <dl><div><dt>发布时间</dt><dd>{{ d.sourceVersionInfo.value.publishedAt ? new Date(d.sourceVersionInfo.value.publishedAt).toLocaleString('zh-CN') : '未记录' }}</dd></div><div><dt><GitCommitHorizontal :size="13" />源码提交</dt><dd class="mono-text">{{ d.sourceVersionInfo.value.commit ? d.sourceVersionInfo.value.commit.slice(0, 12) : '未提供' }}</dd></div></dl>
   </section>
   <SearchToolbar

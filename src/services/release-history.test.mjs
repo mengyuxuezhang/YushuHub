@@ -55,6 +55,13 @@ test('full archive fills Git provenance without replacing published notes or the
   assert.equal(item.dateSource, undefined)
 })
 
+test('original Git version messages survive API normalization independently of release notes', () => {
+  const [item] = mergeReleaseHistory({ version: '2.0.0-beta.16' }, [], [{ version: '2.0.0-beta.16', gitNotes: 'Multi-agent primitives and recursive spawn', gitNotesSource: 'tag' }], Infinity)
+  assert.equal(item.releaseNotes, '')
+  assert.equal(item.gitNotes, 'Multi-agent primitives and recursive spawn')
+  assert.equal(item.gitNotesSource, 'tag')
+})
+
 test('Git-only and unpublished records appear only in full official history, never in a custom source', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'admin-history-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))

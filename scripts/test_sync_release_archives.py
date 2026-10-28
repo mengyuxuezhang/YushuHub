@@ -8,10 +8,36 @@ spec = importlib.util.spec_from_file_location('sync_release_archives_import', Pa
 module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
-from sync_release_archives_import import archive, version_key
+from sync_release_archives_import import archive, version_key, displayable_git_notes
 
 
 class ArchiveRecoveryTests(unittest.TestCase):
+    def test_recovered_old_records_survive_without_the_old_repository_on_later_runs(self):
+        previous = [{'version': '2.0.0-beta.16', 'gitNotes': 'Multi-agent recursive spawn', 'gitNotesSource': 'tag', 'repository': 'owner/old', 'commit': 'c' * 40}]
+        with patch('sync_release_archives_import.collect', return_value={}):
+            rows = archive('agent', ['current'], [], previous)
+        self.assertEqual(rows[0]['version'], previous[0]['version'])
+        self.assertEqual(rows[0]['gitNotes'], previous[0]['gitNotes'])
+
+    def test_real_version_messages_are_kept_but_bare_version_labels_are_not(self):
+        self.assertEqual(displayable_git_notes('Release v2.0.0-beta.8'), '')
+        self.assertEqual(displayable_git_notes('release: prepare desktop 3.0.0-beta.66 [P170-T00]'), '')
+        message = 'Release v1.0.9 with local skill creation'
+        self.assertEqual(displayable_git_notes(message), message)
+
+    def test_operational_records_and_secret_assignments_are_not_exported(self):
+        self.assertEqual(displayable_git_notes('deploy: restart PM2 on production'), '')
+        self.assertEqual(displayable_git_notes('fix: password=demo123'), '')
+        self.assertEqual(displayable_git_notes('fix: copy /root/private/file'), '')
+
+    def test_different_products_reusing_a_version_do_not_mix_their_messages(self):
+        first = {'1.0.0': {'version': '1.0.0', 'commit': 'a' * 40, 'repository': 'owner/current'}}
+        other = {'1.0.0': {'version': '1.0.0', 'commit': 'b' * 40, 'repository': 'owner/other', 'gitNotes': 'Unrelated feature', 'gitNotesSource': 'commit'}}
+        with patch('sync_release_archives_import.collect', side_effect=[first, other]):
+            rows = archive('agent', ['current', 'other'], [])
+        self.assertNotIn('gitNotes', rows[0])
+        self.assertEqual(rows[0]['commit'], 'a' * 40)
+
     def test_version_sorting_handles_prereleases_numerically(self):
         values = ['3.0.0-beta.9', '3.0.0', '3.0.0-beta.100', '2.0.0']
         self.assertEqual(sorted(values, key=version_key), ['2.0.0', '3.0.0-beta.9', '3.0.0-beta.100', '3.0.0'])

@@ -21,6 +21,10 @@ export function mergeReleaseHistory(current, history, fallback = [], limit = REL
     const hadDate = Boolean(target.publishedAt)
     target.publishedAt ||= String(item.publishedAt || item.releaseDate || '')
     target.releaseNotes ||= String(item.releaseNotes || '')
+    if (!target.gitNotes && typeof item.gitNotes === 'string' && item.gitNotes.length <= 4000) {
+      target.gitNotes = item.gitNotes
+      if (['tag', 'commit'].includes(item.gitNotesSource)) target.gitNotesSource = item.gitNotesSource
+    }
     // Fill provenance from the archive without replacing the update source's wording.
     if (!target.commit && /^[a-f0-9]{40}$/.test(item.commit || '')) target.commit = item.commit
     if (!target.repository && /^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/.test(item.repository || '')) target.repository = item.repository

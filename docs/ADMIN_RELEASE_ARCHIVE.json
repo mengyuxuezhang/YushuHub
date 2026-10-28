@@ -6,7 +6,9 @@
     "commit": "662c30de2b980e8f0f703b37c4694f5bd6b849b7",
     "repository": "mengyuxuezhang/YushuHub",
     "gitTag": "v1.9.57",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "羽枢 v1.9.57：文本与搜索计费服务商筛选",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.56",
@@ -15,6 +17,8 @@
     "commit": "a4cf54a6dd8aa4b46e8200e9cbd880a419baf40a",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "release",
+    "gitNotes": "feat: 羽枢管理平台首次公开源码并建立持续研发主线",
+    "gitNotesSource": "commit",
     "gitTag": "v1.9.56"
   },
   {
@@ -24,7 +28,9 @@
     "commit": "9167b553b8e0f1400866af095ee353a7ae5f6d38",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.9.55",
-    "recordType": "unpublished"
+    "recordType": "unpublished",
+    "gitNotes": "管理端1.9.55：Key适用模型配置",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.54",
@@ -33,7 +39,9 @@
     "recordType": "release",
     "commit": "bcb95324942b3454faa32b77dd83229944a828c7",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.54"
+    "gitTag": "v1.9.54",
+    "gitNotes": "管理端1.9.54：20MiB请求体与充值提示优化",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.53",
@@ -42,7 +50,9 @@
     "recordType": "release",
     "commit": "e19876dba54cd718610e705df867a3ffd0068ed1",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.53"
+    "gitTag": "v1.9.53",
+    "gitNotes": "管理端1.9.53：客户端远程策略",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.52",
@@ -51,7 +61,9 @@
     "recordType": "release",
     "commit": "d24c44a4f560c579de41e4d6dc5b321f4289edeb",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.52"
+    "gitTag": "v1.9.52",
+    "gitNotes": "管理端 v1.9.52：允许重新添加已删除模型，保留历史身份与组织范围",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.51",
@@ -60,7 +72,9 @@
     "recordType": "release",
     "commit": "be651d7f6e68cd822f96917e64e246a8b41e226b",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.51"
+    "gitTag": "v1.9.51",
+    "gitNotes": "管理端 v1.9.51：自定义官网独立品牌与 SEO 修复",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.50",
@@ -69,7 +83,9 @@
     "recordType": "release",
     "commit": "fbb698f11a449d1d0068e421924889be4a57737b",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.50"
+    "gitTag": "v1.9.50",
+    "gitNotes": "管理端 v1.9.50 图片与语音计量修复",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.49",
@@ -78,7 +94,9 @@
     "recordType": "release",
     "commit": "0e015ea54e1d1013caa1154a12dbb1d54cff0526",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.49"
+    "gitTag": "v1.9.49",
+    "gitNotes": "Admin v1.9.49: curated skill package migration and safe download",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.48",
@@ -87,7 +105,9 @@
     "recordType": "release",
     "commit": "f8a231640f8327943aed856736b256dda9c9d605",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.48"
+    "gitTag": "v1.9.48",
+    "gitNotes": "Admin v1.9.48: current desktop project configuration",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.47",
@@ -96,7 +116,9 @@
     "recordType": "release",
     "commit": "e4081bd8106c3d24f8a04d91ff557c9bf8e4adb4",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.47"
+    "gitTag": "v1.9.47",
+    "gitNotes": "Agent AI Admin v1.9.47",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.46",
@@ -105,7 +127,9 @@
     "recordType": "release",
     "commit": "2a372703e0df2de8c48c3ca97963852132a7a750",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.46"
+    "gitTag": "v1.9.46",
+    "gitNotes": "管理端1.9.46：MiniMax句级与词级时间信息",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.45",
@@ -114,7 +138,9 @@
     "recordType": "release",
     "commit": "e539fe27d1facfdab5baf6c1a83dfb102055bad2",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.45"
+    "gitTag": "v1.9.45",
+    "gitNotes": "Agent AI Admin v1.9.45",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.44",
@@ -123,7 +149,9 @@
     "recordType": "release",
     "commit": "ced4ecf844350347eb0629b0b64f27665a7c721f",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.44"
+    "gitTag": "v1.9.44",
+    "gitNotes": "Admin v1.9.44: supplier authorization expiry",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.43",
@@ -132,7 +160,9 @@
     "recordType": "release",
     "commit": "cc1e6b388eb849871ea86b704f6daa33affeea77",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.43"
+    "gitTag": "v1.9.43",
+    "gitNotes": "Agent AI Admin v1.9.43",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.42",
@@ -141,7 +171,9 @@
     "recordType": "release",
     "commit": "1d80441f7f826e08c41a322c4d40df778f427c0e",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.42"
+    "gitTag": "v1.9.42",
+    "gitNotes": "Agent AI Admin v1.9.42",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.41",
@@ -150,7 +182,9 @@
     "recordType": "release",
     "commit": "852742d2f3218b3e838aeee8958b1c1c27f0cd01",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.41"
+    "gitTag": "v1.9.41",
+    "gitNotes": "release: Admin v1.9.41 音色资源清理与计费方案修复",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.9.40",
@@ -168,7 +202,9 @@
     "recordType": "release",
     "commit": "be3ae7cb2aa66839ed6a7f03569351f54f848fab",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.39"
+    "gitTag": "v1.9.39",
+    "gitNotes": "feat(admin): expand update history and clean build storage",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.9.38",
@@ -177,7 +213,9 @@
     "recordType": "release",
     "commit": "be7b60ab72881671e7d2e9e45ef389e355073192",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.38"
+    "gitTag": "v1.9.38",
+    "gitNotes": "release(admin): publish client notice center 1.9.38",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.9.37",
@@ -186,7 +224,9 @@
     "recordType": "release",
     "commit": "ea75f04f8b1c10ee0775cf6806060f788c6265ed",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.37"
+    "gitTag": "v1.9.37",
+    "gitNotes": "Agent AI Admin v1.9.37",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.36",
@@ -195,7 +235,9 @@
     "recordType": "release",
     "commit": "8acaf13e5b4d2fb2cb71bce8dc8e743099da8fdb",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.36"
+    "gitTag": "v1.9.36",
+    "gitNotes": "Agent AI Admin v1.9.36",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.35",
@@ -204,7 +246,9 @@
     "commit": "0322275dd0a02b70a156201e57517fdb9222731b",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.9.35",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Agent AI Admin v1.9.35",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.35-test.build-resume.1",
@@ -213,7 +257,9 @@
     "commit": "195a3d02780e97f1cfb4859ca9f8070401162dda",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(builds): resume slow artifact localization",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.9.34",
@@ -222,7 +268,9 @@
     "recordType": "release",
     "commit": "afe091a71fb90bab280542bd5c708765cb001886",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.34"
+    "gitTag": "v1.9.34",
+    "gitNotes": "Agent AI Admin v1.9.34",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.33",
@@ -231,7 +279,9 @@
     "recordType": "release",
     "commit": "5ab4228ef9c6e96d2fa325faae29ee8833bb9078",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.33"
+    "gitTag": "v1.9.33",
+    "gitNotes": "Agent AI Admin v1.9.33",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.32",
@@ -240,7 +290,9 @@
     "recordType": "release",
     "commit": "ae0f4e52938ceae06b02149bdcf963af2fbf9e1a",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.32"
+    "gitTag": "v1.9.32",
+    "gitNotes": "Agent AI Admin 1.9.32",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.31",
@@ -249,7 +301,9 @@
     "recordType": "release",
     "commit": "7269043500dfbdb54aa49844c7742d6963948c34",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.31"
+    "gitTag": "v1.9.31",
+    "gitNotes": "Agent AI Admin 1.9.31",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.30",
@@ -258,7 +312,9 @@
     "recordType": "release",
     "commit": "97dd13f3abd046a458b0ae4e62fc32ac8fa94e37",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.30"
+    "gitTag": "v1.9.30",
+    "gitNotes": "Agent AI Admin v1.9.30",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.29",
@@ -267,7 +323,9 @@
     "recordType": "release",
     "commit": "d21ab271207abaab5635c372e4e525be01c73bfa",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.29"
+    "gitTag": "v1.9.29",
+    "gitNotes": "Agent AI Admin v1.9.29",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.28",
@@ -276,7 +334,9 @@
     "recordType": "release",
     "commit": "8a4b0f4737acf49df29155671c99e1a256c4dbf4",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.28"
+    "gitTag": "v1.9.28",
+    "gitNotes": "Agent AI Admin v1.9.28",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.27",
@@ -285,7 +345,9 @@
     "recordType": "release",
     "commit": "1df36c5ba8e6c500678e17b08ffb2c5debf99408",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.27"
+    "gitTag": "v1.9.27",
+    "gitNotes": "Agent AI Admin 1.9.27",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.26",
@@ -294,7 +356,9 @@
     "recordType": "release",
     "commit": "2938e2282e188e07fb8be5dda259526d5178f713",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.26"
+    "gitTag": "v1.9.26",
+    "gitNotes": "Agent AI Admin 1.9.26",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.25",
@@ -303,7 +367,9 @@
     "recordType": "release",
     "commit": "af6ac9c633227f72e91c39155e3b063415099770",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.25"
+    "gitTag": "v1.9.25",
+    "gitNotes": "Agent AI Admin v1.9.25",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.24",
@@ -321,7 +387,9 @@
     "recordType": "release",
     "commit": "b8b31507a3182f095673b529bb58c3254943818d",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.23"
+    "gitTag": "v1.9.23",
+    "gitNotes": "Agent AI Admin 1.9.23",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.22",
@@ -330,7 +398,9 @@
     "recordType": "release",
     "commit": "91a4c1bb114c1d9efc25f10f50a2c8baaba23642",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.22"
+    "gitTag": "v1.9.22",
+    "gitNotes": "Agent AI Admin v1.9.22",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.22-test.homepage.1",
@@ -339,7 +409,9 @@
     "commit": "c45e4b58ac0cd99cd038ec9626f62b5b8cac5c96",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat: support persistent custom homepages",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.9.21",
@@ -348,7 +420,9 @@
     "recordType": "release",
     "commit": "6ea9e57d2f82e4252daa71731935c604c19fbd79",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.21"
+    "gitTag": "v1.9.21",
+    "gitNotes": "Agent AI Admin v1.9.21",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.20",
@@ -357,7 +431,9 @@
     "recordType": "release",
     "commit": "0c199c82c4ddd57f513fb3eb7714b910310d43be",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.20"
+    "gitTag": "v1.9.20",
+    "gitNotes": "Agent AI Admin v1.9.20",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.19",
@@ -366,7 +442,9 @@
     "recordType": "release",
     "commit": "ea0bef2bea122e0e71405e829b816642e31d2185",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.19"
+    "gitTag": "v1.9.19",
+    "gitNotes": "Agent AI Admin 1.9.19",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.18",
@@ -375,7 +453,9 @@
     "recordType": "release",
     "commit": "a51d691054ddb5fb6b3dab65ee8db02e1268dfa7",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.18"
+    "gitTag": "v1.9.18",
+    "gitNotes": "Agent AI Admin v1.9.18",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.17",
@@ -384,7 +464,9 @@
     "recordType": "release",
     "commit": "ca866b7fc6872eb4e0c67af71965e82b7bddc16f",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.17"
+    "gitTag": "v1.9.17",
+    "gitNotes": "Agent AI Admin v1.9.17: automatic market image synchronization",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.16",
@@ -393,7 +475,9 @@
     "recordType": "release",
     "commit": "aaa45468e44e12fc72dd24081badaa010e8c6d10",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.16"
+    "gitTag": "v1.9.16",
+    "gitNotes": "Admin v1.9.16 market image uploads",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.15",
@@ -402,7 +486,9 @@
     "recordType": "release",
     "commit": "5784bc407028ba2e0abf9417091dbebce4b36048",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.15"
+    "gitTag": "v1.9.15",
+    "gitNotes": "Agent AI Admin v1.9.15",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.14",
@@ -411,7 +497,9 @@
     "recordType": "release",
     "commit": "a6a756ca94b970362acdea25f85d0e5feab8bc88",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.14"
+    "gitTag": "v1.9.14",
+    "gitNotes": "Agent AI Admin v1.9.14",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.13",
@@ -420,7 +508,9 @@
     "recordType": "release",
     "commit": "c83b4fc015849b7dd9c00c7d3c8ab85402d8efcb",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.13"
+    "gitTag": "v1.9.13",
+    "gitNotes": "Agent AI Admin v1.9.13",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.12",
@@ -429,7 +519,9 @@
     "recordType": "release",
     "commit": "df8c3ca662b9c63ebaa93c793d2c0f1b322d6402",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.12"
+    "gitTag": "v1.9.12",
+    "gitNotes": "Agent AI Admin v1.9.12",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.11",
@@ -438,7 +530,9 @@
     "recordType": "release",
     "commit": "078237980b8d16422c84d5ae58e957dcdf3b26c2",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.11"
+    "gitTag": "v1.9.11",
+    "gitNotes": "Agent AI Admin v1.9.11",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.10",
@@ -447,7 +541,9 @@
     "recordType": "release",
     "commit": "2833c8394f0df4fad531cfbbdeff05b784bbbf13",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.10"
+    "gitTag": "v1.9.10",
+    "gitNotes": "Agent AI Admin v1.9.10",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.9",
@@ -456,7 +552,9 @@
     "recordType": "release",
     "commit": "e838b9125fe738a96c9c54dc12bf2e9540cd4b9c",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.9"
+    "gitTag": "v1.9.9",
+    "gitNotes": "Agent AI Admin v1.9.9",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.8",
@@ -465,7 +563,9 @@
     "recordType": "release",
     "commit": "869537c9a172bf07320a7f77f084d5819f2e8c5d",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.8"
+    "gitTag": "v1.9.8",
+    "gitNotes": "Agent AI Admin v1.9.8",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.7",
@@ -474,7 +574,9 @@
     "recordType": "release",
     "commit": "13bd3afd18e6fa675ce31a1881853d568060f4c0",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.7"
+    "gitTag": "v1.9.7",
+    "gitNotes": "fix(admin): verify and log self-update restarts (1.9.7)",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.9.6",
@@ -483,7 +585,9 @@
     "recordType": "release",
     "commit": "7f88db408090f11394ba1d3a97ad3fb051804954",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.6"
+    "gitTag": "v1.9.6",
+    "gitNotes": "fix(admin): harden cache invalidation for suppliers (1.9.6)",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.9.5",
@@ -492,7 +596,9 @@
     "recordType": "release",
     "commit": "4a5ffbf0b078be52ae8a479b9fbcc7f7c783e886",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.5"
+    "gitTag": "v1.9.5",
+    "gitNotes": "fix(admin): prevent stale data after upgrades (1.9.5)",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.9.4",
@@ -501,7 +607,9 @@
     "recordType": "release",
     "commit": "5f821bfd1ee0b5a9e62dd88872a70b3ca968464e",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.4"
+    "gitTag": "v1.9.4",
+    "gitNotes": "fix(redeem-codes): show full code in admin list (1.9.4)",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.9.3",
@@ -510,7 +618,9 @@
     "recordType": "release",
     "commit": "065b5795105e97fded3dfa7cda61b83871b1784e",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.3"
+    "gitTag": "v1.9.3",
+    "gitNotes": "fix(client-auth): restore registration code sending and drop legacy gateway fields (1.9.3)",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.9.2",
@@ -519,7 +629,9 @@
     "recordType": "release",
     "commit": "3b1af15b722e1c603779ff001938fc4752831c1c",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.2"
+    "gitTag": "v1.9.2",
+    "gitNotes": "fix(admin): keep smtp test in drawer and disable html shell caching (1.9.2)",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.9.1",
@@ -528,7 +640,9 @@
     "recordType": "release",
     "commit": "96b646f849add9e6f1c7c68cac5fd777d42b8d2b",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.1"
+    "gitTag": "v1.9.1",
+    "gitNotes": "release: publish agent ai admin 1.9.1",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.9.0",
@@ -537,7 +651,9 @@
     "recordType": "release",
     "commit": "0de1cd5043b486f6bd819cc31e62d584269e6a29",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.9.0"
+    "gitTag": "v1.9.0",
+    "gitNotes": "release: publish agent ai admin 1.9.0",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.8.2",
@@ -546,7 +662,9 @@
     "recordType": "release",
     "commit": "5035ce740a08f856ca7fa06541f5993772e4c48b",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.8.2"
+    "gitTag": "v1.8.2",
+    "gitNotes": "release: publish agent ai admin 1.8.2",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.8.1",
@@ -555,7 +673,9 @@
     "recordType": "release",
     "commit": "3561306a5cf524ad92b76f95f432d7be79069998",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.8.1"
+    "gitTag": "v1.8.1",
+    "gitNotes": "release: publish agent ai admin 1.8.1",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.8.0",
@@ -564,7 +684,9 @@
     "recordType": "release",
     "commit": "8bf252f38aabd86998425a42c2c3eab99e9b12a0",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.8.0"
+    "gitTag": "v1.8.0",
+    "gitNotes": "release: publish agent ai admin 1.8.0",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.7.1",
@@ -573,7 +695,9 @@
     "recordType": "release",
     "commit": "7ccfa3d3f0772d3dd63f653931135669b63ec883",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.7.1"
+    "gitTag": "v1.7.1",
+    "gitNotes": "Agent AI Admin 1.7.1",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.7.0",
@@ -582,7 +706,9 @@
     "recordType": "release",
     "commit": "0bc29c8dc373e20f260767d0fe3c0aec6ef3637d",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.7.0"
+    "gitTag": "v1.7.0",
+    "gitNotes": "Agent AI Admin 1.7.0",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.6.9",
@@ -591,7 +717,9 @@
     "recordType": "release",
     "commit": "9d79e3a3ba745bb04862a0763217f582e82a2a41",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.6.9"
+    "gitTag": "v1.6.9",
+    "gitNotes": "release: prepare agent ai admin 1.6.9",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.6.8",
@@ -600,7 +728,9 @@
     "recordType": "release",
     "commit": "8951ea20832ae224bba513dfcee550a1575ee415",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.6.8"
+    "gitTag": "v1.6.8",
+    "gitNotes": "release: prepare agent ai admin 1.6.8",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.6.7",
@@ -609,7 +739,9 @@
     "recordType": "release",
     "commit": "e0e8f3f50d44a7ca5762dc18efd1b151b91dd99b",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.6.7"
+    "gitTag": "v1.6.7",
+    "gitNotes": "release: prepare agent ai admin 1.6.7\n\n- 系统内置图片生成模型配置说明补充首次使用引导（火山引擎方舟 API 接入快速接入测试开通模型）",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.6.6",
@@ -618,7 +750,9 @@
     "recordType": "release",
     "commit": "0f6a48a17e896beafbe26803b3ff31bf8a49997f",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.6.6"
+    "gitTag": "v1.6.6",
+    "gitNotes": "release: prepare agent ai admin 1.6.6\n\n新增图片生成基座：接入 Doubao Seedream 5.0 lite，复用模型服务菜单并扩展按分辨率分档计费（2K/3K/4K）；服务商/模型/计费三条菜单固定为系统级配置（不可删除），Key 支持自定义；新增客户端图片生成代理（文生图/图生图/组图）供桌面端能力调用。\n\n门禁：check 25/25、admin:test 63/63、architecture 119、typecheck、build、前后端烟测、分发审计均通过。",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.6.5",
@@ -627,7 +761,9 @@
     "recordType": "release",
     "commit": "a71ca954b5de717dacc323dcffbe8075813829a1",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.6.5"
+    "gitTag": "v1.6.5",
+    "gitNotes": "agent ai admin 1.6.5",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.6.4",
@@ -636,7 +772,9 @@
     "recordType": "release",
     "commit": "20bcb7904ea05bec7af3ef54d5eee9b60fea56d3",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.6.4"
+    "gitTag": "v1.6.4",
+    "gitNotes": "fix: isolate agent AI project data",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.6.3",
@@ -645,7 +783,9 @@
     "recordType": "release",
     "commit": "b832dadef90bf10e14019e09445d1f2e4df2f015",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.6.3"
+    "gitTag": "v1.6.3",
+    "gitNotes": "release: prepare agent ai admin 1.6.3",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.6.2",
@@ -654,7 +794,9 @@
     "recordType": "release",
     "commit": "629c20e461d57aed84eac2c572d650891153fcac",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.6.2"
+    "gitTag": "v1.6.2",
+    "gitNotes": "release: prepare agent ai admin 1.6.2\n\n渠道代理组织隔离与额度管控：一级/二级代理的模型服务商、模型目录、计价规则与积分流水按组织隔离；新增市场内容自动同步与级联下架；一级代理创建二级代理时可分配项目与打包额度，额度按组织树统计，修复一级代理通过创建二级代理绕过自身额度限制的问题；终端用户模型授权与会员卡模型选项仅展示本组织模型；AI 项目页新增配额使用卡片。",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.6.1",
@@ -663,7 +805,9 @@
     "recordType": "release",
     "commit": "48be0716770841a7023f25a000a6428882127a78",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.6.1"
+    "gitTag": "v1.6.1",
+    "gitNotes": "release: prepare agent ai admin 1.6.1\n\n新增模型能力标签：模型目录可配置并展示文本、识图、工具、推理、图片生成等能力标签，客户端选型时据此展示。\n同时优化管理后台展示与操作：AI 项目改为列表形式展示；终端用户新增会员到期时间字段，时间列展示注册时间与最近活跃时间；积分菜单更名为积分流水；构建发布页面的项目或任务与构建状态下拉内容过长时默认截断，悬浮显示全文并可点击复制。并补充进程异常日志加固。",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.6.0",
@@ -672,7 +816,9 @@
     "recordType": "release",
     "commit": "5457e906746676507dab3f2a8af8add92bd813a6",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.6.0"
+    "gitTag": "v1.6.0",
+    "gitNotes": "release: prepare agent ai admin 1.6.0\n\n修复模型服务商、模型管理和计费规则三条菜单停用后缺少启用按钮的问题，新增三个 enable 接口与前端启用操作，无需重新编辑即可恢复。",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.5.9",
@@ -681,7 +827,9 @@
     "recordType": "release",
     "commit": "df4d499e14c1edeff38359f2fb2f74a6422730b3",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.5.9"
+    "gitTag": "v1.5.9",
+    "gitNotes": "Agent AI Admin v1.5.9",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.5.8",
@@ -690,7 +838,9 @@
     "recordType": "release",
     "commit": "c064ef19ef4b7effba09216480e0a38772eb35dd",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.5.8"
+    "gitTag": "v1.5.8",
+    "gitNotes": "Agent AI Admin v1.5.8",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.5.7",
@@ -699,7 +849,9 @@
     "recordType": "release",
     "commit": "f4ce0089a167512e59611de234ccad775928a7ee",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.5.7"
+    "gitTag": "v1.5.7",
+    "gitNotes": "Agent AI Admin v1.5.7",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.5.6",
@@ -708,7 +860,9 @@
     "recordType": "release",
     "commit": "f9a30252bf9dac2ffe7ccba76f599397895f44b5",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.5.6"
+    "gitTag": "v1.5.6",
+    "gitNotes": "Agent AI Admin v1.5.6",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.5.6-test.credits-membership-id.1",
@@ -717,7 +871,9 @@
     "commit": "c9bece367c29ea334a21e022068a51ebf5c015ea",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix: correct credit adjustments and membership ID entry",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.5.5",
@@ -726,7 +882,9 @@
     "recordType": "release",
     "commit": "8451234ec5a56e81aec151950a496c9a0a387ded",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.5.5"
+    "gitTag": "v1.5.5",
+    "gitNotes": "Agent AI Admin v1.5.5",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.5.5-test.build-status-sync.1",
@@ -735,7 +893,9 @@
     "commit": "5246a49ff545b9095e35d6a2dc43e63a8149eb11",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(admin): sync delegated build status while polling",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.5.4",
@@ -744,7 +904,9 @@
     "recordType": "release",
     "commit": "ea9662549de482308b05eac82abb968ae9897039",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.5.4"
+    "gitTag": "v1.5.4",
+    "gitNotes": "Agent AI Admin v1.5.4",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.5.4-test.worker-panel-order.1",
@@ -753,7 +915,9 @@
     "commit": "ee6b59344da83fc5312ce308918d23a474713645",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(admin): prioritize worker list over version history",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.5.4-test.responsive-toolbar.1",
@@ -762,7 +926,9 @@
     "commit": "a300b413c30d761f208e1232acc5470043ece593",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(admin): wrap search filters on narrow layouts",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.5.4-test.full-page-editors.1",
@@ -771,7 +937,9 @@
     "commit": "906ff9f027763fe6c7953d41fdd5a0754797e045",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat(admin): use full-page editor overlays",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.5.4-test.drawer-no-mask-dismiss.1",
@@ -780,7 +948,9 @@
     "commit": "c642168cacec02602e22ae363eaa497feedd79b6",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(admin): prevent backdrop dismissal for form drawers",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.5.3",
@@ -789,7 +959,9 @@
     "recordType": "release",
     "commit": "56029b49c77e8e462e24d1cda5c0ee315017a693",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.5.3"
+    "gitTag": "v1.5.3",
+    "gitNotes": "Agent AI Admin v1.5.3",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.5.3-test.enterprise-retirement.1",
@@ -798,7 +970,9 @@
     "commit": "e93ec68d5f9811f29ac50affd4c18bb4dff848ce",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "refactor: retire enterprise business management",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.5.2",
@@ -807,7 +981,9 @@
     "recordType": "release",
     "commit": "df98008cdabdab2b080ee97ace9ee5bed44b3646",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.5.2"
+    "gitTag": "v1.5.2",
+    "gitNotes": "Agent AI Admin v1.5.2",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.5.1",
@@ -816,7 +992,9 @@
     "recordType": "release",
     "commit": "f868a12653248450aa6f225c888502d297f81137",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.5.1"
+    "gitTag": "v1.5.1",
+    "gitNotes": "Agent AI Admin v1.5.1",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.5.0",
@@ -825,7 +1003,9 @@
     "recordType": "release",
     "commit": "197428f4a836332cb7d61436b3d4926c95e4fc50",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.5.0"
+    "gitTag": "v1.5.0",
+    "gitNotes": "Agent AI Admin v1.5.0",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.4.1",
@@ -834,7 +1014,9 @@
     "recordType": "release",
     "commit": "1208002201aa6227ea3987ed9244d05e69b68a43",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.4.1"
+    "gitTag": "v1.4.1",
+    "gitNotes": "Agent AI Admin v1.4.1",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.4.1-test.1",
@@ -843,7 +1025,9 @@
     "commit": "d75a06bfdc15485febf84e0347ae1f10ccca8896",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat: 自动迁移官方旧更新源",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.4.0",
@@ -852,7 +1036,9 @@
     "recordType": "release",
     "commit": "6251dbcde65d363b8aa10661de63ffb19cc30ba3",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.4.0"
+    "gitTag": "v1.4.0",
+    "gitNotes": "Agent AI Admin v1.4.0",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.4.0-test.1",
@@ -861,7 +1047,9 @@
     "commit": "bb8626cf4a17a21807e632618936d4b9d5c937dc",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat: 启用 OKPA 正式域名与安全公开配置",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.3.3",
@@ -879,7 +1067,9 @@
     "commit": "fcbec35726045d994e1f9feeb61bffa2a62e1983",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix: 补齐构建元数据并区分测试正式包",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.3.2",
@@ -888,7 +1078,9 @@
     "recordType": "release",
     "commit": "47b585c4b7e476230a1395a53fed66b8b33e05b9",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.3.2"
+    "gitTag": "v1.3.2",
+    "gitNotes": "Agent AI Admin 1.3.2",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.3.1",
@@ -897,7 +1089,9 @@
     "recordType": "release",
     "commit": "58c07b60d7d6d8c9eda302dcbed8bc354f72cfc3",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.3.1"
+    "gitTag": "v1.3.1",
+    "gitNotes": "Agent AI Admin 1.3.1",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.3.0",
@@ -906,7 +1100,9 @@
     "recordType": "release",
     "commit": "1e9107590500da727ce253cb11f3406b7940f6cb",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.3.0"
+    "gitTag": "v1.3.0",
+    "gitNotes": "Agent AI Admin 1.3.0",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.2.3-test.ui.1",
@@ -924,7 +1120,9 @@
     "recordType": "release",
     "commit": "025ee222629554707ca021f2a1a7b04c13ae0128",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.2.2"
+    "gitTag": "v1.2.2",
+    "gitNotes": "Agent AI Admin 1.2.2",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.2.1",
@@ -933,7 +1131,9 @@
     "recordType": "release",
     "commit": "e06ef3d0e1c7e5938cba3aac4b9ed3242213c4a7",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.2.1"
+    "gitTag": "v1.2.1",
+    "gitNotes": "Agent AI Admin 1.2.1",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.2.0",
@@ -942,7 +1142,9 @@
     "recordType": "release",
     "commit": "dea3b74a2f6a68f4bdf68f3b4bb3555ddad61ed9",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.2.0"
+    "gitTag": "v1.2.0",
+    "gitNotes": "Agent AI Admin 1.2.0",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.2.0-test.9",
@@ -951,7 +1153,9 @@
     "commit": "973caa82e7743fe547664fde7b3f416d5f402e99",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat: unify personal and enterprise content markets",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.2.0-test.8",
@@ -959,7 +1163,9 @@
     "releaseNotes": "测试代码，请勿更新：企业工作台用量报表升级为逐笔消费明细，支持员工筛选和分页；代理商消耗流水纳入直属企业消费，支持按企业筛选并显示企业及部门归属；企业实际消耗统一按扣费成功记录统计。",
     "commit": "6d16da9a84b709b337445e615b178c01011cb662",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "feat: unify enterprise usage ledger reporting",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.2.0-test.7",
@@ -967,7 +1173,9 @@
     "releaseNotes": "测试代码，请勿更新：企业月度总额度改由上级代理在账号中心的直属下级主体中设置；企业工作台只读显示月度总额、已用额度和剩余额度；达到总额度后阻止继续使用，并限制员工额度不得突破企业总额度。",
     "commit": "b131894b3c52216b464290ee78fcd86de7a647e4",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "feat: move enterprise monthly quota upstream",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.2.0-test.6",
@@ -975,7 +1183,9 @@
     "releaseNotes": "测试代码，请勿更新：直属下级主体显示管理员登录账号并支持重置密码和安全删除；新建项目的客户端类型按当前账号企业或个人权限自动收口；精简企业工作台冗余说明文字。",
     "commit": "59df831254632b32faf0b1e09e30ef3e1c81d194",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "feat: manage child organization accounts",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.2.0-test.5",
@@ -983,7 +1193,9 @@
     "releaseNotes": "测试代码，请勿更新：新建和编辑 AI 项目支持明确选择个人客户端或企业客户端；企业客户端自动绑定当前企业工作区，项目列表和构建发布显示类型，并在构建、登录和注册接口执行服务端校验。",
     "commit": "22be7d499ab638d57c048ade998063e2932a2014",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "release: prepare explicit project type test build",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.2.0-test.4",
@@ -991,7 +1203,9 @@
     "releaseNotes": "测试代码，请勿更新：企业工作台改为二级菜单，审计日志使用中文业务名称；补齐员工重新启用时的席位校验，并为企业安装包增加仅员工登录与服务端禁止自助注册的合同。",
     "commit": "4139547551b0fad4aa0de3ed47879aa11c590501",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "release: prepare enterprise account test build",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.2.0-test.3",
@@ -1000,7 +1214,9 @@
     "commit": "341c5ab101dc9306281ca5ce6c7f4bbe7a58d642",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat: complete enterprise employee controls",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.2.0-test.2",
@@ -1009,7 +1225,9 @@
     "commit": "0c199c36b5e2a966218fb2aba8bb3fdc0bb25603",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore: bump unified agent test build",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.2.0-test.1",
@@ -1018,7 +1236,9 @@
     "commit": "0175a962ff6f727d71d1e4a2154daae546dca6ac",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore: mark enterprise phase one test build",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.1.0",
@@ -1027,7 +1247,9 @@
     "recordType": "release",
     "commit": "25b4623c1d1162a250884acea300f0c8a2bd5d0a",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.1.0"
+    "gitTag": "v1.1.0",
+    "gitNotes": "Agent AI Admin 1.1.0",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.1.0-test.4",
@@ -1035,7 +1257,9 @@
     "releaseNotes": "【测试代码，禁止下游代理更新】模板权限简化版：移除角色模板岗位类型限制，所有模板均可选择全部权限；权限保存增加进行中、成功和失败反馈；账号分组明确采用启用分组覆盖模板、多分组权限取并集规则。仅供 8 号官方平台和 120.53 测试服务器验证。",
     "commit": "0d0f1b91c87e8e6b987c94fcfdad40d4ad263405",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "feat: remove role gates from permission templates",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.1.0-test.3",
@@ -1043,7 +1267,9 @@
     "releaseNotes": "【测试代码，禁止下游代理更新】权限交互优化版：二级代理能力授权改为可搜索、按模块分组的多选组件，配置能力改为可视化弹窗；后台账号只需选择角色模板，岗位类型自动派生，数据范围固定为当前组织。仅供 8 号官方平台和 120.53 测试服务器验证。",
     "commit": "03e39e294d790b708a4a88310751833de90df9ae",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "feat: redesign capability and account role workflows",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.1.0-test.2",
@@ -1051,7 +1277,9 @@
     "releaseNotes": "【测试代码，禁止下游代理更新】权限中文化修正版：可转授能力显示中文名称和说明，权限约束统一为岗位与主体限制，并在权限预览中补充组织层级、业务模式和数据范围。仅供 8 号官方平台和 120.53 测试服务器验证。",
     "commit": "1314a437a4f597e347d1b8a6b87078c7e8272d7b",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "chore: publish permission UI test build",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.1.0-test.1",
@@ -1059,7 +1287,9 @@
     "releaseNotes": "【测试代码，禁止下游代理更新】渠道组织与权限首轮联调：新增平台/一级代理/二级代理主体、企业/个人/混合业务模式、组织能力继承、内部岗位数据范围及组织归属迁移。仅供 8 号官方平台和 120.53 测试服务器验证。",
     "commit": "dedb33cf374e9ddbd370dc74788cbebd6d0b79cf",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "feat: add channel organization permission model",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.165",
@@ -1068,7 +1298,9 @@
     "recordType": "release",
     "commit": "cbd7cf99aeb77c8b4c9e1fb019c433457c50ee23",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.165"
+    "gitTag": "v1.0.165",
+    "gitNotes": "Agent AI Admin 1.0.165",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.164",
@@ -1077,7 +1309,9 @@
     "recordType": "release",
     "commit": "e80fce11dea773ea3ac4a236e5e5447c3724fddd",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.164"
+    "gitTag": "v1.0.164",
+    "gitNotes": "智能体市场支持中心同步并优化表单布局",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.163",
@@ -1086,7 +1320,9 @@
     "recordType": "release",
     "commit": "9a77811a5e58aa1d08854187b0be6da7db1e7c51",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.163"
+    "gitTag": "v1.0.163",
+    "gitNotes": "perf: accelerate admin dashboard refresh",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.162",
@@ -1095,7 +1331,9 @@
     "recordType": "release",
     "commit": "43419ae6cdbcec04379d08382fa444c39d88765f",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.162"
+    "gitTag": "v1.0.162",
+    "gitNotes": "Agent AI Admin v1.0.162",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.161",
@@ -1104,7 +1342,9 @@
     "recordType": "release",
     "commit": "94bd8a800f3b80d483ac47fb3fa9796bc936bb4e",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.161"
+    "gitTag": "v1.0.161",
+    "gitNotes": "Agent AI Admin v1.0.161",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.160",
@@ -1113,7 +1353,9 @@
     "recordType": "release",
     "commit": "f8dfc98e39ce34df57b55ba29eb7b5f6cfcebcd2",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.160"
+    "gitTag": "v1.0.160",
+    "gitNotes": "fix(release): synchronize worker versions and retain history",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.159",
@@ -1122,7 +1364,9 @@
     "recordType": "release",
     "commit": "8616312ae75af8fcfbabd7fcb7941c059454d15f",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.159"
+    "gitTag": "v1.0.159",
+    "gitNotes": "refactor(release): simplify admin update flow",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.158",
@@ -1131,7 +1375,9 @@
     "recordType": "release",
     "commit": "35faf113ca65ae4c07e8f58846f59b495e431959",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.158"
+    "gitTag": "v1.0.158",
+    "gitNotes": "Agent AI Admin 1.0.158",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.157",
@@ -1140,7 +1386,9 @@
     "recordType": "release",
     "commit": "b2ea79b3d15411cd91b6f07e9a25f0f4d0a342ec",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.157"
+    "gitTag": "v1.0.157",
+    "gitNotes": "Agent AI Admin 1.0.157",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.156",
@@ -1149,7 +1397,9 @@
     "recordType": "release",
     "commit": "9f5203dc6ee73fcf256cb7525e776e5117f654b6",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.156"
+    "gitTag": "v1.0.156",
+    "gitNotes": "Agent AI Admin 1.0.156",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.155",
@@ -1158,7 +1408,9 @@
     "recordType": "release",
     "commit": "c364209b5838a2f8108e90e4b3e03d1b0231fa3d",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.155"
+    "gitTag": "v1.0.155",
+    "gitNotes": "Agent AI Admin v1.0.155",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.154",
@@ -1167,7 +1419,9 @@
     "recordType": "release",
     "commit": "e13357609afbd539836e799ccbca3e33251867ac",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.154"
+    "gitTag": "v1.0.154",
+    "gitNotes": "Agent AI Admin v1.0.154",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.153",
@@ -1176,7 +1430,9 @@
     "recordType": "release",
     "commit": "cfeddae7fbd62a20ad659ac58b00060d431f045e",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.153"
+    "gitTag": "v1.0.153",
+    "gitNotes": "Agent AI Admin v1.0.153",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.152",
@@ -1185,7 +1441,9 @@
     "recordType": "release",
     "commit": "7f5ae3bf6a016df748009f98458a1c1c8dc919d4",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.152"
+    "gitTag": "v1.0.152",
+    "gitNotes": "Agent AI Admin v1.0.152",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.151",
@@ -1194,7 +1452,9 @@
     "recordType": "release",
     "commit": "8b2378c00099a212ac16cfec737b213ee5dfdc1b",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.151"
+    "gitTag": "v1.0.151",
+    "gitNotes": "Agent AI Admin 1.0.151",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.150",
@@ -1203,7 +1463,9 @@
     "recordType": "release",
     "commit": "08159df48c1ab1aef95fa4c9d000a39912a97952",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.150"
+    "gitTag": "v1.0.150",
+    "gitNotes": "Agent AI Admin 1.0.150",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.149",
@@ -1212,7 +1474,9 @@
     "recordType": "release",
     "commit": "29e705e9d3693e1a6b496bf3fa254198020069b4",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.149"
+    "gitTag": "v1.0.149",
+    "gitNotes": "Agent AI Admin 1.0.149",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.148",
@@ -1221,7 +1485,9 @@
     "recordType": "release",
     "commit": "e4149074813a504106e258a61c058f024a8f5d39",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.148"
+    "gitTag": "v1.0.148",
+    "gitNotes": "Agent AI Admin v1.0.148",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.147",
@@ -1230,7 +1496,9 @@
     "recordType": "release",
     "commit": "aee3c3c844c0b0dc5621b4ed8da01285e2391f2b",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.147"
+    "gitTag": "v1.0.147",
+    "gitNotes": "build(release): prepare admin 1.0.147 auth fix",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.146",
@@ -1239,7 +1507,9 @@
     "recordType": "release",
     "commit": "cf53fb9ad8f0637ce51346e89f45b7b0422a5497",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.146"
+    "gitTag": "v1.0.146",
+    "gitNotes": "Agent AI Admin 1.0.146",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.145",
@@ -1248,7 +1518,9 @@
     "recordType": "release",
     "commit": "b3ec4c6e0185cdb3877ef7657ee5d321926760e6",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.145"
+    "gitTag": "v1.0.145",
+    "gitNotes": "build(release): prepare admin 1.0.145 bulk capability grants",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.144",
@@ -1257,7 +1529,9 @@
     "recordType": "release",
     "commit": "3d0a9fea5c602c1ec69c6a007b5ffc429cd43a73",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.144"
+    "gitTag": "v1.0.144",
+    "gitNotes": "build(release): prepare admin 1.0.144 capability controls",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.143",
@@ -1266,7 +1540,9 @@
     "recordType": "release",
     "commit": "f17c8192eba74ca4d721fc37620993abc24b8025",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.143"
+    "gitTag": "v1.0.143",
+    "gitNotes": "fix(builds): restore canonical identity on retry",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.142",
@@ -1275,7 +1551,9 @@
     "recordType": "release",
     "commit": "6caaeff25b6b09bfbc5a228d84126e8e04a8598d",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.142"
+    "gitTag": "v1.0.142",
+    "gitNotes": "fix(builds): recover migrated brand assets and orphaned jobs",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.141",
@@ -1284,7 +1562,9 @@
     "recordType": "release",
     "commit": "3916390d151c7fea18ad6c84aae87f82b0a31c97",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.141"
+    "gitTag": "v1.0.141",
+    "gitNotes": "fix(builds): refresh brand configuration on retry",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.140",
@@ -1293,7 +1573,9 @@
     "recordType": "release",
     "commit": "c34a88c2f02e6221d95187d6de1e01f071b084ae",
     "repository": "mengyuxuezhang/agent-ai-admin",
-    "gitTag": "v1.0.140"
+    "gitTag": "v1.0.140",
+    "gitNotes": "chore(release): publish admin 1.0.140",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.139",
@@ -1302,7 +1584,9 @@
     "commit": "f84b3982b1293da0d374b979605a1c2876b4d4f1",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat: add curated market update feedback [P48-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.138",
@@ -1311,7 +1595,9 @@
     "commit": "30f83a141a38f69385d440d4fd2f8edfa3460277",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix: retry managed MCP registry resolution",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.137",
@@ -1320,7 +1606,9 @@
     "commit": "fe840d22dcb7137dee1fefdf3cc6165cd920243e",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat: pin floating npm MCP dependencies",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.136",
@@ -1329,7 +1617,9 @@
     "commit": "7332f1aa73bb75c936b3290c474a24ecd6d781b5",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat: support curated MCP JSON configuration",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.135",
@@ -1339,7 +1629,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.135",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Agent AI Admin v1.0.135",
+    "gitNotesSource": "tag"
   },
   {
     "version": "1.0.134",
@@ -1348,7 +1640,9 @@
     "commit": "65dd06230846d506b832ccfe40ff75681ccd19b4",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.134",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "chore: prepare v1.0.134 managed MCP candidate [P42-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.133",
@@ -1358,7 +1652,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.133",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(release): exclude protected skill e2e fixture",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.132",
@@ -1387,7 +1683,9 @@
     "commit": "37ed2a88b8191a78c9933c5a96314783114311e7",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.130",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "chore: publish v1.0.130 update manifest",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.129",
@@ -1485,7 +1783,9 @@
     "commit": "ff51c7469541d7a11b66a12bac702a2f52532d82",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.119",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "feat: paginate and scope credit ledger",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.118",
@@ -1494,7 +1794,9 @@
     "commit": "fba28177ba03e031b44f3481acefd86cc95067c1",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.118",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "feat: reorganize admin settings navigation",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.117",
@@ -1539,7 +1841,9 @@
     "commit": "6df30825460df0a7598f95c34cbed398243f7722",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.113",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "feat: isolate project and build operations",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.112",
@@ -1548,7 +1852,9 @@
     "commit": "1a80a8d96891e83875686fe5a6be44078b4731e6",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.112",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "feat: add membership card management",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.111",
@@ -1576,7 +1882,9 @@
     "commit": "4d18db4b4eedd71c8b44772b7447eb982c2b0826",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore: bump admin update version to 1.0.109",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.108",
@@ -1603,7 +1911,9 @@
     "commit": "3f64f595c3a7e894f61186fe51ac1f9a2d698d20",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.106",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "Release v1.0.106 email auth fixes",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.105",
@@ -1612,7 +1922,9 @@
     "commit": "3715d46f409bcbda58a43539d45cf5dbde7ba7ad",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.105",
-    "recordType": "git"
+    "recordType": "git",
+    "gitNotes": "Release v1.0.105 admin email auth",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.104",
@@ -1677,7 +1989,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.98",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Align provider menu permission preview",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.97",
@@ -1687,7 +2001,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.97",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Show provider menu and gate writes by license",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.96",
@@ -1697,7 +2013,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.96",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Scope model provider keys by account",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.95",
@@ -1707,7 +2025,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.95",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Show redeem code creator",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.94",
@@ -1717,7 +2037,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.94",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Fix agent redeem code list rendering",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.93",
@@ -1727,7 +2049,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.93",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Fix redeem code session ownership",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.92",
@@ -1737,7 +2061,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.92",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Fix build center brand asset column length",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.91",
@@ -1836,7 +2162,9 @@
     "commit": "c98e03042461f2d7609fcc22e1de67eaabe9f5e0",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Remove PHP web installer",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.81",
@@ -1874,7 +2202,9 @@
     "commit": "6671c5a3eeccddbb22bcd82d6a7b15635ab82dca",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Relax model connectivity test token limit",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.77",
@@ -1883,7 +2213,9 @@
     "commit": "8e96b58bbd7c8f1802732bb69c90f7adf55d1d9d",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add multi-provider model service management",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.76",
@@ -1891,7 +2223,9 @@
     "releaseNotes": "优化代理商服务器磁盘占用：同步测试包或推送正式包成功后，自动清理同项目目录中的旧安装包和 blockmap，只保留当前版本需要的文件。",
     "recordType": "release",
     "commit": "e6ae701cf1617bbbf8d866e76df427ddea7628cd",
-    "repository": "mengyuxuezhang/agent-ai-admin"
+    "repository": "mengyuxuezhang/agent-ai-admin",
+    "gitNotes": "Clean stale supplier installer packages",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.75",
@@ -1900,7 +2234,9 @@
     "commit": "965fc676fc39bf0b966afd58abcbe1fbb4e84634",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add admin update history",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.74",
@@ -1908,7 +2244,9 @@
     "releaseNotes": "放开代理商查询权限：代理商可以在“终端用户”中查询自己名下用户的模型 Key 额度信息。",
     "recordType": "release",
     "commit": "fca8bf34659d1b3019bfbf36edbea08cf2ba3ee5",
-    "repository": "mengyuxuezhang/agent-ai-admin"
+    "repository": "mengyuxuezhang/agent-ai-admin",
+    "gitNotes": "Allow agents to query owned user quota",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.73",
@@ -1916,7 +2254,9 @@
     "releaseNotes": "优化代理账号管理：新增账号时严格校验账号唯一，编辑账号时不再允许修改登录账号；终端用户来源链路中的代理信息改为显示代理账号。",
     "recordType": "release",
     "commit": "02ad6ee4c359e48a80e7c251b21ab427a1e4675c",
-    "repository": "mengyuxuezhang/agent-ai-admin"
+    "repository": "mengyuxuezhang/agent-ai-admin",
+    "gitNotes": "Separate agent account creation from editing",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.72",
@@ -1924,7 +2264,9 @@
     "releaseNotes": "优化构建发布流程：增加从官方构建中心传输到供应商服务器的进度展示；构建列表刷新不再阻塞页面操作。",
     "recordType": "release",
     "commit": "4e24ffcd92cc14bb8c6b7b2f7ebc5ecd122df7d4",
-    "repository": "mengyuxuezhang/agent-ai-admin"
+    "repository": "mengyuxuezhang/agent-ai-admin",
+    "gitNotes": "Improve supplier build staging reliability",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.71",
@@ -1957,7 +2299,9 @@
     "commit": "b6aadd89400d774ebc15e203cbf6e60d85181962",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Retry localizing center build artifacts",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.65",
@@ -1966,7 +2310,9 @@
     "commit": "df40d5656b154b1e0670d3173132f66f91545c66",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Localize supplier test artifacts",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.64",
@@ -1975,7 +2321,9 @@
     "commit": "8def0019fff75077ef0acb22d84d28132308bdf1",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Use provider billing APIs for token quota",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.63",
@@ -1984,7 +2332,9 @@
     "commit": "99942c3f1076a69ea82d4b0896c782259b78a553",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Refocus key page on usage ledger",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.62",
@@ -1993,7 +2343,9 @@
     "commit": "09030df63084386bb0b40a7b345d33b5b7dcdfcb",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Require assigned model keys for client calls",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.61",
@@ -2002,7 +2354,9 @@
     "commit": "daf095c5c408a9fc240c222f076ddad06bcdd1f0",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Bump version to 1.0.61",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.60",
@@ -2012,7 +2366,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.60",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.60 embedded browser menu controls",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.59",
@@ -2022,7 +2378,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.59",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.59 isolate multi instance installs",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.58",
@@ -2032,7 +2390,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.58",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.58 require installer identity fields",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.57",
@@ -2042,7 +2402,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.57",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.57 supplier license cache",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.56",
@@ -2052,7 +2414,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.56",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.56 admin password reset",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.55",
@@ -2062,7 +2426,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.55",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.55 protocol relative links",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.54",
@@ -2072,7 +2438,9 @@
     "repository": "mengyuxuezhang/agent-ai-admin",
     "gitTag": "v1.0.54",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.54 diagnostics fallback",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.53",
@@ -2081,7 +2449,9 @@
     "commit": "fad46c617ad9591d21952051015d9c84e8d7767c",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Fix diagnostics build lookup",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.52",
@@ -2090,7 +2460,9 @@
     "commit": "90517d1744fba0ffedd1741fa00af9fb89792c60",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add supplier diagnostics logs",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.51",
@@ -2099,7 +2471,9 @@
     "commit": "552cda4721b41406efa5e5300a4609bc44f4d6e1",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Mirror release files for Baota sites",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.50",
@@ -2108,7 +2482,9 @@
     "commit": "43e4f884fc9b2f3821aadbd505a39abff7b14f5a",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Use Baota friendly update URLs",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.49",
@@ -2117,7 +2493,9 @@
     "commit": "ef9d8b89030f5012badb0b2dc32299cebae3dceb",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Preserve selected project owner",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.48",
@@ -2126,7 +2504,9 @@
     "commit": "5872748b45b574a2ea65387d35e4942941ec277d",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Protect admin account by username",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.47",
@@ -2135,7 +2515,9 @@
     "commit": "ee1b2c9ab40a6a3e08ae0d2762ba1e6caa514730",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Preserve platform settings drafts during refresh",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.46",
@@ -2144,7 +2526,9 @@
     "commit": "f3389b2d2df60cef9eb290c6aa05e4cd69e64359",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Protect built-in admin account",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.45",
@@ -2153,7 +2537,9 @@
     "commit": "f8685c687533f83c0141342db0ae4e94ce792f95",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Clarify installer default prompts",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.44",
@@ -2162,7 +2548,9 @@
     "commit": "e98e303346cf71619ef692190610bd54866f41d5",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Show installer secrets during terminal setup",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.43",
@@ -2171,7 +2559,9 @@
     "commit": "347dff564f3d2602a48475b52f2d7c252a024d19",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add local zip install script",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.42",
@@ -2180,7 +2570,9 @@
     "commit": "c24540294de645b5aa32512de079f834319e1257",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Make release publishing asynchronous",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.41",
@@ -2189,7 +2581,9 @@
     "commit": "522abff44c20aa574eb36542a7d9afd3d1d06737",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Store supplier releases on supplier servers",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.40",
@@ -2198,7 +2592,9 @@
     "commit": "cacb0a806d8ffd4fa954bd504f8314cce228b78d",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Publish remote center builds to official channel",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.39",
@@ -2207,7 +2603,9 @@
     "commit": "1fc053e9abef12cf28649d42ec5268b14cffa775",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Fix supplier publish artifact release",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.38",
@@ -2216,7 +2614,9 @@
     "commit": "a7b569a6029666bc752a701dab117e8e12dc78de",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Normalize admin public URLs",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.37",
@@ -2225,7 +2625,9 @@
     "commit": "387497245b0b8437bada22444c1a30a0568eab80",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Validate database before installer startup",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.36",
@@ -2234,7 +2636,9 @@
     "commit": "bde3516be359a18c5c15f5c1017831a145527620",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Fix one-command installer prompts",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.35",
@@ -2243,7 +2647,9 @@
     "commit": "8e9bb632405701a24e0b5e0d87387eb85ecb5728",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add Baota one-command installer",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.34",
@@ -2252,7 +2658,9 @@
     "commit": "b804fe64741d4a83c9af5f09863881827f4244cc",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Clarify Baota installer manual mode",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.33",
@@ -2261,7 +2669,9 @@
     "commit": "b8f33c86bec94737aa2ff8ea58b89c44407a55e9",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add Baota style installer package",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.32",
@@ -2270,7 +2680,9 @@
     "commit": "d737ab5f766ef26ed73a40879984e69823c08f2c",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add branded login and terminal password controls",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.31",
@@ -2279,7 +2691,9 @@
     "commit": "4a9718b73a85e85b79a9bffcbfa3b312d65405ac",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Move build logs into side drawer",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.30",
@@ -2288,7 +2702,9 @@
     "commit": "ac6ee1949e84fedbecd263a4c354eede1520e77a",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add menu link open mode setting",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.29",
@@ -2297,7 +2713,9 @@
     "commit": "b20dccf811fe9c30c864d08ae7983c7f67696e45",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add Node version guard for install wizard",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.28",
@@ -2306,7 +2724,9 @@
     "commit": "643c06dbec6ce40bb95a142b73d09ad6a3cc5743",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Improve install wizard public access",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.27",
@@ -2315,7 +2735,9 @@
     "commit": "0c4c86573d97ffcffd9df517eb03945d5c7cc352",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add web install wizard",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.26",
@@ -2324,7 +2746,9 @@
     "commit": "d1c0fbce505c8acb700a1023a8760238843a7c6c",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Split AI project admin views",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.25",
@@ -2333,7 +2757,9 @@
     "commit": "56a4edab27f070e2cf5245d04df4f40ce74dbee7",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Enforce supplier license abilities",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.24",
@@ -2342,7 +2768,9 @@
     "commit": "7c8b43c8bc6a32183fc0827c810b778fdf072c67",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Fix client menu editor layout",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.23",
@@ -2351,7 +2779,9 @@
     "commit": "3323c7d03f05355da58a2bd005a3cc85c953c958",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add supplier license controls",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.22",
@@ -2360,7 +2790,9 @@
     "commit": "0bf331d169a86c27006f576060e980fae1887df7",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Improve client menu editor",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.21",
@@ -2369,7 +2801,9 @@
     "commit": "7edb2135e733e414197cacfe885cbbd10486c84b",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Validate ico upload dimensions",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.20",
@@ -2378,7 +2812,9 @@
     "commit": "b3d9e626a5162dea19367443146cf9a20dbf63c2",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Improve AI project build feedback",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.19",
@@ -2387,7 +2823,9 @@
     "commit": "d78e989305933d754540b3f7fdb602ea748406b5",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Rename admin backend to Agent AI",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.18",
@@ -2396,7 +2834,9 @@
     "commit": "cc9fc4422fa039af4b40074ca1f5cbfdb0501393",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Use image bed for OEM build assets",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.17",
@@ -2405,7 +2845,9 @@
     "commit": "7759672ca05000ec96ca89a2d0264ef5842c1ff8",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Handle upload asset URLs across local origins",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.16",
@@ -2414,7 +2856,9 @@
     "commit": "b643080da9010419d47a18dc0b38e01a2280a0bd",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Inline local assets for center builds",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.15",
@@ -2423,7 +2867,9 @@
     "commit": "88832a6a329bd6656b1c9035f029dad962ba1fdb",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Support MySQL 5.7 worker claims",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.14",
@@ -2432,7 +2878,9 @@
     "commit": "22bf91e4a7c222ed2042fbf77269c29be15becdf",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add UI build center configuration",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.13",
@@ -2441,7 +2889,9 @@
     "commit": "3fd53ac5a7bebec627551f5b1266b3283224cb58",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Restrict platform and supplier access settings",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.12",
@@ -2450,7 +2900,9 @@
     "commit": "64b0625caca422d8cf454701732f74d02573f35b",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add build center supplier access management",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.11",
@@ -2459,7 +2911,9 @@
     "commit": "73bcd928dba5a1d36ebceed8f9ecc14a0492e4e2",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Bump OEM admin version to 1.0.11",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.10",
@@ -2468,7 +2922,9 @@
     "commit": "b3872f4edce8d1e00d9b86d903a2b84098566ed2",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Auto-detect Agent source version from latest yml",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.9",
@@ -2477,7 +2933,9 @@
     "commit": "b34e20924204ab949d2a6aa7a328b0c9cea91852",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Bump OEM admin version to 1.0.9",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.8",
@@ -2486,7 +2944,9 @@
     "commit": "b89999e0eb80aeed09d920f7e14c6c097102865a",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Allow editing OEM admin update feed",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.7",
@@ -2495,7 +2955,9 @@
     "commit": "73462c684090ef6a68fcc5c9d7a64cd4148fd221",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Support concurrent OEM build workers",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.6",
@@ -2504,7 +2966,9 @@
     "commit": "1e30337a01ba2c145b8988a065ae2befb4b20a9a",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Bump OEM admin version to 1.0.6",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.5",
@@ -2513,7 +2977,9 @@
     "commit": "e984ea64ebf83dc4ed9a08b129692f1611e69cf4",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Separate admin and agent version notices",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.4",
@@ -2522,7 +2988,9 @@
     "commit": "b3c4d8940366dab8b4df4577611da4d4cbca9f44",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Improve OEM admin update check feedback",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.3",
@@ -2531,7 +2999,9 @@
     "commit": "5daa11b30eda031c0e6e8d58370c4484c57f9f64",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add OEM admin self-update MVP",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.0",
@@ -2540,6 +3010,8 @@
     "commit": "da009de1f773e100d7b4c6e15d8b052c87bd860a",
     "repository": "mengyuxuezhang/agent-ai-admin",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Initial standalone OEM admin",
+    "gitNotesSource": "commit"
   }
 ]

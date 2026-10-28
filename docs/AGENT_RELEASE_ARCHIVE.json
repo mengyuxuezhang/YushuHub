@@ -1,12 +1,25 @@
 [
   {
+    "version": "3.0.74",
+    "publishedAt": "2026-10-28T07:28:17.849450Z",
+    "releaseNotes": "动画视频成片、封面与说明自动保存到工程目录outputs，便于整目录复制留档和交给AI参考复刻；支持访问工程或作品时补存旧成片，保留各次渲染版本。完善同名文件保护、保存失败、取消及缺失提示，删除客户端任务仍保留工程成片。",
+    "commit": "db459e46558fa58918f0ae1e870308f1cb8aeb4e",
+    "repository": "mengyuxuezhang/Agent-Desktop",
+    "gitTag": "v3.0.74",
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.74：成片封面自动保存工程目录与历史补存",
+    "gitNotesSource": "tag"
+  },
+  {
     "version": "3.0.73",
     "publishedAt": "2026-10-28T05:55:20.363537Z",
     "releaseNotes": "修复动画视频侧栏切换口播字幕或自动配音后显示区域缩短、底部出现大块空白的问题；调整开关焦点定位，保持正常滚动和键盘操作。",
     "commit": "9933194d0d863318baaeac1638273128b18c4826",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.73",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.73：修复动画视频字幕与配音开关导致侧栏缩短",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.72",
@@ -15,7 +28,9 @@
     "commit": "8ff2a94cd1420da7ea65604cc1103ff57bc03bf1",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.72",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.72：非抢占文字与附件补充、进度气泡和统一控制指针",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.71",
@@ -24,7 +39,9 @@
     "commit": "602131015e1f32eb32974d291867dcf523ecebd6",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.71",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "发布3.0.71：动画视频工作区工程与文件编辑渲染一致性",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.70",
@@ -33,7 +50,9 @@
     "commit": "5679e8e30fbb4110cac2a1a0864898e9bae1b700",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.70",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.70：修复能力启动连带失败并新增中文Esc控制提示",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.69",
@@ -42,7 +61,9 @@
     "commit": "3f46cc08850cb9036ef2523834ee0ef8e08f68cb",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.69",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.69 伙伴列表布局优化 [P410-T01]",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.68",
@@ -51,7 +72,9 @@
     "commit": "3a9e6e179e67f2c8a89373da6144a413a2470799",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.68",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.68：修复首次启动循环等待和超时重试残留",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.67",
@@ -60,7 +83,9 @@
     "commit": "39483e821d2f334d2de2493dd941b8eb91c009eb",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.67",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "桌面端3.0.67：精简桌面伙伴3D资源并修复旧资料兼容",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.66",
@@ -69,7 +94,9 @@
     "commit": "ababd360c840be3d821f44ba40c5e44aa3d327d7",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.66",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.66：修复创作要求截断和长路径消息保存，补齐Agent音色目录",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.65",
@@ -78,7 +105,9 @@
     "commit": "d8f4d1524b49b33e71558ec2754093a47ad6c936",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.65",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "发布3.0.65：59类按需视觉风格规范与独立技法参考",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.64",
@@ -87,7 +116,9 @@
     "commit": "659c49bc2e390f90f4e658d41ec8f74839381e7a",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.64",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.64：日历定时与多时间点计划",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.63",
@@ -96,7 +127,9 @@
     "commit": "c1748c60a21d7e94fe771216d5c6db47fa41b62d",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.63",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.63：修复内置浏览器发布入口与弹出页面生命周期",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.62",
@@ -105,7 +138,9 @@
     "commit": "be8e92077908495e780d03e8af6be89730d2adc4",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.62",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "发布3.0.62：统一会话创作、自动侧栏与Edge配音协议修复",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.61",
@@ -114,7 +149,9 @@
     "commit": "265c6fa257e76d2f5ced2aad0d3e3af6acae45b5",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.61",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "3.0.61 多Agent浏览器并行与页面生命周期修复",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.60",
@@ -123,7 +160,9 @@
     "commit": "662f899c8fbed646e91fefb12adbe8d9e8f0f5ba",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.60",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "发布3.0.60：浏览器双模式与高DPI截图修复 [P386-T01]",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.59",
@@ -132,7 +171,9 @@
     "commit": "d567203a648e98e642393281a7126c0efc4c9a1b",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.59",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "桌面端3.0.59：高清动画与上下文摘要修复",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.58",
@@ -141,7 +182,9 @@
     "commit": "607c2a75106678100937783710d231850556b581",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.58",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "桌面端3.0.58：客户端远程策略与个人模型",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.57",
@@ -150,7 +193,9 @@
     "commit": "741bdc02497d70e52490bf590b604c06c0de7659",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.57",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "发布3.0.57：创作案例、图文模板与处理过程交互优化",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.56",
@@ -159,7 +204,9 @@
     "commit": "6706b3ba303ce1115f036b91576467712a71dc21",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.56",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "3.0.56：发布十六类视频创作指导、渲染进度及MCP和时长输入修复",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.55",
@@ -168,7 +215,9 @@
     "commit": "264ca8f3375e84141b15cb8baa5870e01a05c170",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.55",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "3.0.55 动画视频渲染与开发构建修复",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.54",
@@ -177,7 +226,9 @@
     "commit": "74872e1cb5c56809851e6e4879d3a117858069d9",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.54",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "桌面端3.0.54：统一公共字体与表单样式",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.53",
@@ -186,7 +237,9 @@
     "commit": "0a4833d48a04120ae144419285da9e716262e105",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.53",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "桌面端3.0.53：连续演出、流式编码与真实配音时间",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.52",
@@ -195,7 +248,9 @@
     "commit": "2c1bc6ac8329d6ff7ff34c7e7a8b855d11b926b3",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.52",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.52 视频素材声音字幕与诊断质量改进",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.51",
@@ -204,7 +259,9 @@
     "commit": "15f1c31b5541408c6447a28bf98dcf1b6960e946",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.51",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(desktop): 发布 3.0.51 产品源码与门禁记录 [P355-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.50",
@@ -213,7 +270,9 @@
     "commit": "ceee547b551efdea1396da7e0090466604e51653",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.50",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(desktop): 发布 3.0.50 产品源码与门禁记录 [P352-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.49",
@@ -222,7 +281,9 @@
     "commit": "5ab0b42e9b967c0c99ab769de4102b758ad958df",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.49",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.49：创作类会话引导式需求沟通；上下文用量进度环与侧边栏菜单精简直显；设置页审计中心",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.48",
@@ -231,7 +292,9 @@
     "commit": "8377db987cea76b4d28e56dd233e3dda18f54c1b",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.48",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "发布 3.0.48：支持直链图片与 Mermaid 图表并完善下载预览",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.47",
@@ -240,7 +303,9 @@
     "commit": "f20adcaa3ba5c554ac212cdfe7a9e4795ae6e5de",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.47",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.47: replace native confirms with shared in-app dialog [P340-T01]",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.46",
@@ -276,7 +341,9 @@
     "commit": "b512e0f02bbb374bf0c747331161860845335ffd",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.43",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(release): 升级 Desktop 3.0.43 并记录消息中心更新 [P336-T05]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.42",
@@ -285,7 +352,9 @@
     "commit": "b7b927dedb0ab5b075551f223757fa353a324458",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.42",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "release(desktop): publish notification center 3.0.42 [P336]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.41",
@@ -312,7 +381,9 @@
     "commit": "1f863c1721d639f29ef20e4110eeccf51684e923",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.39",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(skills): bundle skill pack converter [P325-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.38",
@@ -348,7 +419,9 @@
     "commit": "2519a588d891d2645de44e81fd17075c06c421f6",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.35",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(desktop): release 3.0.35 app center polish [P315-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.34",
@@ -357,7 +430,9 @@
     "commit": "4e5cfb12b978f58370bb6e444aad41bbea1c0473",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.34",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(desktop): release 3.0.34 workspace recovery [P311-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.33",
@@ -366,7 +441,9 @@
     "commit": "0d89ee7385794cb77e041fcebe14a405d8e86d39",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.33",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(desktop): release 3.0.33 dual-worker priority [P309-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.32",
@@ -375,7 +452,9 @@
     "commit": "8c833c6c6b5b0c71e4a7368fc87daff934f2f8f9",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.32",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(desktop): release 3.0.32 path recovery fix [P307-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.31",
@@ -474,7 +553,9 @@
     "commit": "95cf7eaab2e2a04228dd378967c60b6d84f0cde7",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.21",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "release(desktop): prepare 3.0.21 video background music [P284-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.20",
@@ -483,7 +564,9 @@
     "commit": "271cf9008fc8dfe3d101675ce88256c95733af9d",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.20",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "release(desktop): prepare 3.0.20 companion hit bounds [P282-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.19",
@@ -492,7 +575,9 @@
     "commit": "f1d6ffead966f6acc3b6c06ad7fc9d85e3006a7e",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.19",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "release(desktop): prepare 3.0.19 drag reliability [P280-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.18",
@@ -501,7 +586,9 @@
     "commit": "b47c2cf77c36c605133eacd1a17c9e5cbaaee6db",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.18",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "release(desktop): prepare 3.0.18 companions [P277-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.17",
@@ -510,7 +597,9 @@
     "commit": "81cba2f2e50b6c7aceed73cf2408c0c236103a69",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.17",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "release(desktop): prepare 3.0.17 companion fixes [P276-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.16",
@@ -528,7 +617,9 @@
     "commit": "857ac571edf38eea8df3eb32cd9d297aab8464af",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.15",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "release(desktop): prepare 3.0.15 companion release [P269-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.14",
@@ -537,7 +628,9 @@
     "commit": "ba7f583daf653a69bca4ebcaf5a1564470ae2457",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.14",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "release(desktop): publish 3.0.14 zero multiplier [P258-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.13",
@@ -546,7 +639,9 @@
     "commit": "8e81be6870b29c07fecd44f2b4340ff42349bf6c",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.13",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "release(desktop): publish 3.0.13 runtime recovery [P256-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.12",
@@ -555,7 +650,9 @@
     "commit": "af871061210a4984b6bf10258205a98ee7f5d150",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.12",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "release(desktop): publish 3.0.12 voice preview fix [P254-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.11",
@@ -564,7 +661,9 @@
     "commit": "80af7efe5ae6f751ab1c35706e2bec4cd3fa306e",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.11",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "release(desktop): publish 3.0.11 managed voice integration [P253-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.10",
@@ -573,7 +672,9 @@
     "commit": "321b25791496115533ae779b1ecf6293de234d0b",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.10",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(release): publish Desktop 3.0.10 product [P251-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.9",
@@ -582,7 +683,9 @@
     "commit": "b7edb0b88c9d8b5ba27f1654202bbb28dfb1d04b",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.9",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "chore(release): publish desktop 3.0.9 source version [P249-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.8",
@@ -591,7 +694,9 @@
     "commit": "f84a1c42d7d4a8730ebcd01a69b5386d8602babe",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.8",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "chore(release): publish desktop 3.0.8 source version [P247-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.7",
@@ -600,7 +705,9 @@
     "commit": "4719b604f8d07d4249b79cffcf6b1d30cb133663",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.7",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "chore(release): publish desktop 3.0.7 source version [P241-T03]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.6",
@@ -609,7 +716,9 @@
     "commit": "406e56d517afb673c73ec9099fbdd8701a2627f0",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.6",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "chore(release): publish desktop 3.0.6 source version [P240-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.5",
@@ -618,7 +727,9 @@
     "commit": "5ab23d78cfe854e2aca7149d5679dcebb945f255",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.5",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.5 knowledge workspace",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.4",
@@ -663,7 +774,9 @@
     "commit": "109c30112d88101d31c70c615e37c38e6e6b07d7",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "merge: release Seedream 5.0 Pro [P229-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.138",
@@ -690,7 +803,9 @@
     "commit": "86bebd31e085ec9c62905344dc08c201caddfca0",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.136",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(release): prepare desktop beta.136 [P218-T64]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.135",
@@ -699,7 +814,9 @@
     "commit": "d19f1da80d8a1f52dc6fe4e5a88df9e79ab59713",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.135",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(release): prepare desktop beta.135 [P218-T63]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.134",
@@ -708,7 +825,9 @@
     "commit": "28433d73128d49d4f2375c81d3cfd793aa4ad94b",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.134",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(release): prepare desktop beta.134 rich paste [P218-T62]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.133",
@@ -717,7 +836,9 @@
     "commit": "d2c57d35fa8d2331873ef21ba4fa7154e43490d6",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.133",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(release): prepare desktop beta.133 workspace preview [P218-T60]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.132",
@@ -726,7 +847,9 @@
     "commit": "f5fa82daadb2566a01e5310b16eb5c7376fe7cd0",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.132",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(release): prepare desktop beta.132 expert isolation [P218-T53]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.131",
@@ -735,7 +858,9 @@
     "commit": "656bdcab4b3e01d70a746c167b9799603534a341",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.131",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(release): prepare desktop beta.131 expert marketplace [P218-T50]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.130",
@@ -744,7 +869,9 @@
     "commit": "91dd0049b7d23e0381d23c97152c7bb1d777cc37",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.130",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(release): prepare desktop beta.130 browser dialog fix [P218-T48]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.129",
@@ -753,7 +880,9 @@
     "commit": "7053ba0d6de44bd66548d03fab4e03711d53a56f",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.129",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(release): prepare desktop beta.129 model selector fix [P218-T46]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.128",
@@ -762,7 +891,9 @@
     "commit": "bf5a319f4ea65b9d71b9216df0236ffdc0c7d68c",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.128",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(release): prepare desktop beta.128 with queue and preview fixes [P218-T44]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.127",
@@ -771,7 +902,9 @@
     "commit": "b93dc64a9b2af82a8f5184b59d436f2e84b008f5",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.127",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(release): prepare desktop beta.127 with chat reliability updates [P218-T43]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.126",
@@ -780,7 +913,9 @@
     "commit": "1f30dbf8eeca77d42ae549a0c978354cdd466bc4",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.126",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.0-beta.126 source release",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.0-beta.125",
@@ -789,7 +924,9 @@
     "commit": "1fcd27947c95b61e848562833c37e338d88ad6a0",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.125",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop beta.125 skills and market reliability",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.0-beta.124",
@@ -798,7 +935,9 @@
     "commit": "eb0ba6048fbe6b30fe4ddf89829c3fdee13aefed",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.124",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop beta.124: skill message presentation and detail icon fixes",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.0-beta.123",
@@ -807,7 +946,9 @@
     "commit": "c9e0cd8ec8db22206c2588ee2ea973374991af59",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.123",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop 3.0.0-beta.123: curated resource icons and unified cards",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.0-beta.122",
@@ -816,7 +957,9 @@
     "commit": "5e3d22a47c3d3457cdb74a68db329047488d24eb",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.122",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "chore(release): prepare desktop beta.122 [P218-T23]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.121",
@@ -825,7 +968,9 @@
     "commit": "c79d5f99130d9997cedc67e57142b976c8b74add",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.121",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "build(release): Record passed beta.121 release gates [P218-T13]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.120",
@@ -834,7 +979,9 @@
     "commit": "f7c7d207f57a9a5f3a8c1b68a15a6029b6cb85ef",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.120",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop beta.120 workbench redesign",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.0-beta.119",
@@ -843,7 +990,9 @@
     "commit": "198d202c8ecba41a40d04e12b7d16f10ef1a9963",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.119",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "chore(release): prepare beta.119 [P216-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.118",
@@ -852,7 +1001,9 @@
     "commit": "0e8737b9f71c445e9146295e90e3bbd70b8c29e9",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.118",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "chore(release): prepare beta.118 [P215-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.117",
@@ -861,7 +1012,9 @@
     "commit": "99ffacc4a98567dde6fde556d123067ffa43eccb",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.117",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(capabilities): enable editable MCP installs [P214-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.116",
@@ -870,7 +1023,9 @@
     "commit": "c00aefdf9aea1639385f4940ecda17aa8fa6417b",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.116",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(brand): unify Windows application and tray icons [P212-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.115",
@@ -879,7 +1034,9 @@
     "commit": "1aa7b9da3206be762ebae0570be939a3eb8caff7",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.115",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(auth): clarify missing email service errors [P211-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.114",
@@ -888,7 +1045,9 @@
     "commit": "e444d2db825e97d3ff82fdf30f1093086cf9cf64",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.114",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Agent Desktop beta.114",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.0-beta.113",
@@ -897,7 +1056,9 @@
     "commit": "6e6151a600a424571578c61e8e256a5557cef25f",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.113",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(browser): support multi-file RPA uploads [P208-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.112",
@@ -906,7 +1067,9 @@
     "commit": "19f11f4f27922d8f3d2561b68cceb041b1c4d266",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.112",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(browser): stabilize built-in file uploads [P207-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.111",
@@ -915,7 +1078,9 @@
     "commit": "c136ba976ed5c71e17a4015d4c87173bef014260",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.111",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(installer): inline NSIS helper macros to clear -WX warning and release 3.0.0-beta.111 [P206-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.110",
@@ -969,7 +1134,9 @@
     "commit": "9bdd1a74507123144e86127c608bc10348fc203b",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.105",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "release: prepare Desktop 3.0.0-beta.105\n\n图片生成体验完善：模型选择下拉仅展示文本模型；Agent 生成图片后对话内联返回预览，支持放大与下载。\n附件能力增强：新建任务与聊天界面支持拖拽上传图片或附件，输入框支持识别剪切板中的文件与图片。",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.104",
@@ -978,7 +1145,9 @@
     "commit": "0bf6429b48c45c1014f4c9e9512b71a226bb27b2",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.104",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "release: prepare Desktop 3.0.0-beta.104\n\n新增图片生成基座能力：内置图片生成 MCP（agent_desktop_image，不可删除），暴露文生图、图生图与组图工具，基于管理端接入的 Doubao Seedream 5.0 lite 模型；产物自动保存到本机图片目录并为 Agent 返回本地路径；水印默认关闭。\n\n门禁：typecheck、test 821/821、audit:ui-css、build、scan:brand 均通过。",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.103",
@@ -987,7 +1156,9 @@
     "commit": "f8a19f3c6ca6cd1a5a3cc7e496374e3b25c3527c",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.103",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop beta.103",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.0-beta.102",
@@ -996,7 +1167,9 @@
     "commit": "f358f07656f3753d93490bf9bedc590381b00949",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.102",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "Desktop beta.102",
+    "gitNotesSource": "tag"
   },
   {
     "version": "3.0.0-beta.101",
@@ -1005,7 +1178,9 @@
     "commit": "56942dede9fc76f216b2f8a5ec8ba27837daccbf",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.101",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "chore(release): prepare Desktop beta.101 [P200-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.100",
@@ -1014,7 +1189,9 @@
     "commit": "5800f86676483687f2872ab579cdfb6b01e76f6a",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.100",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "chore(release): prepare Desktop beta.100",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.99",
@@ -1023,7 +1200,9 @@
     "commit": "a121db48c4762ba09c613bfb8d945eb840d66253",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.99",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "chore(release): prepare Desktop beta.99 [P198-T04]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.98",
@@ -1032,7 +1211,9 @@
     "commit": "7edd6034ca71f33a4624aac809de3d5ddc22fedf",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.98",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "merge: browser RPA skills and repair flow [P197]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.97",
@@ -1041,7 +1222,9 @@
     "commit": "9e7ea7b5ada51c3a680162f7998a4e74f9683231",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.97",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(chat): preserve insufficient-credit errors [P196-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.96",
@@ -1077,7 +1260,9 @@
     "commit": "15bf8bdeb708c4ebb79f81a4e27565b0049cdb8a",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.93",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "merge: P191 computer control operator",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.92",
@@ -1104,7 +1289,9 @@
     "commit": "078df9bae906794b4afed0609514656597d16497",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.90",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(agents): add visual model delegation [P189-T03]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.89",
@@ -1122,7 +1309,9 @@
     "commit": "3d9450188a7d29301bf72ed3400736c5dc2d613a",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.88",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(release): keep helper health probe session-independent",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.87",
@@ -1131,7 +1320,9 @@
     "commit": "6fa1b72dfcd725b3900188764a16853f9b61ea66",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.87",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "chore(release): prepare desktop beta.87",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.86",
@@ -1140,7 +1331,9 @@
     "commit": "1796e163e32b54626d18ecf73d800ba214c76901",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.86",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(desktop): stabilize history workspace loading",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.85",
@@ -1149,7 +1342,9 @@
     "commit": "215ce74c2bed0c50870a8b6dd884addd8d0e85e3",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.85",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(desktop): smooth streaming chat beta.85",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.84",
@@ -1158,7 +1353,9 @@
     "commit": "5f7a612c33e856630aea1e659db89c65c8738176",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.84",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(desktop): improve responsive chat beta.84",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.83",
@@ -1167,7 +1364,9 @@
     "commit": "841bb627a68c39a554ecfc1746396513e4893a0e",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.83",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(desktop): release runtime stability beta.83",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.82",
@@ -1176,7 +1375,9 @@
     "commit": "1ab80a53a4baca2493a1f66e4a00b45b3b6e9821",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.82",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(desktop): improve chat attachment experience",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.81",
@@ -1185,7 +1386,9 @@
     "commit": "9e70cbaa2af3fc7c65d3e01098d704e33c666c9e",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.81",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(desktop): distribute curated agents with dependencies",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.80",
@@ -1194,7 +1397,9 @@
     "commit": "02cccf1e34168970129445426fea81b23cc7fc1f",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.80",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(desktop): improve video authoring workflow",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.79",
@@ -1203,7 +1408,9 @@
     "commit": "26e69aa278bea3c25ce47421fb78abfe159e0aa1",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.79",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(desktop): refine task titles automatically",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.78",
@@ -1212,7 +1419,9 @@
     "commit": "75c1c12630c3def0443a4793390b90394692323c",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.78",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(updates): retain bounded v3 release history",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.77",
@@ -1221,7 +1430,9 @@
     "commit": "5637c6f21731211222a9fefcaed17e19878ae35c",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.77",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "refactor(release): simplify desktop source publishing",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.76",
@@ -1230,7 +1441,9 @@
     "commit": "fb09516fb2f9cec78b6aa06b0419642a0d7c1de7",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.76",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(desktop): refine update dialog backdrop",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.75",
@@ -1239,7 +1452,9 @@
     "commit": "58082916106c1c2ca9a7c33fd2a9029da0b3d068",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.75",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(desktop): repair agent question responses",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.74",
@@ -1248,7 +1463,9 @@
     "commit": "0e4824dae4941802304ef9e4d3d28bb3f454171b",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.74",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(desktop): refine empty and focus states",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.73",
@@ -1257,7 +1474,9 @@
     "commit": "7db0bbf4fcc101426c91d63bd6921b11aa7b4b70",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.73",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(desktop): refine capability pages and markets",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.72",
@@ -1266,7 +1485,9 @@
     "commit": "20abb5c32d71ab8f04b0799209cbbe9b39d99e11",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.72",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(video): move settings to workspace dock",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.71",
@@ -1275,7 +1496,9 @@
     "commit": "e16bbb78d3e7824376fd93f44e453a62938a047e",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.71",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(desktop): keep long-running tasks attached",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.70",
@@ -1284,7 +1507,9 @@
     "commit": "766961a3ae331590984528cd9dd8af29a2ac3a95",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.70",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "fix(desktop): improve chat history responsiveness",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.69",
@@ -1293,7 +1518,9 @@
     "commit": "205d403089841c37f67df2dc8ad126f3fb92b472",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.69",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(desktop): expand global diagnostics",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.68",
@@ -1302,7 +1529,9 @@
     "commit": "e9ac3e8a390b8076a70049efefbc3816315ee459",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.68",
-    "recordType": "release"
+    "recordType": "release",
+    "gitNotes": "feat(video): support resilient long-form renders",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.67",
@@ -1312,7 +1541,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.67",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "test(ui): align branded copy contract [P171-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.66",
@@ -1352,7 +1583,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.63",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): prepare desktop beta.63 [P158-T00]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.62",
@@ -1362,7 +1595,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.62",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): prepare desktop beta.62 [P154-T00]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.61",
@@ -1372,7 +1607,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.61",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): prepare desktop beta.61 [P152-T00]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.60",
@@ -1382,7 +1619,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.60",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat(mobile): embed scrcpy control and Unicode input [P147-T00]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.59",
@@ -1392,7 +1631,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.59",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): prepare desktop beta.59 [P143-T00]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.58",
@@ -1402,7 +1643,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.58",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(release): audit packaged browser MCP [P141-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.57",
@@ -1412,7 +1655,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.57",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): prepare desktop beta.57 [P141-T00]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.56",
@@ -1422,7 +1667,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.56",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat(workspace): add detachable workspace window [P139-T00]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.55",
@@ -1442,7 +1689,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.54",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat(desktop): 移除旧视频创作兼容API，修复视频画布参数传递和多轮调整问题\n\n- 移除旧兼容API（直接创建MP4项目/渲染的机械化流程），仅保留Studio原生HTML编排工作流\n- 为video_studio_prepare_turn添加canvas必填参数，确保Agent传递正确画幅尺寸\n- MCP handler在Agent未传canvas时从项目偏好推断画布参数\n- prepareTurn方法支持动态更新项目画布设置\n- singleFrameDuration默认值从3秒改为6秒，匹配用户默认时长\n- 更新Agent SKILL文档和视频prompt，强化canvas参数传递要求\n- 修复TypeScript类型错误（project.preferences.aspect可能为undefined）\n- 更新相关测试用例以匹配简化后的Studio-only架构\n- 版本升级至v3.0.0-beta.54",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.53",
@@ -1452,7 +1701,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.53",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat(desktop): 优化聊天卡片展开宽度与视觉风格",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.52",
@@ -1462,7 +1713,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.52",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): prepare desktop beta.52",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.51",
@@ -1472,7 +1725,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.51",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): prepare desktop beta.51 [P131-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.50",
@@ -1482,7 +1737,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.50",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): prepare desktop beta.50 [P126-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.49",
@@ -1502,7 +1759,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.48",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "build(release): prepare beta.48 product [P119-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.47",
@@ -1512,7 +1771,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.47",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "build(release): prepare beta.47 product [P111-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.46",
@@ -1522,7 +1783,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.46",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "build(release): prepare beta.46 product [P108-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.45",
@@ -1532,7 +1795,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.45",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(release): make video template hashes platform stable [P105-T03]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.44",
@@ -1542,7 +1807,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.44",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "merge: complete P105 video parallel activity and cancellation",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.43",
@@ -1552,7 +1819,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.43",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat(sessions): show task run and completion status [P98-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.42",
@@ -1562,7 +1831,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.42",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat(video): improve creation diagnostics and model control",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.41",
@@ -1572,7 +1843,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.41",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): bump desktop beta41 [P95-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.40",
@@ -1582,7 +1855,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.40",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): bump desktop beta40 [P93-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.39",
@@ -1592,7 +1867,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.39",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): bump desktop beta39 [P91-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.38",
@@ -1602,7 +1879,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.38",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): bump desktop beta38 [P88-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.37",
@@ -1612,7 +1891,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.37",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "release: prepare desktop beta37",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.36",
@@ -1622,7 +1903,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.36",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "release: prepare desktop beta36",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.35",
@@ -1632,7 +1915,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.35",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): bump desktop to beta.35 [P84-T02]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.34",
@@ -1642,7 +1927,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.34",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): bump desktop to 3.0.0-beta.34 [P82-T04]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.33",
@@ -1652,7 +1939,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.33",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): bump desktop to 3.0.0-beta.33 [P81-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.32",
@@ -1662,7 +1951,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.32",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "build(release): prepare desktop beta.32 [P69-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.31",
@@ -1672,7 +1963,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.31",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): prepare MP4 beta.31 [P67-T03]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.30",
@@ -1682,7 +1975,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.30",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(release): enforce packaged resource integrity",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.29",
@@ -1692,7 +1987,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.29",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "build(release): prepare video capability beta.29 [P66-T08]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.28",
@@ -1772,7 +2069,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.21",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(skills): install managed binary assets safely [P49-T06]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.20",
@@ -1782,7 +2081,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.20",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(mcp): accept pinned uvx managed servers [P49-T05]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.19",
@@ -1792,7 +2093,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.19",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "build(release): repair desktop beta.19 lockfile [P49-T04]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.18",
@@ -1802,7 +2105,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.18",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(desktop): resolve Windows PTY shell path [P49-T04]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.17",
@@ -1812,7 +2117,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.17",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(release): remove Electron fallback app [P49-T04]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.16",
@@ -1822,7 +2129,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.16",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "build(release): bump desktop beta.16 [P49-T03]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.15",
@@ -1832,7 +2141,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.15",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "build(release): prepare desktop beta.15 [P46-T03]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.14",
@@ -1842,7 +2153,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.14",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "build(release): prepare desktop beta.14 [P45-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.13",
@@ -1852,7 +2165,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.13",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat(mcp): add managed curated distribution [P42-T01]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.12",
@@ -1862,7 +2177,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.12",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat(skills): protect curated skill runtime",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.11",
@@ -1872,7 +2189,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.11",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(mcp): bundle and initialize Chrome DevTools tools",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.10",
@@ -1882,7 +2201,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.10",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat(desktop): minimize main window to tray",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.9",
@@ -1892,7 +2213,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.9",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(brand): use product identity in agent prompts",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.8",
@@ -1902,7 +2225,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.8",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(build): keep JPEG logos out of PNG icon slots",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.7",
@@ -1912,7 +2237,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.7",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(build): accept approved branded image assets",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.6",
@@ -1932,7 +2259,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.5",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "build(release): register beta.5 integration candidate [P38-T04]",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.4",
@@ -1942,7 +2271,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.4",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(release): harden branded Windows installation",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.3",
@@ -1952,7 +2283,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.3",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "fix(release): validate builder config and redact runtime logs",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.2",
@@ -1962,7 +2295,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.2",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): bump desktop version to 3.0.0-beta.2",
+    "gitNotesSource": "commit"
   },
   {
     "version": "3.0.0-beta.1",
@@ -1972,7 +2307,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v3.0.0-beta.1",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "chore(release): approve reproducible v3 beta revision",
+    "gitNotesSource": "commit"
   },
   {
     "version": "2.0.0-beta.17",
@@ -1982,7 +2319,182 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v2.0.0-beta.17",
     "recordType": "git",
+    "dateSource": "commit",
+    "gitNotes": "chore(release): approve desktop beta.17 build revision",
+    "gitNotesSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.16",
+    "publishedAt": "2026-07-18T10:31:35+08:00",
+    "releaseNotes": "",
+    "commit": "9a77ea489335fc0a5b3d19e61aab29c6edd35e42",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.16",
+    "recordType": "git",
+    "dateSource": "commit",
+    "gitNotes": "Release v2.0.0-beta.16: multi-agent V3 refactor (agent_spawn/agent_yield, recursive spawn, depth-layered tool policy)",
+    "gitNotesSource": "tag"
+  },
+  {
+    "version": "2.0.0-beta.15",
+    "publishedAt": "2026-07-17T23:06:24+08:00",
+    "releaseNotes": "",
+    "commit": "d1bcec00f5cefafb6076772fc2506dccdf5b4df6",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.15",
+    "recordType": "git",
     "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.14",
+    "publishedAt": "2026-07-17T11:16:20+08:00",
+    "releaseNotes": "",
+    "commit": "f21cb08afb6030ea01a817b6d91b0bcbfa62c2c2",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.14",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.13",
+    "publishedAt": "2026-07-17T00:26:55+08:00",
+    "releaseNotes": "",
+    "commit": "c3b11eb5c02debe21f350ea6239c2c706b5a68ad",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.13",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.12",
+    "publishedAt": "2026-07-16T20:47:00+08:00",
+    "releaseNotes": "",
+    "commit": "c48e263e80f8a84f708621bb49760c83ca305b75",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.12",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.11",
+    "publishedAt": "2026-07-16T18:55:32+08:00",
+    "releaseNotes": "",
+    "commit": "76f26b92a68ac566ecadec9e87d9d509166dd48d",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.11",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.10",
+    "publishedAt": "2026-07-16T18:39:18+08:00",
+    "releaseNotes": "",
+    "commit": "48541624c167b538573860bd0b154db01bba9f8d",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.10",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.9",
+    "publishedAt": "2026-07-16T17:16:48+08:00",
+    "releaseNotes": "",
+    "commit": "bf3ed17ef19db8339002bb193dc9c6f5cc7ed348",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.9",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.8",
+    "publishedAt": "2026-07-16T15:05:40+08:00",
+    "releaseNotes": "",
+    "commit": "3ff696e59ff01a464cfb1f7c1b38d4f2901868b3",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.8",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.7",
+    "publishedAt": "2026-07-16T13:59:34+08:00",
+    "releaseNotes": "",
+    "commit": "091a6e2e1d9c0c21c2c37162873435d5652327c9",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.7",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.6",
+    "publishedAt": "2026-07-16T11:17:55+08:00",
+    "releaseNotes": "",
+    "commit": "95413cde56ac206af63fc064d75619228b005bab",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.6",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.5",
+    "publishedAt": "2026-07-16T08:49:46+08:00",
+    "releaseNotes": "",
+    "commit": "dd69c05dbc3b07c34ee6007c1c84108591867e01",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.5",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.4",
+    "publishedAt": "2026-07-16T00:52:10+08:00",
+    "releaseNotes": "",
+    "commit": "0326b620cf955d314646aecd64697c3e092c1e21",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.4",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.3",
+    "publishedAt": "2026-07-16T00:28:19+08:00",
+    "releaseNotes": "",
+    "commit": "f9c4a482f971b79cec838e915d35897bc8ba8463",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.3",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.2",
+    "publishedAt": "2026-07-15T23:10:28+08:00",
+    "releaseNotes": "",
+    "commit": "55df4a752cc7a564b2c99b07469012017dc164ac",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.2",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-beta.1",
+    "publishedAt": "2026-07-15T20:51:05+08:00",
+    "releaseNotes": "",
+    "commit": "018ce6fc43bca4c3f25bc31c9e2327c8ec2b31aa",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "gitTag": "v2.0.0-beta.1",
+    "recordType": "git",
+    "dateSource": "commit"
+  },
+  {
+    "version": "2.0.0-alpha.1",
+    "publishedAt": "2026-07-14T20:16:55+08:00",
+    "releaseNotes": "",
+    "commit": "0c286494a7eb916570f051732aaeca7daa54ee5d",
+    "repository": "mengyuxuezhang/Agent-Desktop-Next",
+    "recordType": "git",
+    "dateSource": "commit",
+    "gitNotes": "feat(stage-1): bootstrap isolated next-generation runtime",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.97",
@@ -2122,7 +2634,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.84",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat: adapt desktop membership access",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.83",
@@ -2332,7 +2846,9 @@
     "commit": "8d0e657264b5018365eb76a6c274818e66ca1c3f",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add manual credit refresh",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.61",
@@ -2341,7 +2857,9 @@
     "commit": "aaf096d1dbedf8c7ccea6301c7107c58731e8200",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Bump version to 1.0.61",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.60",
@@ -2351,7 +2869,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.60",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.60 embedded browser link controls",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.59",
@@ -2361,7 +2881,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.59",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.59 protocol fallback",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.58",
@@ -2371,7 +2893,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.58",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.58 market integrations",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.57",
@@ -2399,7 +2923,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.55",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.55 account security polish",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.54",
@@ -2409,7 +2935,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.54",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Document v1.0.54 release status",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.53",
@@ -2418,7 +2946,9 @@
     "commit": "35ce8df7c4428640f7c97957def8547a861e30fd",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add internal browser for external menus",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.52",
@@ -2485,7 +3015,9 @@
     "commit": "2eb63530f0776f45f195d942e7d11f6d2ac27cde",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Rename desktop branding to Agent AI",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.45",
@@ -2504,7 +3036,9 @@
     "commit": "6d8c76caecc6532f079498c6169635410348c44f",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Separate OEM build and release flow",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.43",
@@ -2513,7 +3047,9 @@
     "commit": "19d182d7908f7603e89100698045cb72e5ea0817",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Fix OEM project config directories",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.42",
@@ -2522,7 +3058,9 @@
     "commit": "43120882ab1ae1d924982b3e5785bd93caa19f00",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Prepare OEM version 1.0.42 branding fixes",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.41",
@@ -2542,7 +3080,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.40",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Fix Claude tool loop handling",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.39",
@@ -2552,7 +3092,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.39",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Refine key usage CSV export",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.38",
@@ -2562,7 +3104,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.38",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add key usage detail export",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.37",
@@ -2572,7 +3116,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.37",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add API key balance lookup",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.36",
@@ -2622,7 +3168,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.32",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Add wireless phone discovery scan",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.31",
@@ -2632,7 +3180,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.31",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Support Chinese phone text input",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.30",
@@ -2642,7 +3192,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.30",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Preserve Gemini tool thought signatures",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.29",
@@ -2652,7 +3204,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.29",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Fix tool schema compatibility",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.28",
@@ -2742,7 +3296,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.20",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.20 with markdown replies",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.19",
@@ -2752,7 +3308,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.19",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.19 with manual update downloads",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.18",
@@ -2762,7 +3320,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.18",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.18 with chat timestamps",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.17",
@@ -2772,7 +3332,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.17",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.17 with scheduled tasks",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.16",
@@ -2832,7 +3394,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.11",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.11 hiding license panel",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.10",
@@ -2842,7 +3406,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.10",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.10 without license enforcement",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.9",
@@ -2852,7 +3418,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.9",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.9 with local skill creation",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.8",
@@ -2862,7 +3430,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.8",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.8 with log access",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.7",
@@ -2872,7 +3442,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.7",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.7 with logs and update notices",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.6",
@@ -2882,7 +3454,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.6",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.6 with model context defaults",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.5",
@@ -2892,7 +3466,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.5",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.5 with MengYu models",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.4",
@@ -2902,7 +3478,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.4",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Release v1.0.4 via self-hosted updates",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.3",
@@ -2912,7 +3490,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.3",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Switch updates to self-hosted server",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.2",
@@ -2922,7 +3502,9 @@
     "repository": "mengyuxuezhang/Agent-Desktop",
     "gitTag": "v1.0.2",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "Fix agent context budgeting and update checks",
+    "gitNotesSource": "commit"
   },
   {
     "version": "1.0.1",
@@ -2941,6 +3523,8 @@
     "commit": "973f634ba0d2255c35b4d1eed2a833352bcd96a9",
     "repository": "mengyuxuezhang/Agent-Desktop",
     "recordType": "git",
-    "dateSource": "commit"
+    "dateSource": "commit",
+    "gitNotes": "feat: YuAgent 桌面版 (Electron)",
+    "gitNotesSource": "commit"
   }
 ]

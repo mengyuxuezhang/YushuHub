@@ -1,4 +1,4 @@
-"""Recover version archives from Git without copying source code or private commit messages."""
+"""Recover version archives and reviewed version messages without copying source code or operational records."""
 import argparse
 import json
 import re
@@ -6,8 +6,19 @@ import subprocess
 from pathlib import Path
 
 VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
-METADATA = ("commit", "repository", "gitTag", "recordType", "dateSource")
-SENSITIVE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY|root@|/root/|/www/wwwroot/|(?:password|api[_-]?key|secret|token)\s*[:=]\s*['\"]?[A-Za-z0-9_/-]{16,}", re.I)
+METADATA = ("commit", "repository", "gitTag", "recordType", "dateSource", "gitNotes", "gitNotesSource")
+SENSITIVE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY|root@|git@|ssh://|/root/|/www/wwwroot/|(?:password|api[_-]?key|secret|token)\s*[:=]\s*['\"]?[A-Za-z0-9_/-]{16,}", re.I)
+OPERATIONS = re.compile(r"\b(?:pm2|deploy(?:ment)?|signing|whitelist)\b|运维|凭据|私钥|同步.{0,12}构建机|root@|[A-Z]:\\|(?:\d{1,3}\.){3}\d{1,3}|(?:password|secret|token|密码|密钥)\s*[:=：]\s*\S+", re.I)
+
+
+def displayable_git_notes(value):
+    text = str(value or '').split('-----BEGIN PGP SIGNATURE-----')[0].strip()
+    if not text or len(text) > 4000 or SENSITIVE.search(text) or OPERATIONS.search(text):
+        return ''
+    meaning = re.sub(r'\[[A-Z]+\d+[^\]]*\]', '', text)
+    meaning = re.sub(r'v?\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?', '', meaning)
+    meaning = re.sub(r'\b(?:release|desktop|agent|version|prepare|chore|build|tag)\b|发布|版本|准备|管理端|源码', '', meaning, flags=re.I)
+    return text if len(re.sub(r'[^\w\u4e00-\u9fff]', '', meaning)) >= 6 else ''
 
 
 def git(repo, *args):
@@ -54,12 +65,17 @@ def collect(repo, product):
     name = repository_name(repo)
     history_path = "docs/UPDATE_HISTORY.json" if product == "admin" else "desktop/docs/UPDATE_HISTORY.json"
     package_paths = ["package.json"] if product == "admin" else ["desktop/package.json", "package.json"]
-    commits = git(repo, "log", "--all", "--format=%H%x09%cI", "--", history_path, *package_paths).splitlines()
-    dated = dict(row.split("\t", 1) for row in commits)
+    messages = git(repo, 'log', '--all', '--format=%H%x00%cI%x00%B%x00', '--', history_path, *package_paths).split('\0')
+    dated, commit_messages = {}, {}
+    for index in range(0, len(messages) - 2, 3):
+        sha, date, message = messages[index].strip(), messages[index + 1].strip(), messages[index + 2].strip()
+        dated[sha], commit_messages[sha] = date, message
     tags = [tag for tag in git(repo, "tag", "--list", "v*").splitlines() if VERSION.fullmatch(tag[1:])]
     specs = [f"{sha}:{file}" for sha in dated for file in [history_path, *package_paths]]
     specs += [f"{tag}:release/latest.json" for tag in tags]
     data = blobs(repo, specs)
+    raw_tags = git(repo, 'for-each-ref', '--format=%(refname:short)%00%(objecttype)%00%(contents)%00', 'refs/tags').split('\0')
+    tag_messages = {raw_tags[i].strip(): (raw_tags[i + 1], raw_tags[i + 2]) for i in range(0, len(raw_tags) - 2, 3)}
     entries, metadata, manifest_entries = {}, {}, {}
     # Newest archived wording wins. Root package version changes identify version commits.
     for sha, date in dated.items():
@@ -73,10 +89,20 @@ def collect(repo, product):
             version = package.get("version", "") if isinstance(package, dict) else ""
             if VERSION.fullmatch(version) and (version.startswith("1.") if product == "admin" else version.startswith(("1.", "2.", "3."))):
                 metadata[version] = {"commit": sha, "repository": name, "publishedAt": date, "recordType": "git", "dateSource": "commit"}
+                notes = displayable_git_notes(commit_messages[sha])
+                if notes:
+                    metadata[version].update(gitNotes=notes, gitNotesSource='commit')
     for tag in tags:
         sha, date = git(repo, "log", "-1", "--format=%H%n%cI", tag).splitlines()
         version = tag[1:]
         metadata[version] = {"commit": sha, "repository": name, "gitTag": tag, "publishedAt": date, "recordType": "git", "dateSource": "commit"}
+        kind, message = tag_messages.get(tag, ('commit', ''))
+        notes = displayable_git_notes(message)
+        if not notes:
+            notes = displayable_git_notes(commit_messages.get(sha) or git(repo, 'log', '-1', '--format=%B', tag))
+            kind = 'commit'
+        if notes:
+            metadata[version].update(gitNotes=notes, gitNotesSource='tag' if kind == 'tag' else 'commit')
         manifest = data.get(f"{tag}:release/latest.json", {})
         if isinstance(manifest, dict) and manifest.get("version") == version:
             manifest_entries[version] = manifest
@@ -98,7 +124,7 @@ def collect(repo, product):
     return result
 
 
-def archive(product, sources, existing):
+def archive(product, sources, existing, previous=()):
     result = {}
     for repo in sources:
         for version, row in collect(repo, product).items():
@@ -106,11 +132,24 @@ def archive(product, sources, existing):
                 result[version] = dict(row)
                 continue
             target = result[version]
-            if row.get("gitTag") and not target.get("gitTag"):
+            conflict = product == 'agent' and target.get('commit') and row.get('commit') and target['commit'] != row['commit']
+            if row.get("gitTag") and not target.get("gitTag") and not conflict:
                 target.update({key: row[key] for key in ("commit", "repository", "gitTag") if key in row})
             for key, value in row.items():
+                if conflict and key in ('releaseNotes', 'gitNotes', 'gitNotesSource', 'commit', 'repository', 'gitTag'):
+                    continue
                 if not target.get(key) and value:
                     target[key] = value
+    # Keep recovered old-repository records even when that source is unavailable on a later run.
+    for row in previous:
+        if not VERSION.fullmatch(str(row.get('version', ''))):
+            continue
+        target = result.setdefault(row['version'], {'version': row['version']})
+        for key in ('publishedAt', 'releaseNotes', *METADATA):
+            if not target.get(key) and row.get(key):
+                if key == 'gitNotes' and not displayable_git_notes(row[key]):
+                    continue
+                target[key] = row[key]
     for row in existing:
         if not VERSION.fullmatch(str(row.get("version", ""))):
             continue
@@ -130,20 +169,23 @@ def main():
     parser.add_argument("--admin-repo", required=True, type=Path)
     parser.add_argument("--admin-legacy-repo", type=Path)
     parser.add_argument("--agent-repo", required=True, type=Path)
+    parser.add_argument("--agent-history-repo", action='append', type=Path, default=[], help='Read an additional historical Desktop repository; may be repeated')
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parents[1] / "docs")
     parser.add_argument("--write", action="store_true", help="Write archive files; otherwise show a read-only summary")
     args = parser.parse_args()
     for product, repos, history_file, archive_file in [
         ("admin", [args.admin_repo] + ([args.admin_legacy_repo] if args.admin_legacy_repo else []), "UPDATE_HISTORY.json", "ADMIN_RELEASE_ARCHIVE.json"),
-        ("agent", [args.agent_repo], "AGENT_UPDATE_HISTORY.json", "AGENT_RELEASE_ARCHIVE.json"),
+        ("agent", [args.agent_repo, *args.agent_history_repo], "AGENT_UPDATE_HISTORY.json", "AGENT_RELEASE_ARCHIVE.json"),
     ]:
         history = args.output_dir / history_file
         existing = json.loads(history.read_text(encoding="utf-8-sig")) if history.exists() else []
-        rows = archive(product, repos, existing)
+        archive_path = args.output_dir / archive_file
+        previous = json.loads(archive_path.read_text(encoding='utf-8-sig')) if archive_path.exists() else []
+        rows = archive(product, repos, existing, previous)
         if args.write:
             args.output_dir.mkdir(parents=True, exist_ok=True)
             (args.output_dir / archive_file).write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        print(json.dumps({"product": product, "versions": len(rows), "newest": rows[0]["version"], "oldest": rows[-1]["version"], "gitOnly": sum(row.get("recordType") == "git" for row in rows), "missingNotes": sum(not row.get("releaseNotes") for row in rows), "written": args.write}))
+        print(json.dumps({"product": product, "versions": len(rows), "newest": rows[0]["version"], "oldest": rows[-1]["version"], "gitOnly": sum(row.get("recordType") == "git" for row in rows), "formalNotes": sum(bool(row.get('releaseNotes')) for row in rows), "gitNotesFallback": sum(not row.get('releaseNotes') and bool(row.get('gitNotes')) for row in rows), "missingNotes": sum(not row.get("releaseNotes") and not row.get('gitNotes') for row in rows), "written": args.write}))
 
 
 if __name__ == "__main__":

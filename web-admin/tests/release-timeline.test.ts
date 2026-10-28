@@ -3,6 +3,21 @@ import VersionHistoryPanel from '@/components/delivery/VersionHistoryPanel.vue'
 import { historyDate, prepareHistory } from '@/utils/release-timeline'
 
 describe('release timeline', () => {
+  it('shows original Git notes as an attributed fallback while prioritizing formal release notes', () => {
+    const host = document.createElement('div')
+    const app = createApp(VersionHistoryPanel, { title: '历史版本', description: '', items: [
+      { version: '1.0.1', publishedAt: '2026-08-02', releaseNotes: '正式更新说明', gitNotes: 'Fallback not selected', gitNotesSource: 'commit' },
+      { version: '1.0.0', publishedAt: '2026-08-01', gitNotes: 'Release with local skill creation', gitNotesSource: 'tag' },
+    ] })
+    app.mount(host)
+    try {
+      expect(host.textContent).toContain('正式更新说明')
+      expect(host.textContent).toContain('Git 标签说明（原文）')
+      expect(host.textContent).toContain('Release with local skill creation')
+      expect(host.textContent).not.toContain('Fallback not selected')
+      expect(host.textContent).not.toContain('未找到可展示')
+    } finally { app.unmount() }
+  })
   it('uses Beijing month boundaries and retains undated entries', () => {
     expect(historyDate('2026-09-30T18:00:00Z')).toMatchObject({ month: '2026-10', day: '01', time: '02:00' })
     expect(historyDate('invalid')).toMatchObject({ month: 'undated' })
