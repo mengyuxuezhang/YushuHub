@@ -3,6 +3,20 @@ import VersionHistoryPanel from '@/components/delivery/VersionHistoryPanel.vue'
 import { historyDate, prepareHistory } from '@/utils/release-timeline'
 
 describe('release timeline', () => {
+  it('displays Chinese by default, keeps the original collapsed, and searches the translation', async () => {
+    const host = document.createElement('div')
+    const app = createApp(VersionHistoryPanel, { title: '历史版本', description: '', items: [{ version: '1.0.9', gitNotes: 'Release with local skill creation', gitNotesZh: '支持创建本地技能', gitNotesSource: 'tag' }] })
+    app.mount(host)
+    try {
+      expect(host.querySelector('.history-notes')?.textContent).toBe('支持创建本地技能')
+      expect(host.textContent).toContain('Git 标签说明（中文翻译）')
+      expect(host.querySelector('details')?.open).toBe(false)
+      expect(host.querySelector('details p')?.textContent).toBe('Release with local skill creation')
+      const input = host.querySelector<HTMLInputElement>('[aria-label="搜索历史版本"]')!
+      input.value = '本地技能'; input.dispatchEvent(new Event('input')); await nextTick()
+      expect(host.querySelectorAll('.history-entry')).toHaveLength(1)
+    } finally { app.unmount() }
+  })
   it('shows original Git notes as an attributed fallback while prioritizing formal release notes', () => {
     const host = document.createElement('div')
     const app = createApp(VersionHistoryPanel, { title: '历史版本', description: '', items: [

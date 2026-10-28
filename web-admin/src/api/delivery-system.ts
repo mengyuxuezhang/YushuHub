@@ -6,7 +6,9 @@ export interface ReleaseHistoryItem {
   version: string;
   publishedAt?: string;
   releaseNotes?: string;
+  releaseNotesZh?: string;
   gitNotes?: string;
+  gitNotesZh?: string;
   gitNotesSource?: 'tag' | 'commit';
   commit?: string;
   repository?: string;

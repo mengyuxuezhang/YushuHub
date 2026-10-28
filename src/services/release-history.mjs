@@ -25,6 +25,9 @@ export function mergeReleaseHistory(current, history, fallback = [], limit = REL
       target.gitNotes = item.gitNotes
       if (['tag', 'commit'].includes(item.gitNotesSource)) target.gitNotesSource = item.gitNotesSource
     }
+    for (const [original, localized] of [['gitNotes', 'gitNotesZh'], ['releaseNotes', 'releaseNotesZh']]) {
+      if (!target[localized] && typeof item[original] === 'string' && item[original] && target[original] === item[original] && typeof item[localized] === 'string' && item[localized].length <= 8000) target[localized] = item[localized]
+    }
     // Fill provenance from the archive without replacing the update source's wording.
     if (!target.commit && /^[a-f0-9]{40}$/.test(item.commit || '')) target.commit = item.commit
     if (!target.repository && /^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/.test(item.repository || '')) target.repository = item.repository

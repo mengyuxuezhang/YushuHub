@@ -24,7 +24,7 @@ const months = computed(() => historyMonths(records.value))
 const filtered = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase()
   return records.value.filter(item => (month.value === 'all' || item.month === month.value)
-    && (!keyword || `${item.version} ${item.releaseNotes || ''} ${item.gitNotes || ''} ${item.commit || ''}`.toLocaleLowerCase().includes(keyword)))
+    && (!keyword || `${item.version} ${item.releaseNotesZh || ''} ${item.releaseNotes || ''} ${item.gitNotesZh || ''} ${item.gitNotes || ''} ${item.commit || ''}`.toLocaleLowerCase().includes(keyword)))
 })
 const groups = computed(() => {
   const groups: { key: string; label: string; items: typeof records.value }[] = []
@@ -46,7 +46,7 @@ async function changePage(value: number) {
   if (panel.value && panel.value.getBoundingClientRect().top < 0) panel.value.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 function toggle(version: string) { const next = new Set(expanded.value); next.has(version) ? next.delete(version) : next.add(version); expanded.value = next }
-function fullNotes(item: ReleaseHistoryItem) { return item.releaseNotes?.trim() || item.gitNotes?.trim() || '未找到可展示的版本说明，可通过下方 Git 提交查看原始记录。' }
+function fullNotes(item: ReleaseHistoryItem) { return item.releaseNotesZh?.trim() || item.releaseNotes?.trim() || item.gitNotesZh?.trim() || item.gitNotes?.trim() || '未找到可展示的版本说明，可通过下方 Git 提交查看原始记录。' }
 function notes(item: ReleaseHistoryItem) {
   const text = fullNotes(item)
   return !expanded.value.has(item.version) && text.length > 190 ? `${text.slice(0, 190)}…` : text
@@ -84,9 +84,11 @@ function notes(item: ReleaseHistoryItem) {
               <span class="history-node" aria-hidden="true"><i></i></span>
               <article class="panel-card history-card">
                 <header><div class="history-version"><h4>v{{ item.version }}</h4><span v-if="item.version === latestVersion" class="soft-tag latest-badge">最新版</span><StatusBadge v-if="item.version === currentVersion" status="enabled" label="当前运行" class="current-badge" /><StatusBadge v-if="item.recordType === 'unpublished'" status="draft" label="未正式发布" /><StatusBadge v-else-if="item.recordType === 'git'" status="neutral" label="Git 版本记录" /><StatusBadge v-else-if="item.version.includes('-')" status="draft" label="预发布" /></div><time v-if="item.timestamp" class="history-time" :datetime="item.publishedAt" :title="item.dateSource === 'commit' ? 'Git 提交时间' : '发布时间'">{{ historyDate(item.publishedAt).time }}</time></header>
-                <small v-if="!item.releaseNotes?.trim() && item.gitNotes" class="cell-note">{{ item.gitNotesSource === 'tag' ? 'Git 标签说明（原文）' : 'Git 提交说明（原文）' }}</small>
+                <small v-if="item.releaseNotesZh" class="cell-note">版本更新说明（中文翻译）</small>
+                <small v-else-if="!item.releaseNotes?.trim() && item.gitNotes" class="cell-note">{{ item.gitNotesSource === 'tag' ? 'Git 标签说明' : 'Git 提交说明' }}{{ item.gitNotesZh ? '（中文翻译）' : '（原文）' }}</small>
                 <p class="history-notes">{{ notes(item) }}</p>
                 <button v-if="fullNotes(item).length > 190" class="text-button history-expand" type="button" :aria-expanded="expanded.has(item.version)" @click="toggle(item.version)">{{ expanded.has(item.version) ? '收起说明' : '展开完整说明' }}<component :is="expanded.has(item.version) ? ChevronUp : ChevronDown" :size="14" /></button>
+                <details v-if="item.releaseNotesZh || (!item.releaseNotes?.trim() && item.gitNotesZh)"><summary class="text-button">查看原文</summary><p class="history-notes">{{ item.releaseNotesZh ? item.releaseNotes : item.gitNotes }}</p></details>
                 <small v-if="item.commit" class="history-provenance"><GitCommitHorizontal :size="13" /><a v-if="releaseCommitUrl(item)" class="mono-text" :href="releaseCommitUrl(item)" target="_blank" rel="noopener noreferrer" :aria-label="`查看 v${item.version} 的 Git 提交`">{{ item.commit.slice(0, 8) }}</a><span v-else>{{ item.commit.slice(0, 8) }}</span><span v-if="item.gitTag">{{ item.gitTag }}</span><span v-if="item.dateSource === 'commit'">日期取自 Git 提交</span></small>
               </article>
             </li>

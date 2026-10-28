@@ -2,16 +2,36 @@ import unittest
 from unittest.mock import patch
 import importlib.util
 import sys
+import json
+import re
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location('sync_release_archives_import', Path(__file__).with_name('sync-release-archives.py'))
 module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
-from sync_release_archives_import import archive, version_key, displayable_git_notes
+from sync_release_archives_import import archive, version_key, displayable_git_notes, apply_note_translations
 
 
 class ArchiveRecoveryTests(unittest.TestCase):
+    def test_every_current_archive_description_has_a_chinese_default(self):
+        root = Path(__file__).resolve().parents[1] / 'docs'
+        for filename in ('ADMIN_RELEASE_ARCHIVE.json', 'AGENT_RELEASE_ARCHIVE.json'):
+            for row in json.loads((root / filename).read_text(encoding='utf-8')):
+                note = row.get('releaseNotesZh') or row.get('releaseNotes') or row.get('gitNotesZh') or row.get('gitNotes') or ''
+                if note:
+                    self.assertRegex(note, r'[\u4e00-\u9fff]', filename + ': ' + row['version'])
+
+    def test_translations_preserve_originals_and_do_not_survive_changed_source_text(self):
+        rows = [{'version': '1.0.9', 'gitNotes': 'Original notes', 'commit': 'd' * 40, 'gitNotesZh': '旧译文'}, {'version': '1.0.10', 'gitNotes': 'Changed notes', 'gitNotesZh': '过期译文'}, {'version': '1.8.0', 'releaseNotes': 'English release'}]
+        apply_note_translations(rows, {'Original notes': '原始说明的中文翻译', 'English release': '中文版本说明'})
+        self.assertEqual(rows[0]['gitNotes'], 'Original notes')
+        self.assertEqual(rows[0]['commit'], 'd' * 40)
+        self.assertEqual(rows[0]['gitNotesZh'], '原始说明的中文翻译')
+        self.assertNotIn('gitNotesZh', rows[1])
+        self.assertEqual(rows[2]['releaseNotes'], 'English release')
+        self.assertEqual(rows[2]['releaseNotesZh'], '中文版本说明')
+
     def test_recovered_old_records_survive_without_the_old_repository_on_later_runs(self):
         previous = [{'version': '2.0.0-beta.16', 'gitNotes': 'Multi-agent recursive spawn', 'gitNotesSource': 'tag', 'repository': 'owner/old', 'commit': 'c' * 40}]
         with patch('sync_release_archives_import.collect', return_value={}):

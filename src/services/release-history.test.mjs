@@ -62,6 +62,15 @@ test('original Git version messages survive API normalization independently of r
   assert.equal(item.gitNotesSource, 'tag')
 })
 
+test('Chinese translations match their original wording and never replace authoritative source text', () => {
+  const [item] = mergeReleaseHistory({ version: '1.0.9' }, [], [{ version: '1.0.9', gitNotes: 'Local skill creation', gitNotesZh: '支持创建本地技能', gitNotesSource: 'commit' }], Infinity)
+  assert.equal(item.gitNotesZh, '支持创建本地技能')
+  assert.equal(item.gitNotes, 'Local skill creation')
+  const [changed] = mergeReleaseHistory({ version: '1.0.9', releaseNotes: 'Changed authoritative notes' }, [], [{ version: '1.0.9', releaseNotes: 'Previous notes', releaseNotesZh: '旧译文' }], Infinity)
+  assert.equal(changed.releaseNotesZh, undefined)
+  assert.equal(changed.releaseNotes, 'Changed authoritative notes')
+})
+
 test('Git-only and unpublished records appear only in full official history, never in a custom source', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'admin-history-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))

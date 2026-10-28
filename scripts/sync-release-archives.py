@@ -21,6 +21,16 @@ def displayable_git_notes(value):
     return text if len(re.sub(r'[^\w\u4e00-\u9fff]', '', meaning)) >= 6 else ''
 
 
+def apply_note_translations(rows, translations):
+    for row in rows:
+        for original, localized in [('gitNotes', 'gitNotesZh'), ('releaseNotes', 'releaseNotesZh')]:
+            row.pop(localized, None)
+            translated = translations.get(row.get(original, ''))
+            if isinstance(translated, str) and re.search(r'[\u4e00-\u9fff]', translated):
+                row[localized] = translated.strip()
+    return rows
+
+
 def git(repo, *args):
     return subprocess.check_output(["git", "-C", str(repo), *args]).decode("utf-8").strip()
 
@@ -173,6 +183,8 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parents[1] / "docs")
     parser.add_argument("--write", action="store_true", help="Write archive files; otherwise show a read-only summary")
     args = parser.parse_args()
+    translation_file = Path(__file__).resolve().parents[1] / 'docs' / 'GIT_NOTE_TRANSLATIONS.json'
+    translations = json.loads(translation_file.read_text(encoding='utf-8-sig')).get('translations', {}) if translation_file.exists() else {}
     for product, repos, history_file, archive_file in [
         ("admin", [args.admin_repo] + ([args.admin_legacy_repo] if args.admin_legacy_repo else []), "UPDATE_HISTORY.json", "ADMIN_RELEASE_ARCHIVE.json"),
         ("agent", [args.agent_repo, *args.agent_history_repo], "AGENT_UPDATE_HISTORY.json", "AGENT_RELEASE_ARCHIVE.json"),
@@ -181,7 +193,7 @@ def main():
         existing = json.loads(history.read_text(encoding="utf-8-sig")) if history.exists() else []
         archive_path = args.output_dir / archive_file
         previous = json.loads(archive_path.read_text(encoding='utf-8-sig')) if archive_path.exists() else []
-        rows = archive(product, repos, existing, previous)
+        rows = apply_note_translations(archive(product, repos, existing, previous), translations)
         if args.write:
             args.output_dir.mkdir(parents=True, exist_ok=True)
             (args.output_dir / archive_file).write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
