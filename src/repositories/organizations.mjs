@@ -361,6 +361,10 @@ export async function createChildOrganizationWithOwner(input, actor = {}) {
           actor.organizationId || '', actor.userId || ''],
       )
     }
+    if (input.invitationHash) {
+      await connection.query('INSERT INTO ai_authorization_invitations (token_hash, user_id, expires_at) VALUES (?, ?, ?)',
+        [input.invitationHash, input.userId, input.invitationExpiresAt])
+    }
     await connection.query(
       `INSERT INTO ai_organization_audit_logs
         (id, organization_id, actor_user_id, event_type, target_type, target_id, detail_json)

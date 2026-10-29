@@ -1,0 +1,26 @@
+export const bearer = req => String(req.headers.authorization || '').replace(/^Bearer /, '')
+export const endpoint = operation => async (req, res, next) => {
+  try { res.json({ success: true, data: await operation(req) }) } catch (error) { next(error) }
+}
+export function registerLicenseCenterRoutes(app, { center, operators }) {
+  const base = '/api/license-center/v1'
+  app.post(`${base}/operator/login`, endpoint(req => operators.login(req.body, req.ip)))
+  app.post(`${base}/operator/logout`, endpoint(req => operators.logout(bearer(req))))
+  app.use(`${base}/operator`, async (req, res, next) => {
+    try { req.operator = await operators.authenticate(bearer(req)); next() } catch (error) { next(error) }
+  })
+  app.get(`${base}/operator/state`, endpoint(() => center.list()))
+  app.post(`${base}/operator/packages`, endpoint(req => center.publishPackage(req.body, req.operator)))
+  app.post(`${base}/operator/grants`, endpoint(req => center.issue(req.body, req.operator)))
+  app.patch(`${base}/operator/grants/:id`, endpoint(req => center.update(req.params.id, req.body, req.operator)))
+  app.post(`${base}/operator/grants/:id/code`, endpoint(req => center.reissueCode(req.params.id, req.operator)))
+  app.post(`${base}/operator/grants/:id/rotate`, endpoint(req => center.rotate(req.params.id, req.body, req.operator)))
+  app.post(`${base}/operator/reminders`, endpoint(() => center.reminders()))
+  app.post(`${base}/activate`, endpoint(req => center.activate(req.body, bearer(req))))
+  app.post(`${base}/refresh`, endpoint(req => center.refresh(bearer(req))))
+  app.post(`${base}/service-token`, endpoint(req => center.serviceToken(bearer(req), req.body.audience, req.body.organizationId)))
+  // Introspection verifies a short-lived signed token; it does not trust caller-supplied claims.
+  app.post(`${base}/introspect`, endpoint(req => center.introspect(bearer(req), req.body.audience)))
+  app.post(`${base}/resources/reserve`, endpoint(req => center.resource(bearer(req), req.body)))
+  app.post(`${base}/resources/release`, endpoint(req => center.resource(bearer(req), req.body, true)))
+}

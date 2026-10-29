@@ -2,6 +2,7 @@
 
 - [部署指南](DEPLOYMENT.md)
 - [开发指南](DEVELOPMENT.md)
+- [独立授权与分级供货开发说明](INDEPENDENT_AUTHORIZATION.md)
 - [版本发布与更新源](RELEASING.md)
 - [管理端版本记录](UPDATE_HISTORY.json)
 - [贡献指南](../CONTRIBUTING.md)

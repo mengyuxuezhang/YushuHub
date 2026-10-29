@@ -37,6 +37,11 @@ export async function buildOrganizationContext(user, repository, { getSupplierLi
   const resolved = await repository.findOrganizationContextForUser(user.id)
   if (!resolved) return null
   const license = getSupplierLicense ? await getSupplierLicense() : null
+  const centralLicense = license?.source === 'license-center' && getSupplierLicense.forOrganization
+    ? await getSupplierLicense.forOrganization(resolved.organization.externalId || (resolved.organization.agentLevel === 2 ? resolved.organization.id : undefined)) : null
+  if (centralLicense && centralLicense.agentLevel !== resolved.organization.agentLevel) {
+    centralLicense.verified = false; centralLicense.capabilities = []
+  }
   const parent = resolved.organization.agentLevel === 2 && repository.findOrganizationById
     ? await repository.findOrganizationById(resolved.organization.parentOrganizationId) : null
   const currentOrganization = resolved.organization.agentLevel === 1 && license?.verified && license.id !== 'official-center'
@@ -47,13 +52,20 @@ export async function buildOrganizationContext(user, repository, { getSupplierLi
   const parentCapabilities = resolved.organization.parentOrganizationId
     ? await repository.listOrganizationCapabilities(resolved.organization.parentOrganizationId)
     : null
-  const effectiveCapabilities = resolveEffectiveCapabilities(ownCapabilities, parentCapabilities)
-  const dataScope = normalizeDataScope(resolved.member.dataScope)
+  const effectiveCapabilities = centralLicense
+    ? (centralLicense.capabilities || []).filter(item => item.enabled)
+    : resolveEffectiveCapabilities(ownCapabilities, parentCapabilities)
+  const dataScope = centralLicense ? 'self' : normalizeDataScope(resolved.member.dataScope)
   const children = ['children', 'subtree', 'platform'].includes(dataScope)
     ? await repository.listChildOrganizations(resolved.organization.id)
     : []
   return {
     actorUserId: user.id,
+    externalId: resolved.organization.externalId,
+    authorizationSource: centralLicense ? 'license-center' : 'legacy',
+    centralLicenseActive: centralLicense ? centralLicense.verified && centralLicense.status === 'enabled' : null,
+    modelMode: centralLicense?.modelMode,
+    centralQuotas: centralLicense?.quotas,
     organizationId: resolved.organization.id,
     organizationLevel: resolved.organization.agentLevel,
     rootOrganizationId: resolved.organization.rootOrganizationId,
@@ -63,6 +75,7 @@ export async function buildOrganizationContext(user, repository, { getSupplierLi
     legacyOwnerUserId: resolved.organization.legacyOwnerUserId || user.id,
     organizationStatus: resolved.organization.status,
     ...expiry,
+    ...(centralLicense?.verified ? { expiresAt: centralLicense.expiresAt, expired: false } : {}),
     memberStatus: resolved.member.status,
     roleTemplateId: resolved.member.roleTemplateId,
     dataScope,

@@ -28,6 +28,8 @@ export function organizationAuthorizationExpired(context, now = Date.now()) {
 }
 
 export function expiredOrganizationRequestAllowed(method, path) {
+  if (method === 'GET' && ['/api/authorization/state', '/api/me', '/api/me/permissions'].includes(path)) return true
+  if (method === 'POST' && path === '/api/authorization/activate') return true
   const readPaths = ['/api/license', '/api/source-version', '/api/platform-settings', '/api/diagnostics', '/api/workers', '/api/organizations/context', '/api/organizations/children']
   const writePaths = ['/api/logout', '/api/me/password', '/api/platform-settings', '/api/platform-settings/smtp-test', '/api/build-center-config/test']
   return (method === 'GET' && readPaths.includes(path)) || (method === 'POST' && writePaths.includes(path))
@@ -41,6 +43,10 @@ export function scopedOrganizationLicense(license, context, now = Date.now()) {
 
 export function filterOrganizationPermissions(keys, context, now = Date.now()) {
   if (!context) return keys
+  if (context.authorizationSource === 'license-center' && !context.centralLicenseActive) {
+    const remediation = new Set(['organizations.view', 'platform_settings.manage', 'authorization.view', 'account_security.manage', 'diagnostics.view'])
+    return keys.filter(key => remediation.has(key))
+  }
   const allowed = new Set(context.capabilityKeys || [])
   let effective = allowed.has('*') ? keys : keys.filter(key => allowed.has(key))
   if (context.organizationStatus !== 'enabled' || context.memberStatus !== 'enabled' || organizationAuthorizationExpired(context, now)) {

@@ -75,6 +75,14 @@ export function registerOrganizationRoutes(app, deps = {}) {
     revokeUserSessions = () => {},
   } = deps
 
+  if (deps.centralized) {
+    app.use(['/api/organizations/children', '/api/organizations/:id/capabilities'], (req, res, next) => {
+      const editBusiness = req.method === 'PATCH' && /^\/api\/organizations\/children\/[^/?]+$/.test(req.originalUrl.split('?')[0])
+      if (req.method === 'GET' || editBusiness) return next()
+      res.status(403).json({ success: false, code: 'CENTRAL_ISSUANCE_REQUIRED', error: '代理授权统一由授权中心签发和修改，请使用中心激活流程' })
+    })
+  }
+
   // Resolve the upper bound from trusted server data, never from request fields.
   const currentIssuer = async (context) => {
     const license = getSupplierLicense ? await getSupplierLicense({ force: true }) : null
@@ -151,10 +159,13 @@ export function registerOrganizationRoutes(app, deps = {}) {
       if (target.id === req.organizationContext.organizationId) throw Object.assign(new Error('请从当前主体设置中修改本组织'), { statusCode: 403 })
       if (target.parentOrganizationId !== req.organizationContext.organizationId || target.agentLevel !== 2) throw Object.assign(new Error('只能管理直属二级代理'), { statusCode: 403 })
       const context = await currentIssuer(req.organizationContext)
-      const expiresAt = validateChildExpiry(req.body?.expiresAt, context.expiresAt, { existing: target.expiresAt })
+      if (deps.centralized && ['expiresAt', 'capabilities', 'parentOrganizationId', 'agentLevel'].some(key => Object.hasOwn(req.body || {}, key))) {
+        throw Object.assign(new Error('授权期限、能力及绑定关系只能由授权中心修改'), { statusCode: 403 })
+      }
+      const expiresAt = deps.centralized ? target.expiresAt : validateChildExpiry(req.body?.expiresAt, context.expiresAt, { existing: target.expiresAt })
       const saved = await repository.updateOrganizationRecord(target.id, {
         name: String(req.body?.name || target.name).trim().slice(0, 120),
-        status: req.body?.status === 'disabled' ? 'disabled' : 'enabled',
+        status: req.body?.status === undefined ? target.status : req.body.status === 'disabled' ? 'disabled' : 'enabled',
         expiresAt,
         previousExpiresAt: target.expiresAt || null,
       }, actor(req))

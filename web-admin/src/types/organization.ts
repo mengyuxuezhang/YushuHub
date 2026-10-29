@@ -1,7 +1,7 @@
 export type DataScope = 'self' | 'children' | 'subtree' | 'platform'
 export interface Capability { key: string; name?: string; description?: string; group?: string; category?: string; enabled: boolean; transferable: boolean; limitValue: number }
 export interface OrganizationExpiry { expiresAt?: string | null; configuredExpiresAt?: string | null; parentExpiresAt?: string | null; expired?: boolean; authorizationStatus?: 'enabled' | 'disabled' | 'expired' }
-export interface OrganizationContext extends OrganizationExpiry { organizationId: string; organizationName?: string; organizationLevel: number; rootOrganizationId: string; deploymentMode: string; dataScope: DataScope; capabilities: Capability[] }
+export interface OrganizationContext extends OrganizationExpiry { authorizationSource?: 'license-center' | 'legacy'; organizationId: string; organizationName?: string; organizationLevel: number; rootOrganizationId: string; deploymentMode: string; dataScope: DataScope; capabilities: Capability[] }
 export interface OrganizationQuotaUsage { organizationId: string; projects: { used: number; limit: number }; builds: { used: number; limit: number } }
 export interface Organization extends OrganizationExpiry { id: string; name: string; agentLevel: number; parentOrganizationId: string; deploymentMode: string; status: 'enabled' | 'disabled'; ownerUserId: string; ownerUsername: string; ownerDisplayName: string; createdAt?: string; updatedAt?: string }
 export interface OrganizationAudit { id: string; actorUserId: string; eventType: string; targetType: string; targetId: string; detail: Record<string, unknown>; createdAt: string }

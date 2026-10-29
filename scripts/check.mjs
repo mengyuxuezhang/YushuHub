@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -8,6 +8,20 @@ const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, '..')
 
 const targets = [
+  ...readdirSync(path.join(repoRoot, 'src/services/licensing')).filter(file => file.endsWith('.mjs')).map(file => `src/services/licensing/${file}`),
+  'src/repositories/licensing-state.mjs',
+  'src/repositories/licensing-file-state.mjs',
+  'src/routes/license-center.mjs',
+  'src/routes/model-gateway.mjs',
+  'src/routes/deployment-authorization.mjs',
+  'src/routes/agent-supply.mjs',
+  'src/routes/client-supply-bridge.mjs',
+  'cloud/license-center/server.mjs',
+  'cloud/model-gateway/server.mjs',
+  'scripts/authorization-local-migrate.mjs',
+  'scripts/authorization-migration.mjs',
+  'scripts/licensing-init.mjs',
+  'scripts/test-licensing-mysql.mjs',
   'src/services/model-key-scope.mjs',
   'src/services/model-provider-keys.mjs',
   'src/services/client-project-policy.mjs',

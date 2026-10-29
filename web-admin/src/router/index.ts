@@ -16,6 +16,9 @@ import OrganizationsView from "@/views/organizations/OrganizationsView.vue";
 import AccountsView from "@/views/organizations/AccountsView.vue";
 import PermissionsView from "@/views/organizations/PermissionsView.vue";
 import CenterSuppliersView from "@/views/organizations/CenterSuppliersView.vue";
+import AuthorizationView from "@/views/organizations/AuthorizationView.vue";
+import InvitationView from "@/views/auth/InvitationView.vue";
+import SupplyView from "@/views/models/SupplyView.vue";
 import UserUsageView from "@/views/business/UserUsageView.vue";
 import BusinessOperationsView from "@/views/business/BusinessOperationsView.vue";
 import ClientNoticesView from "@/views/business/ClientNoticesView.vue";
@@ -27,6 +30,7 @@ export const router = createRouter({
   history: createWebHistory("/admin/v2/"),
   scrollBehavior: () => ({ top: 0 }),
   routes: [
+    { path: '/activate-invitation', component: InvitationView, meta: { public: true } },
     {
       path: "/login",
       name: "login",
@@ -52,7 +56,7 @@ export const router = createRouter({
           path: item.path.slice(1),
           name: item.path.slice(1).replaceAll("/", "-"),
           component:
-            item.path === "/user-usage" ? UserUsageView : item.path === "/markets/agents"
+            item.path === "/supply" ? SupplyView : item.path === "/authorization" ? AuthorizationView : item.path === "/user-usage" ? UserUsageView : item.path === "/markets/agents"
               ? AgentMarketView
               : ["/markets/skills", "/markets/mcps"].includes(item.path)
                 ? CatalogMarketView

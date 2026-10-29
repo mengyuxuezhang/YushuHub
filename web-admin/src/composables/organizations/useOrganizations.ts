@@ -22,7 +22,8 @@ export function useOrganizations() {
     }
     return [...map.entries()].sort(([left], [right]) => (order.indexOf(left) < 0 ? 99 : order.indexOf(left)) - (order.indexOf(right) < 0 ? 99 : order.indexOf(right)))
   })
-  const canCreateChildren = computed(() => context.value?.organizationLevel === 1)
+  const centralized = computed(() => context.value?.authorizationSource === 'license-center')
+  const canCreateChildren = computed(() => context.value?.organizationLevel === 1 && !centralized.value)
   const transferableCapabilityMap = computed(() => new Map((context.value?.capabilities || []).filter(x=>x.enabled&&x.transferable).map(x=>[x.key,x])))
   const canTransferProjectQuota = computed(() => transferableCapabilityMap.value.has('projects.manage'))
   const canTransferBuildQuota = computed(() => transferableCapabilityMap.value.has('builds.create'))
@@ -45,17 +46,17 @@ export function useOrganizations() {
         if(maxBuilds>0&&canTransferBuildQuota.value)capabilities.push({key:'builds.create',limitValue:maxBuilds})
         payload={...form,capabilities}
       }
-      payload = {...payload, expiresAt}
+      payload = centralized.value ? { name: form.name, status: form.status } : {...payload, expiresAt}
       const saved=form.id?await api.updateChildOrganization(form.id,payload):await api.createChildOrganization(payload)
       if(selected.value?.id===saved.id)selected.value=saved
       const i=organizations.value.findIndex(x=>x.id===saved.id);if(i>=0)organizations.value.splice(i,1,saved);else organizations.value.unshift(saved);feedback.notify(`二级代理“${saved.name}”保存成功`,'success');drawerOpen.value=false
     }catch(e){errorMessage.value=toUserMessage(e)}finally{saving.value=false}}
-  async function select(item:Organization){selected.value=item;activeDetail.value='capabilities';try{const[assigned,logs]=await Promise.all([api.listCapabilities(item.id),api.listOrganizationAudit(item.id).catch(()=>[])]);const personalAssigned=assigned.filter(x=>!x.key.startsWith('enterprise_'));const assignedByKey=new Map(personalAssigned.map(x=>[x.key,x]));capabilities.value=(context.value?.capabilities||[]).filter(x=>x.transferable&&x.enabled&&!x.key.startsWith('enterprise_')).map(x=>({...x,...assignedByKey.get(x.key),enabled:assignedByKey.has(x.key)}));audit.value=logs}catch(e){feedback.notify(toUserMessage(e),'error')}}
+  async function select(item:Organization){selected.value=item;activeDetail.value='capabilities';try{const[assigned,logs]=await Promise.all([api.listCapabilities(item.id),api.listOrganizationAudit(item.id).catch(()=>[])]);const personalAssigned=assigned.filter(x=>!x.key.startsWith('enterprise_'));const assignedByKey=new Map(personalAssigned.map(x=>[x.key,x]));capabilities.value=centralized.value?personalAssigned:(context.value?.capabilities||[]).filter(x=>x.transferable&&x.enabled&&!x.key.startsWith('enterprise_')).map(x=>({...x,...assignedByKey.get(x.key),enabled:assignedByKey.has(x.key)}));audit.value=logs}catch(e){feedback.notify(toUserMessage(e),'error')}}
   async function saveCapabilitySelection(){if(!selected.value||saving.value)return;saving.value=true;try{capabilities.value=await api.saveCapabilities(selected.value.id,capabilities.value.filter(x=>x.enabled));feedback.notify('下级代理能力授权已保存','success')}catch(e){feedback.notify(toUserMessage(e),'error')}finally{saving.value=false}}
   function isCapabilityGroupFullyEnabled(items: Capability[]){return items.length>0&&items.every(item=>item.enabled)}
   function toggleCapabilityGroup(items: Capability[]){const enabled=!isCapabilityGroupFullyEnabled(items);for(const item of items)item.enabled=enabled}
   function resetPassword(item:Organization){resetTarget.value=item;resetPasswordValue.value=''}
   async function confirmResetPassword(){if(!resetTarget.value||resetPasswordValue.value.length<8){feedback.notify('新密码至少 8 位','warning');return}saving.value=true;try{await api.resetChildPassword(resetTarget.value.id,resetPasswordValue.value);feedback.notify('管理员密码已重置，原会话已失效','success');resetTarget.value=null}catch(e){feedback.notify(toUserMessage(e),'error')}finally{saving.value=false}}
   async function remove(item:Organization){const ok=await feedback.confirm({title:`删除“${item.name}”？`,message:'仅空组织可删除，操作不可恢复。',confirmText:'删除组织',tone:'danger'});if(!ok)return;try{await api.deleteChildOrganization(item.id);organizations.value=organizations.value.filter(x=>x.id!==item.id);if(selected.value?.id===item.id)selected.value=null;feedback.notify('二级代理已删除','success')}catch(e){feedback.notify(toUserMessage(e),'error')}}
-  onMounted(load); return {context,organizations,selected,capabilities,groupedCapabilities,audit,loading,saving,drawerOpen,resetTarget,resetPasswordValue,search,searchField,status,errorMessage,activeDetail,form,rows,canCreateChildren,canTransferProjectQuota,canTransferBuildQuota,transferableCapabilityMap,load,openCreate,openEdit,save,select,isCapabilityGroupFullyEnabled,toggleCapabilityGroup,saveCapabilitySelection,resetPassword,confirmResetPassword,remove,submitSearch,resetSearch}
+  onMounted(load); return {centralized,context,organizations,selected,capabilities,groupedCapabilities,audit,loading,saving,drawerOpen,resetTarget,resetPasswordValue,search,searchField,status,errorMessage,activeDetail,form,rows,canCreateChildren,canTransferProjectQuota,canTransferBuildQuota,transferableCapabilityMap,load,openCreate,openEdit,save,select,isCapabilityGroupFullyEnabled,toggleCapabilityGroup,saveCapabilitySelection,resetPassword,confirmResetPassword,remove,submitSearch,resetSearch}
 }

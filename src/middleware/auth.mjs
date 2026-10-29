@@ -31,6 +31,12 @@ export async function requireAuth(req, res, next) {
     req.user = user
     req.actorUserId = user.id
     req.organizationContext = user.organizationContext || null
+    if (req.organizationContext?.authorizationSource === 'license-center' && (!req.organizationContext.centralLicenseActive
+      || req.organizationContext.organizationStatus !== 'enabled' || req.organizationContext.memberStatus !== 'enabled')
+      && !expiredOrganizationRequestAllowed(req.method, req.path)) {
+      res.status(403).json({ success: false, code: 'LICENSE_INACTIVE', error: '授权不可用，请联系授权中心' })
+      return
+    }
     if (user.organizationContext?.organizationLevel === 2 && organizationAuthorizationExpired(user.organizationContext)
       && !expiredOrganizationRequestAllowed(req.method, req.path)) {
       res.status(403).json({ success: false, code: 'ORGANIZATION_LICENSE_EXPIRED', error: '二级代理授权已到期，请联系一级代理续期' })
@@ -58,6 +64,12 @@ export function requireAdmin(req, res, next) {
 }
 
 export function requireModelServiceManager(req, res, next) {
+  if (req.organizationContext?.authorizationSource === 'license-center' && req.method !== 'GET'
+    && (req.organizationContext.organizationLevel === 2 || req.organizationContext.modelMode === 'fixed')
+    && req.path !== '/api/model-service/sync') {
+    res.status(403).json({ success: false, code: 'MODEL_FIXED', error: '继承模型不能修改供应商、密钥或模型定义' })
+    return
+  }
   if (req.user?.role !== 'admin' && req.user?.role !== 'agent') {
     res.status(403).json({ success: false, error: '需要模型服务配置权限' })
     return
@@ -122,6 +134,10 @@ export async function requireClientAuth(req, res, next) {
       return
     }
     req.clientUser = user
+    if (deps.getClientAuthorization && !await deps.getClientAuthorization(user)) {
+      res.status(403).json({ success: false, code: 'LICENSE_INACTIVE', error: '所属代理授权或业务状态不可用' })
+      return
+    }
     next()
   } catch (err) {
     res.setHeader('X-Agent-Error-Code', 'ADMIN_AUTH_REQUIRED')
@@ -158,6 +174,10 @@ export function requireSupplierAbility(field, label) {
 }
 
 export function requireCenterSupplierManagement(req, res, next) {
+  if (deps.authorizeOfficialService && req.method !== 'GET') {
+    res.status(403).json({ success: false, code: 'CENTRAL_ISSUANCE_REQUIRED', error: '授权只能在独立授权中心签发与修改' })
+    return
+  }
   if (!CENTER_SUPPLIER_MANAGEMENT_ENABLED) {
     res.status(403).json({ success: false, error: '供应商接入管理只在官方构建中心启用' })
     return
@@ -181,6 +201,23 @@ export function requireWorkerAuth(req, res, next) {
 
 export async function requireCenterAuth(req, res, next) {
   try {
+    if (deps.authorizeOfficialService) {
+      const header = String(req.headers.authorization || '')
+      const token = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
+      const audience = /skill|mcp|agent|model-service/.test(req.path) ? 'official-resources' : 'official-build'
+      const claims = await deps.authorizeOfficialService(token, audience)
+      const permission = req.path.includes('/publish') ? 'builds.publish' : req.path === '/api/center/builds' ? 'builds.create'
+        : req.path.includes('/projects/') ? 'projects.manage' : req.path.includes('skills') ? 'curated_skills.view'
+          : req.path.includes('mcps') ? 'curated_mcps.view' : req.path.includes('agents') ? 'curated_agents.view' : null
+      if (permission && !claims.grant.capabilities.some(cap => cap.enabled && cap.key === permission)) throw Object.assign(new Error('中心授权不包含所需能力'), { statusCode: 403 })
+      const supplier = await deps.findCenterSupplierById(claims.rootId)
+      if (!supplier) throw Object.assign(new Error('官方服务代理注册记录不存在'), { statusCode: 403 })
+      req.centerSupplier = { ...supplier, status: 'enabled', expires_at: claims.root.expiresAt }
+      req.centralAuthorization = claims
+      req.body = { ...req.body, supplierId: claims.rootId }
+      next()
+      return
+    }
     const supplierId = safeCenterId(req.body?.supplierId || req.query?.supplierId || req.headers['x-supplier-id'] || '', '供应商 ID')
     const header = String(req.headers.authorization || '')
     const token = header.startsWith('Bearer ') ? header.slice(7).trim() : ''

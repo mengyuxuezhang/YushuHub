@@ -159,6 +159,22 @@ export const navigationSections: NavigationSection[] = [
         officialCenterOnly: true,
         phase: "P5",
       },
+      {
+        path: "/authorization",
+        title: "授权与激活",
+        subtitle: "中心授权和二级激活",
+        icon: FileKey2,
+        permissions: ["authorization.view"],
+        phase: "P5",
+      },
+      {
+        path: "/supply",
+        title: "模型供货与收益",
+        subtitle: "加价、预付余额和收益",
+        icon: ReceiptText,
+        permissions: ["pricing_rules.manage"],
+        phase: "P5",
+      },
     ],
   },
   {

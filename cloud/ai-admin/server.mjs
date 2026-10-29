@@ -110,6 +110,10 @@ import { normalizeManualEndUserAccount } from '../../src/services/end-user-accou
 import { cleanupRetiredBuiltinSkills } from '../../src/services/builtin-curated-skills.mjs'
 import { createAccessControlPolicy } from '../../src/services/access-control.mjs'
 import { createSupplierLicenseService } from '../../src/services/supplier-license.mjs'
+import { deploymentRuntime, officialAuthorization } from '../../src/services/licensing/admin-runtime.mjs'
+import { registerDeploymentAuthorizationRoutes } from '../../src/routes/deployment-authorization.mjs'
+import { agentCommerceRuntime } from '../../src/services/licensing/commerce-runtime.mjs'
+import { registerAgentSupplyRoutes } from '../../src/routes/agent-supply.mjs'
 import { supplierLicenseAllowsPermission } from '../../src/services/supplier-license-contract.mjs'
 import { createCenterSupplierAuthorizationService, normalizeCenterSupplier } from '../../src/services/center-supplier-authorization.mjs'
 import { downloadBuildArtifact } from '../../src/services/build-artifact-transfer.mjs'
@@ -292,11 +296,12 @@ async function buildCenterEnabled() {
 async function buildCenterApi(pathname, body = {}, config = null) {
   const resolved = config || await getBuildCenterConfig()
   if (!resolved.enabled) throw new Error('官方构建中心未配置')
+  const serviceToken = authorizationClient ? await authorizationClient.serviceToken(/skill|mcp|agent|model-service/.test(pathname) ? 'official-resources' : 'official-build') : resolved.token
   const response = await fetch(`${resolved.url}${pathname}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${resolved.token}`,
+      'Authorization': `Bearer ${serviceToken}`,
     },
     body: JSON.stringify({ ...body, supplierId: body.supplierId || resolved.supplierId }),
     signal: AbortSignal.timeout(8000),
@@ -340,11 +345,12 @@ async function releaseProjectQuotaAtCenter(projectId) {
 async function buildCenterBinary(pathname, body = {}, config = null) {
   const resolved = config || await getBuildCenterConfig()
   if (!resolved.enabled) throw new Error('官方构建中心未配置')
+  const serviceToken = authorizationClient ? await authorizationClient.serviceToken('official-resources') : resolved.token
   const response = await fetch(`${resolved.url}${pathname}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${resolved.token}`,
+      'Authorization': `Bearer ${serviceToken}`,
     },
     body: JSON.stringify({ ...body, supplierId: body.supplierId || resolved.supplierId }),
   })
@@ -360,7 +366,9 @@ async function buildCenterBinary(pathname, body = {}, config = null) {
   }
 }
 
-const { getSupplierLicense, resetSupplierLicenseCache } = createSupplierLicenseService({
+const authorizationClient = deploymentRuntime()
+const authorizeOfficialService = officialAuthorization()
+const legacySupplierLicense = createSupplierLicenseService({
   officialCenterEnabled: CENTER_SUPPLIER_MANAGEMENT_ENABLED,
   defaults: defaultSupplierLicense,
   getConfig: getBuildCenterConfig,
@@ -369,6 +377,22 @@ const { getSupplierLicense, resetSupplierLicenseCache } = createSupplierLicenseS
   centerApi: buildCenterApi,
   organizationRepository,
 })
+
+async function getSupplierLicense(options = {}) {
+  if (!authorizationClient) return legacySupplierLicense.getSupplierLicense(options)
+  if (options.force) await authorizationClient.refresh(true).catch(() => {})
+  const license = await authorizationClient.license()
+  if (license.verified) await organizationRepository.syncLocalRootAuthorization({
+    organizationId: license.id, externalId: license.id, name: license.name, status: 'enabled', expiresAt: license.expiresAt,
+    authorizationVersion: license.version, capabilities: license.capabilities,
+  }, { userId: 'license-center-sync' })
+  return license
+}
+function resetSupplierLicenseCache() {
+  legacySupplierLicense.resetSupplierLicenseCache()
+  if (authorizationClient) void authorizationClient.refresh(true).catch(() => {})
+}
+getSupplierLicense.forOrganization = authorizationClient ? id => authorizationClient.license(id) : null
 
 async function getAdminVersion() {
   try {
@@ -3869,6 +3893,14 @@ setAuthDependencies({
   getEndUserByToken,
   getSupplierLicense,
   findCenterSupplierById,
+  authorizeOfficialService,
+  getClientAuthorization: authorizationClient ? async user => {
+    const ownerId = await keyOwnerUserIdForEndUser(user.id)
+    const resolved = await organizationRepository.findOrganizationContextForUser(ownerId)
+    if (!resolved || resolved.organization.status !== 'enabled') return false
+    const license = await authorizationClient.license(resolved.organization.externalId || (resolved.organization.agentLevel === 2 ? resolved.organization.id : undefined))
+    return license.verified && license.status === 'enabled'
+  } : null,
 })
 
 setRedeemCodeDependencies({
@@ -6648,6 +6680,7 @@ registerAuthRoutes(app, {
 })
 
 registerOrganizationRoutes(app, {
+  centralized: Boolean(authorizationClient),
   repository: organizationRepository,
   getSupplierLicense,
   ensureAccountFreeMembership,
@@ -6656,6 +6689,17 @@ registerOrganizationRoutes(app, {
     for (const [token, session] of sessions.entries()) {
       if (session.userId === userId) sessions.delete(token)
     }
+  },
+})
+
+registerDeploymentAuthorizationRoutes(app, { client: authorizationClient, repository: organizationRepository, database: db, ensureAccountFreeMembership })
+registerAgentSupplyRoutes(app, { runtime: agentCommerceRuntime({ client: authorizationClient, database: db }), client: authorizationClient,
+  resolveUserContext: async user => {
+    const resolved = await organizationRepository.findOrganizationContextForUser(await keyOwnerUserIdForEndUser(user.id))
+    if (!resolved) throw new Error('终端用户没有有效的组织归属')
+    const allowed = await allowedProviderModelIdSetForUser(user.id)
+    return { ...resolved.organization, organizationLevel: resolved.organization.agentLevel, organizationId: resolved.organization.id,
+      ...(allowed ? { allowedModelIds: [...allowed] } : {}) }
   },
 })
 
