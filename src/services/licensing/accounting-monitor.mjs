@@ -5,7 +5,7 @@ import { failure, identifier } from './protocol.mjs'
 // customer identities or webhook paths are included in notifications.
 export const emptyMonitorState = () => ({ config: { version: 0, enabled: false }, alerts: {}, deliveries: [], audit: [], metrics: null })
 const defaults = { staleHoldMs: 300_000, eventAgeMs: 120_000, eventCount: 100, rejectionCount: 10, syncAgeMs: 120_000 }
-const names = { unknown: '结果未知/待人工核对', holds: '预占滞留', events: '结算通知积压', debt: '供货欠款', invariant: '资金守恒异常', license: '授权同步异常', rejection: '官方鉴权拒绝/不可用', worker: '恢复工作器异常' }
+const names = { unknown: '结果未知/待人工核对', holds: '预占滞留', events: '结算通知积压', debt: '供货欠款', invariant: '资金守恒异常', license: '授权同步异常', rejection: '官方鉴权拒绝/不可用', worker: '恢复工作器异常', cashUnknown: '现金退款结果待核对', cashPending: '现金退款处理滞留', cashInvariant: '现金退款账务核对异常' }
 function target(value) {
   let url
   try { url = new URL(value) } catch { throw failure('INVALID_WEBHOOK', 'Webhook地址无效') }
@@ -103,7 +103,8 @@ export function createAccountingMonitor({ store, collect, vault, book, licenseSt
           const conditions = { unknown: metrics.unknown > 0, holds: metrics.oldestHoldAgeMs >= t.staleHoldMs,
             events: metrics.pendingEvents >= t.eventCount || metrics.oldestEventAgeMs >= t.eventAgeMs, debt: metrics.debts > 0,
             invariant: metrics.auditMismatches > 0, license: Boolean(sync?.activated && (sync.rejected || timestamp - sync.checkedAt >= t.syncAgeMs)),
-            rejection: rejectionCount >= t.rejectionCount, worker: recoveryErrorCount > 0 }
+            rejection: rejectionCount >= t.rejectionCount, worker: recoveryErrorCount > 0,
+            cashUnknown: Number(metrics.cashUnknown || 0) > 0, cashPending: Number(metrics.cashOldestAgeMs || 0) >= t.staleHoldMs, cashInvariant: Number(metrics.cashAuditMismatches || 0) > 0 }
           // A clean partial page cannot resolve a prior mismatch until a full
           // subsequent sweep has completed. The collector persists sweep totals.
           for (const [key, firing] of Object.entries(conditions)) {
@@ -111,7 +112,7 @@ export function createAccountingMonitor({ store, collect, vault, book, licenseSt
             if (old.firing !== firing) {
               const generation = old.generation + 1
               enqueue(state, { id: crypto.createHash('sha256').update(`${book}:${key}:${generation}`).digest('hex'), kind: firing ? 'firing' : 'resolved',
-                text: `【${firing ? '告警' : '恢复'}】${names[key]}；账本=${book}；未知=${metrics.unknown}；滞留预占最长秒=${Math.floor(metrics.oldestHoldAgeMs / 1000)}；待通知=${metrics.pendingEvents}；欠款钱包=${metrics.debts}；巡检异常=${metrics.auditMismatches}。` }, timestamp)
+                text: `【${firing ? '告警' : '恢复'}】${names[key]}；账本=${book}；未知=${metrics.unknown}；滞留预占最长秒=${Math.floor(metrics.oldestHoldAgeMs / 1000)}；待通知=${metrics.pendingEvents}；欠款钱包=${metrics.debts}；巡检异常=${metrics.auditMismatches}；现金待处理=${metrics.cashPending || 0}；现金未知=${metrics.cashUnknown || 0}；现金核对异常=${metrics.cashAuditMismatches || 0}。` }, timestamp)
               state.alerts[key] = { firing, generation, changedAt: timestamp }
             }
           }

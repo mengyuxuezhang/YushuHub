@@ -7,6 +7,7 @@ interface ChannelState {
   config: { version: number; enabled: boolean; configured: boolean; host: string | null }
   lastScanError?: { code: string } | null; lastPriceScanAt?: number | null; lastPriceScanError?: { code: string } | null; noticeBacklog?: number
   deliveries: { id: string; kind: string; state: string; attempts: number; lastError?: string }[]
+  metrics?: { cashPending?: number; cashUnknown?: number; cashAuditMismatches?: number; cashOldestAgeMs?: number; checkedAt?: number } | null
 }
 const state = ref<ChannelState | null>(null), error = ref(''), message = ref(''), busy = ref(false)
 const form = reactive({ enabled: false, url: '', signingSecret: '' })
@@ -34,6 +35,7 @@ onMounted(() => perform(load))
     <p v-if="error" role="alert">{{ error }}</p><p v-if="message" role="status">{{ message }}</p>
     <template v-if="state">
       <p>通知地址：{{ state.config.configured ? state.config.host : '未配置' }} · {{ state.config.enabled ? '已启用' : '已停用' }}</p>
+      <p v-if="mode === 'accounting' && state.metrics?.cashPending !== undefined">现金退款：待处理 {{ state.metrics.cashPending }} 笔，结果未知 {{ state.metrics.cashUnknown || 0 }} 笔，账务核对异常 {{ state.metrics.cashAuditMismatches || 0 }} 笔；最早受理已等待 {{ Math.floor((state.metrics.cashOldestAgeMs || 0) / 60000) }} 分钟。数据按巡检批次更新，不能代替支付平台最终账单。</p>
       <p v-if="state.lastPriceScanAt">最近价表扫描 {{ new Date(state.lastPriceScanAt).toLocaleString() }} · 积压 {{ state.noticeBacklog || 0 }} 条</p>
       <p v-if="state.lastPriceScanError || state.lastScanError" role="alert">{{ state.lastPriceScanError?.code === 'LICENSE_INACTIVE' ? '授权当前不可用，历史通知保留；恢复后继续扫描价表。' : '通知扫描失败，请检查授权、数据库和上游连接。' }}</p>
       <form @submit.prevent="save">

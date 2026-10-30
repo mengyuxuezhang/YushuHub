@@ -11,12 +11,14 @@ test.each(['price', 'accounting'] as const)('%s notification settings preserve s
     if (String(path).endsWith('/config')) { version++; return {} as never }
     if (String(path).endsWith('/test')) return { queued: true } as never
     expect(options).toBeUndefined()
-    return { config: { version, enabled: true, configured: true, host: 'open.feishu.cn' }, deliveries: [{ id: 'event', kind: 'price-change', state: 'pending', attempts: 2, lastError: 'WEBHOOK_UNAVAILABLE' }] } as never
+    return { config: { version, enabled: true, configured: true, host: 'open.feishu.cn' }, metrics: { cashPending: 3, cashUnknown: 1, cashAuditMismatches: 2, cashOldestAgeMs: 120000 }, deliveries: [{ id: 'event', kind: 'price-change', state: 'pending', attempts: 2, lastError: 'WEBHOOK_UNAVAILABLE' }] } as never
   })
   const host = document.createElement('div'), app = createApp(LocalNotificationsPanel, { mode }); app.mount(host)
   try {
     await vi.waitFor(() => expect(host.textContent).toContain('open.feishu.cn'))
     expect(host.textContent).toContain('WEBHOOK_UNAVAILABLE')
+    if (mode === 'accounting') { expect(host.textContent).toContain('待处理 3 笔'); expect(host.textContent).toContain('账务核对异常 2 笔') }
+    else expect(host.textContent).not.toContain('现金退款')
     const secrets = host.querySelectorAll<HTMLInputElement>('input[type="password"]')
     for (const [index, value] of ['https://open.feishu.cn/open-apis/bot/v2/hook/fictional', 'fictional-secret'].entries()) {
       secrets[index]!.value = value; secrets[index]!.dispatchEvent(new Event('input', { bubbles: true }))

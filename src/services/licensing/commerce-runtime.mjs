@@ -20,6 +20,7 @@ import { supplyVoiceRouting } from '../../repositories/supply-voice-routing.mjs'
 import { supplyVoiceSlots } from '../../repositories/supply-voice-slots.mjs'
 import { inspectVoiceAudio } from '../voice-audio.mjs'
 import { privateVoiceFileCleaner } from './private-voice-cleanup.mjs'
+import { collectPaymentRefundMetrics } from '../payment-refund-audit.mjs'
 
 export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch, benefits = supplyMembershipBenefit, inspectPrivateVoiceAudio, now = Date.now }) {
   if (!client) return null
@@ -33,7 +34,10 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
   const monitorStore = mysqlStateStore(pool, 'commerce-v2-monitor', {})
   const priceStore = mysqlStateStore(pool, 'commerce-v2-price-notifications', emptyPriceNotificationState())
   const notifications = createPriceNotifications({ store: priceStore, vault: new ModelCredentialVault(env.AI_PRICE_NOTIFICATIONS_KEY_FILE || path.resolve('data/price-notifications.key')), fetchImpl, now })
-  const monitor = createAccountingMonitor({ store: monitorStore, collect: (previous, now) => store.monitoring(previous, now), book: 'commerce-v2',
+  const monitor = createAccountingMonitor({ store: monitorStore, collect: async (previous, timestamp) => {
+    const [supply, cash] = await Promise.all([store.monitoring(previous, timestamp), collectPaymentRefundMetrics(pool, previous, timestamp)])
+    return { ...supply, ...cash }
+  }, book: 'commerce-v2',
     licenseState: () => client.monitorState(), vault: new ModelCredentialVault(env.AI_ACCOUNTING_MONITOR_KEY_FILE || path.resolve('data/accounting-monitor.key')), fetchImpl })
   const customModels = env.AI_AGENT_CUSTOM_MODELS_FILE ? JSON.parse(fs.readFileSync(env.AI_AGENT_CUSTOM_MODELS_FILE, 'utf8')) : []
   if (!Array.isArray(customModels) || new Set(customModels.map(model => model.id)).size !== customModels.length) throw failure('DUPLICATE_MODEL_ID', '自接模型定义必须为数组且模型ID唯一')

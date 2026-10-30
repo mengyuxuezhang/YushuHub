@@ -545,6 +545,25 @@ test('durable encrypted webhook: transitions, retries, rotation, restart and mul
   assert(!JSON.stringify(await monitor.state()).includes('test-signing-secret'))
 })
 
+test('cash refund alerts persist transitions without repeating unchanged state or sending customer evidence', async () => {
+  const store = memoryStateStore(emptyMonitorState()), url = 'https://open.feishu.cn/open-apis/bot/v2/hook/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+  let metrics = { unknown: 0, pendingEvents: 0, debts: 0, oldestHoldAgeMs: 0, oldestEventAgeMs: 0, auditMismatches: 0,
+    cashPending: 2, cashUnknown: 1, cashOldestAgeMs: 600_000, cashAuditMismatches: 1, evidence: 'private-customer-bank-statement' }
+  const messages = [], options = { store, collect: async () => metrics, book: 'commerce-v2', now: () => 1_000_000,
+    vault: { seal: async () => 'opaque', unseal: async () => JSON.stringify({ url }) },
+    fetchImpl: async (_url, input) => { messages.push(JSON.parse(input.body).content.text); return new Response('{"code":0}') } }
+  const monitor = createAccountingMonitor(options)
+  await monitor.configure({ enabled: true, expectedVersion: 0, url }, 'owner')
+  await monitor.scan(); await monitor.drain()
+  assert.equal(messages.length, 3); assert(messages.every(text => text.includes('现金')))
+  assert(!messages.join('').includes(metrics.evidence))
+  const restarted = createAccountingMonitor(options)
+  await restarted.scan(); await restarted.drain(); assert.equal(messages.length, 3)
+  metrics = { ...metrics, cashPending: 0, cashUnknown: 0, cashOldestAgeMs: 0, cashAuditMismatches: 0 }
+  await restarted.scan(); await restarted.drain()
+  assert.equal(messages.length, 6); assert(messages.slice(3).every(text => text.includes('恢复')))
+})
+
 test('webhook failed transport hides secrets; expired sending leases recover after process loss', async () => {
   const store = memoryStateStore(emptyMonitorState()), secret = 'https://open.feishu.cn/open-apis/bot/v2/hook/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
   let timestamp = 1_000_000, calls = 0

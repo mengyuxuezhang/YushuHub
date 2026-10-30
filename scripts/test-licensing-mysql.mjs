@@ -32,9 +32,9 @@ try {
   await connection.query('CREATE DATABASE yushu_gateway_test')
   await connection.end()
   console.log(`Running against disposable MySQL ${server.version}; no deployment credentials are used.`)
-  if (focused) console.log('Focused database regression only; full HTTP, backup and capacity checks are skipped.')
+  if (focused) console.log('Focused database regression only; full resource HTTP, supply backup and capacity checks are skipped. Matching domain tests retain their own acceptance checks.')
   const child = spawn(process.execPath, ['--test', ...argumentsForTest, 'src/services/licensing/licensing.mysql.test.mjs'], {
-    stdio: 'inherit', windowsHide: true, env: { ...process.env, LICENSING_TEST_DB: JSON.stringify(config) },
+    stdio: 'inherit', windowsHide: true, env: { ...process.env, LICENSING_TEST_DB: JSON.stringify(config), LICENSING_TEST_CONTAINER: name },
   })
   process.exitCode = await new Promise(resolve => { child.on('error', () => resolve(1)); child.on('exit', code => resolve(typeof code === 'number' ? code : 1)) })
   if (process.exitCode === 0 && !focused) {

@@ -15,6 +15,8 @@ import { serviceApp, serviceErrors } from './licensing/runtime.mjs'
 import { registerPaymentRefundRoutes } from '../routes/payment-refunds.mjs'
 import { setAuthDependencies } from '../middleware/auth.mjs'
 import { filterOrganizationPermissions } from './organization-expiry.mjs'
+import { collectPaymentRefundMetrics } from './payment-refund-audit.mjs'
+import { withPaymentRefundBackup } from '../../scripts/test-payment-refund-backup.mjs'
 
 test('real MySQL cash refund core holds original entitlements once and recovers confirmed transfers without resending or overwriting later balances', { skip: !process.env.LICENSING_TEST_DB }, async () => {
   const { gatewayDatabase, licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
@@ -84,7 +86,7 @@ test('real MySQL cash refund core holds original entitlements once and recovers 
     let releaseSend, signalSend
     const sending = new Promise(resolve => { signalSend = resolve }), resumeSend = new Promise(resolve => { releaseSend = resolve })
     const outcome = (input, state) => ({ state, providerState: state.toUpperCase(), refundNo: input.refundNo, amountFen: input.amountFen, raw: { payer: 'fictional-private-payer', secret: 'must-not-store' } })
-    const make = () => createPaymentRefundService({ pool, now: () => time, databaseClock: async connection => simulatedDatabaseClock || (await connection.query('SELECT CAST(CURRENT_TIMESTAMP(3) AS CHAR) AS clock'))[0][0].clock, onError: error => errors.push(error.code || error.message),
+    const make = (database = pool) => createPaymentRefundService({ pool: database, now: () => time, databaseClock: async connection => simulatedDatabaseClock || (await connection.query('SELECT CAST(CURRENT_TIMESTAMP(3) AS CHAR) AS clock'))[0][0].clock, onError: error => errors.push(error.code || error.message),
       configForOrder: async (order, connection) => ({ id: 'original-config', ownerUserId: 'owner', provider: 'alipay', ...merchant, appId: brokenMerchants.has(order.id) || (order.id === 'order-cancel-prepared' && connection === pool) ? 'another-app' : merchant.appId, appPrivateKey: 'fictional-signing-secret' }),
       freeCardForOwner: ensureAccountFreeMembership, pendingWork: paymentRefundPendingWork,
       providers: { alipay: {
@@ -245,6 +247,28 @@ test('real MySQL cash refund core holds original entitlements once and recovers 
     assert.equal(freeAfterExpiry.length, 1); assert.equal(freeAfterExpiry[0].source, 'refund'); assert.equal(freeAfterExpiry[0].deadline, originalExpiry)
     simulatedDatabaseClock = undefined
     await assert.rejects(service.resolve(scope, 'order-success', { ...resolution, refundNo: (await service.status(scope, 'order-success')).refundNo }, 'owner'), { code: 'PAYMENT_REFUND_IMMUTABLE' })
+    const healthyAudit = await collectPaymentRefundMetrics(pool, {}, time)
+    assert.equal(healthyAudit.cashAuditMismatches, 0); assert(healthyAudit.cashPending > 0); assert(healthyAudit.cashUnknown > 0)
+    await pool.query("UPDATE ai_credit_ledger SET points_delta=19 WHERE user_id='user-closed' AND change_type='payment_refund_release'")
+    assert.equal((await collectPaymentRefundMetrics(pool, healthyAudit, time)).cashAuditMismatches, 1)
+    await pool.query("UPDATE ai_credit_ledger SET points_delta=20 WHERE user_id='user-closed' AND change_type='payment_refund_release'")
+    assert.equal((await collectPaymentRefundMetrics(pool, {}, time)).cashAuditMismatches, 0)
+    // Existing unknown cash result: backup every table, restore to a new database,
+    // then query the same original refund. No new cash transfer may be submitted.
+    const backupRow = await service.status(scope, 'order-not-found')
+    transferStates.set(backupRow.refundNo, 'succeeded'); time += 3_600_001
+    const submitCountBeforeRestore = requests.length
+    const backupVerified = await withPaymentRefundBackup(config, name, async restored => {
+      assert.equal((await collectPaymentRefundMetrics(restored, {}, time)).cashAuditMismatches, 0)
+      assert.equal((await make(restored).recover(scope, 'order-not-found')).state, 'succeeded')
+      await make(restored).recover(scope, 'order-not-found')
+      assert.equal(requests.length, submitCountBeforeRestore)
+      const [[user]] = await restored.query("SELECT CAST(credit_balance AS CHAR) AS balance FROM ai_end_users WHERE id='user-not-found'")
+      assert.equal(user.balance, '10.000000')
+      assert.equal((await collectPaymentRefundMetrics(restored, {}, time)).cashAuditMismatches, 0)
+      assert.equal((await service.status(scope, 'order-not-found')).state, 'unknown', 'Restore acceptance must not modify source database')
+    })
+    if (backupVerified) console.log('Cash backup/restore: all table hashes, original hold, final recovery and no cash resubmission verified in disposable databases.')
     assert(errors.some(value => value.includes('response lost')))
   } finally {
     if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
