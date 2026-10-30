@@ -20,7 +20,7 @@ export function supplyVoiceRouting({ pool, book, now = Date.now }) {
   identifier(book)
   const api = {
     async assertReady() { await pool.query('SELECT 1 FROM supply_voice_routing LIMIT 0') },
-    async remember(scope, resourceId, model, { deleteRequestId } = {}) {
+    async remember(scope, resourceId, model, { deleteRequestId, uploadRequestId } = {}) {
       const scopeFields = fields(scope); identifier(resourceId); identifier(model.id)
       if (!['official', 'custom'].includes(model.source) || model.adapter !== 'minimax.private_voice' || !Number.isSafeInteger(model.version)) throw failure('VOICE_ROUTE_INVALID', '音色必须绑定已核定的供货模型')
       const snapshot = Object.fromEntries(['id', 'source', 'version', 'adapter', 'clientId', 'definitionSource', 'providerModelId', 'bindingHash'].filter(key => model[key] !== undefined).map(key => [key, model[key]]))
@@ -35,6 +35,11 @@ export function supplyVoiceRouting({ pool, book, now = Date.now }) {
         const sameResource = kind === 'resource' && row.resource_id === resourceId && row.model_id === model.id && row.source === model.source
           && row.root_id === scope.rootId && row.organization_id === scope.organizationId && row.subject_hash === scope.subjectHash
         if (row.fingerprint !== fingerprint && !sameResource) throw failure('IDEMPOTENCY_CONFLICT', '音色或删除编号已绑定其他原始路由', 409)
+        if (uploadRequestId) {
+          const [[slot]] = await connection.query(`SELECT * FROM supply_voice_slots WHERE book=? AND id=? AND ${owned} FOR UPDATE`, [book, identifier(uploadRequestId), ...scopeFields])
+          if (!slot || slot.state !== 'held' || slot.model_id !== model.id || slot.source !== model.source || (slot.resource_id && slot.resource_id !== resourceId)) throw failure('VOICE_UPLOAD_CLOSED', '原上传额度与资源绑定不匹配', 409)
+          await connection.query('UPDATE supply_voice_slots SET resource_id=?,updated_at=? WHERE book=? AND id=?', [resourceId, now(), book, uploadRequestId])
+        }
         await connection.commit(); return project(row)
       } catch (error) { await connection.rollback().catch(() => {}); throw error } finally { connection.release() }
     },

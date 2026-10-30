@@ -67,7 +67,8 @@ export function registerClientVoiceSupplyRoutes(app, { runtime, tenantForUser })
       }
     }
     if (runtime.privateVoiceReady) voices.push(...await runtime.privateVoiceInventory(tenant, req.clientUser.id))
-    res.json({ success: true, data: { models, voices, warnings: [] } })
+    const warnings = runtime.privateVoiceReady && runtime.privateVoiceWarnings ? await runtime.privateVoiceWarnings(tenant, req.clientUser.id) : []
+    res.json({ success: true, data: { models, voices, warnings } })
   }))
   app.post('/api/client/voices/synthesize', requireClientAuth, route(async (req, res) => {
     const input = req.body || {}, service = await runtime.service(), tenant = await tenantForUser(req)

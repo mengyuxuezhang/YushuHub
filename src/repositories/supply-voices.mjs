@@ -5,6 +5,7 @@ import { digest, failure, identifier } from '../services/licensing/protocol.mjs'
 import { inspectVoiceAudio } from '../services/voice-audio.mjs'
 import { SUPPLY_VOICE_ARTIFACT_SCHEMA } from './supply-voice-artifacts.mjs'
 import { SUPPLY_VOICE_ROUTING_SCHEMA } from './supply-voice-routing.mjs'
+import { SUPPLY_VOICE_SLOTS_SCHEMA } from './supply-voice-slots.mjs'
 
 const table = (name, columns) => `CREATE TABLE IF NOT EXISTS supply_voice_${name} (${columns}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin`
 const bookColumn = 'book VARCHAR(80) CHARACTER SET ascii COLLATE ascii_bin NOT NULL'
@@ -21,7 +22,7 @@ export const SUPPLY_VOICE_SCHEMA = [
     action VARCHAR(24) NOT NULL,state VARCHAR(24) NOT NULL,fingerprint CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     updated_at BIGINT NOT NULL,payload JSON NOT NULL,PRIMARY KEY(book,id),KEY active_jobs(book,resource_id,state)`),
 ]
-export async function migrateSupplyVoiceSchema(pool) { for (const sql of [...SUPPLY_VOICE_SCHEMA, SUPPLY_VOICE_ARTIFACT_SCHEMA, SUPPLY_VOICE_ROUTING_SCHEMA]) await pool.query(sql) }
+export async function migrateSupplyVoiceSchema(pool) { for (const sql of [...SUPPLY_VOICE_SCHEMA, SUPPLY_VOICE_ARTIFACT_SCHEMA, SUPPLY_VOICE_ROUTING_SCHEMA, SUPPLY_VOICE_SLOTS_SCHEMA]) await pool.query(sql) }
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value
 const decode = row => row ? { ...parse(row.payload), id: row.id, status: row.status, expiresAt: Number(row.expires_at), createdAt: Number(row.created_at) } : null
 const sha = value => /^[a-f0-9]{64}$/.test(value || '')
@@ -33,7 +34,7 @@ function scopeOf(input) {
 }
 const scopeValues = scope => [scope.rootId, scope.organizationId, scope.subjectHash, scope.modelId]
 const ownedWhere = 'root_id=? AND organization_id=? AND subject_hash=? AND model_id=?'
-const publicResource = row => ({ id: row.id, modelId: row.modelId, name: row.name || '', category: 'private', status: row.status,
+const publicResource = row => ({ id: row.id, modelId: row.modelId, name: row.name || '待受理录音', category: 'private', status: row.status,
   expiresAt: row.expiresAt ? new Date(row.expiresAt).toISOString() : null })
 
 // Explicit SQL migration; no runtime DDL or monetary writes. This repository
@@ -112,6 +113,12 @@ export function supplyVoiceRepository({ pool, book, directory, inspectAudio = in
       }
     },
     async get(input, id) { return find(pool, scopeOf(input), id) },
+    async uploadByRequest(input, requestId) {
+      const scope = scopeOf(input); identifier(requestId)
+      const [[row]] = await pool.query(`SELECT * FROM supply_voice_resources WHERE book=? AND upload_request_id=? AND ${ownedWhere}`, [book, requestId, ...scopeValues(scope)])
+      if (!row) throw failure('VOICE_UPLOAD_NOT_FOUND', '本主体原上传尚未确认', 404)
+      return publicResource(decode(row))
+    },
     async discardUpload(input, id, requestId) {
       const scope = scopeOf(input); identifier(requestId)
       const fingerprint = digest(JSON.stringify([scope, id, requestId, 'discard-upload']))
@@ -140,7 +147,7 @@ export function supplyVoiceRepository({ pool, book, directory, inspectAudio = in
     },
     async list(input) {
       const scope = scopeOf(input)
-      const [rows] = await pool.query(`SELECT * FROM supply_voice_resources WHERE book=? AND ${ownedWhere} AND status NOT IN ('deleted','uploaded','expired') ORDER BY created_at DESC,id LIMIT 100`, [book, ...scopeValues(scope)])
+      const [rows] = await pool.query(`SELECT * FROM supply_voice_resources WHERE book=? AND ${ownedWhere} AND status<>'deleted' ORDER BY created_at DESC,id LIMIT 100`, [book, ...scopeValues(scope)])
       return rows.map(row => publicResource(decode(row)))
     },
     async source(input, id) {

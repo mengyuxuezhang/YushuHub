@@ -16,6 +16,7 @@ export function registerPrivateVoiceGatewayRoutes(app, { gateway }) {
     requestId: req.body.requestId, consent: req.body.consent === 'true', format: req.body.format, bytes: req.file?.buffer,
   })))
   app.get(base, authenticate, endpoint(req => gateway.privateList(bearer(req), req.params.modelId)))
+  app.get(`${base}/uploads/:id`, authenticate, endpoint(req => gateway.privateUploadStatus(bearer(req), req.params.modelId, req.params.id)))
   app.post(`${base}/resources/:id/delete`, authenticate, endpoint(req => gateway.privateDelete(bearer(req), req.params.modelId, req.params.id, req.body.requestId)))
   app.get(`${base}/deletions/:id`, authenticate, endpoint(req => gateway.privateDeletion(bearer(req), req.params.modelId, req.params.id)))
   const audio = work => async (req, res, next) => {

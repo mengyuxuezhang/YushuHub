@@ -45,6 +45,7 @@ import { privateVoiceStorage } from './private-voice-runtime.mjs'
 import { registerPrivateVoiceGatewayRoutes } from '../../routes/private-voice-gateway.mjs'
 import { assertSupplyVoiceMutationAllowed, guardCustomVoiceBinding, guardSupplyProviderDeletion } from './private-voice-binding.mjs'
 import { supplyVoiceRouting } from '../../repositories/supply-voice-routing.mjs'
+import { supplyVoiceSlots } from '../../repositories/supply-voice-slots.mjs'
 import './private-voice-custom.mysql.test.mjs'
 
 const configured = Boolean(process.env.LICENSING_TEST_DB)
@@ -1402,12 +1403,14 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     const privateFetch = (route = '', body, token = privateToken) => fetch(privateUrl + route, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, ...(body instanceof FormData || body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) }) })
     assert.equal((await privateFetch('', undefined, unscopedToken)).status, 403)
     await migrateSupplyVoiceSchema(localPool)
-    firstRuntime = agentCommerceRuntime({ database: () => localPool, benefits: async () => ({ discount: '1' }),
+    let losePrivateUploadReply = false
+    firstRuntime = agentCommerceRuntime({ database: () => localPool, benefits: async () => ({ discount: '1' }), inspectPrivateVoiceAudio: async () => ({ duration: 10 }),
       client: { claims: async () => ({ ...root, modelMode: 'fixed' }), recoveryIdentity: async () => root,
         serviceToken: async (audience, organizationId, subjectHash) => (await center.serviceToken(rootActivation.credential, audience, organizationId, subjectHash)).token,
         recoveryToken: async (organizationId, requestId) => (await center.recoveryToken(rootActivation.credential, organizationId, requestId)).token },
       env: { AI_SUPPLY_PRIVATE_VOICE_ENABLED: '1', AI_MODEL_GATEWAY_URL: 'https://private-gateway.example.com', AI_MODEL_CREDENTIAL_KEY_PATH: path.join(dir, 'local-credentials.key'), AI_PRICE_NOTIFICATIONS_KEY_FILE: path.join(dir, 'local-price.key'), AI_ACCOUNTING_MONITOR_KEY_FILE: path.join(dir, 'local-monitor.key') },
-      fetchImpl: (url, options) => { const parsed = new URL(url); assert.equal(parsed.hostname, 'private-gateway.example.com'); return fetch(`http://127.0.0.1:${privateServer.address().port}${parsed.pathname}`, options) } })
+      fetchImpl: async (url, options) => { const parsed = new URL(url); assert.equal(parsed.hostname, 'private-gateway.example.com'); const response = await fetch(`http://127.0.0.1:${privateServer.address().port}${parsed.pathname}`, options)
+        if (losePrivateUploadReply && parsed.pathname.endsWith('/upload')) { losePrivateUploadReply = false; await response.body?.cancel(); throw new Error('simulated upload reply loss after remote commit') }; return response } })
     const localStore = firstRuntime.store, service = await firstRuntime.service()
     setAuthDependencies({ getEndUserByToken: async token => ['private-client', 'private-peer'].includes(token) ? { id: token === 'private-client' ? 'private-core-user' : 'private-peer-user', status: 'enabled' } : null, getClientAuthorization: async () => true })
     const clientApp = serviceApp(); registerClientVoiceSupplyRoutes(clientApp, { runtime: firstRuntime, tenantForUser: async () => child }); serviceErrors(clientApp)
@@ -1422,6 +1425,12 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     assert.equal((await privateFetch('/upload', uploadForm('false'))).status, 400)
     const uploaded = await privateFetch('/upload', uploadForm('true')); assert.equal(uploaded.status, 200)
     const resource = (await uploaded.json()).data
+    losePrivateUploadReply = true
+    await assert.rejects(firstRuntime.privateVoice(child, 'private-core-user', model.id, 'upload', { ...upload, consent: true }), /simulated upload reply loss/)
+    const recoveredInventory = await firstRuntime.privateVoiceInventory(child, 'private-core-user')
+    assert.equal(recoveredInventory[0].id, resource.id); assert.equal(recoveredInventory[0].status, 'uploaded')
+    assert.equal((await firstRuntime.privateVoiceWarnings(child, 'private-core-user')).length, 0)
+    assert.equal((await privateFetch('/uploads/private-clone', undefined, peerToken)).status, 404)
     assert.equal((await firstRuntime.privateVoice(child, 'private-core-user', model.id, 'upload', { ...upload, consent: true })).id, resource.id)
     assert.equal((await (await privateFetch('/upload', uploadForm('true'))).json()).data.id, resource.id)
     const cloneRequest = { action: 'clone', resourceId: resource.id, text: '你好', name: '虚构供货私有音色', consent: true, speed: 1, includeTimings: false, timingGranularity: 'sentence' }
@@ -1572,4 +1581,43 @@ test('real MySQL private voice bindings block destructive edits and serialize or
     await pool?.end(); if (created) { assert(/^yushu_voice_guard_[a-f0-9]{10}$/.test(name)); await admin.query('DROP DATABASE ??', [name]) }; await admin.end()
     assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir())); await fs.rm(dir, { recursive: true, force: true })
   }
+})
+
+
+test('real MySQL private voice capacity serializes official and custom uploads together without releasing unknown uploads or peer resources', { skip: !configured }, async () => {
+  const { gatewayDatabase = 'yushu_gateway_test', licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable database required')
+  const pool = mysql.createPool({ ...config, database: gatewayDatabase, connectionLimit: 12 })
+  try {
+    await migrateSupplyVoiceSchema(pool)
+    const book = 'mixed-private-slots', slots = supplyVoiceSlots({ pool, book }), routes = supplyVoiceRouting({ pool, book })
+    const hash = value => crypto.createHash('sha256').update(value).digest('hex'), scope = { rootId: 'mixed-root', organizationId: 'mixed-child', subjectHash: hash('fictional-mixed-user') }
+    const peer = { ...scope, subjectHash: hash('fictional-other-user') }, upload = { format: 'wav', bytes: Buffer.from('fictional capacity recording') }
+    await slots.assertReady()
+    const attempts = await Promise.allSettled(Array.from({ length: 24 }, (_, index) => slots.reserve(scope, { id: index % 2 ? 'private-custom-model' : 'private-official-model', adapter: 'minimax.private_voice', source: index % 2 ? 'custom' : 'official', version: 1 }, { ...upload, requestId: `mixed-upload-${index}` })))
+    const accepted = attempts.filter(result => result.status === 'fulfilled').map(result => result.value), rejected = attempts.filter(result => result.status === 'rejected')
+    assert.equal(accepted.length, 20); assert.equal(rejected.length, 4); assert(rejected.every(result => result.reason.code === 'VOICE_QUOTA_EXCEEDED'))
+    assert.equal(new Set(accepted.map(result => result.model.source)).size, 2)
+    const first = accepted[0]
+    assert.equal((await slots.reserve(scope, { ...first.model, version: 2 }, { ...upload, requestId: first.requestId })).model.version, 1)
+    await assert.rejects(slots.reserve(scope, first.model, { ...upload, requestId: first.requestId, bytes: Buffer.from('different recording') }), { code: 'IDEMPOTENCY_CONFLICT' })
+    await assert.rejects(slots.get(peer, first.requestId), { code: 'VOICE_UPLOAD_NOT_FOUND' })
+    const resourceIds = []
+    for (const slot of accepted) { const id = crypto.randomUUID(); resourceIds.push(id); await routes.remember(scope, id, slot.model, { uploadRequestId: slot.requestId }) }
+    await slots.assertReady(); assert.equal((await slots.pending(scope)).length, 0)
+    const foreignId = crypto.randomUUID()
+    await assert.rejects(routes.remember(peer, foreignId, first.model, { uploadRequestId: first.requestId }), { code: 'VOICE_UPLOAD_CLOSED' })
+    await assert.rejects(routes.find(peer, foreignId), { code: 'VOICE_NOT_FOUND' })
+    await slots.release(peer, resourceIds[0])
+    await assert.rejects(slots.reserve(scope, first.model, { ...upload, requestId: 'mixed-still-full' }), { code: 'VOICE_QUOTA_EXCEEDED' })
+    await slots.release(scope, resourceIds[0]); await slots.release(scope, resourceIds[0])
+    assert.equal((await slots.get(scope, first.requestId)).state, 'released')
+    await assert.rejects(slots.reserve(scope, first.model, { ...upload, requestId: first.requestId }), { code: 'VOICE_UPLOAD_CLOSED' })
+    await slots.reserve(scope, first.model, { ...upload, requestId: 'mixed-after-release' })
+    assert.equal((await slots.pending(scope)).length, 1)
+    await assert.rejects(slots.reserve(scope, first.model, { ...upload, requestId: 'mixed-no-further-room' }), { code: 'VOICE_QUOTA_EXCEEDED' })
+    const unmapped = supplyVoiceRouting({ pool, book: 'unmapped-private-slots' })
+    await unmapped.remember(scope, crypto.randomUUID(), first.model)
+    await assert.rejects(supplyVoiceSlots({ pool, book: 'unmapped-private-slots' }).assertReady(), { code: 'VOICE_SLOT_REVIEW_REQUIRED' })
+  } finally { await pool.end() }
 })

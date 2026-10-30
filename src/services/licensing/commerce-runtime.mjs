@@ -17,6 +17,8 @@ import { privateVoiceStorage } from './private-voice-runtime.mjs'
 import crypto from 'node:crypto'
 import { guardCustomVoiceBinding } from './private-voice-binding.mjs'
 import { supplyVoiceRouting } from '../../repositories/supply-voice-routing.mjs'
+import { supplyVoiceSlots } from '../../repositories/supply-voice-slots.mjs'
+import { inspectVoiceAudio } from '../voice-audio.mjs'
 
 export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch, benefits = supplyMembershipBenefit, inspectPrivateVoiceAudio, now = Date.now }) {
   if (!client) return null
@@ -26,6 +28,7 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     bindingGuard: (connection, scope, credentialId, options) => customModels.some(model => model.id === scope.modelId && !model.providerModelId) ? undefined : guardCustomVoiceBinding(connection, scope, credentialId, options), now })
   const adapters = httpGatewayAdapters(fetchImpl, { privateVoiceStore })
   const voiceRouting = supplyVoiceRouting({ pool, book: 'commerce-v2', now })
+  const voiceSlots = supplyVoiceSlots({ pool, book: 'commerce-v2', now })
   const monitorStore = mysqlStateStore(pool, 'commerce-v2-monitor', {})
   const priceStore = mysqlStateStore(pool, 'commerce-v2-price-notifications', emptyPriceNotificationState())
   const notifications = createPriceNotifications({ store: priceStore, vault: new ModelCredentialVault(env.AI_PRICE_NOTIFICATIONS_KEY_FILE || path.resolve('data/price-notifications.key')), fetchImpl, now })
@@ -121,6 +124,11 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     },
     async privateVoiceInventory(tenant, userId) {
       const rows = []
+      const root = await client.claims(), scope = { rootId: root.id, organizationId: tenant.id, subjectHash: digest(JSON.stringify([tenant.id, userId])) }
+      for (const slot of await voiceSlots.pending(scope)) {
+        try { await runtime.privateVoice(tenant, userId, slot.model.id, 'upload-status', { requestId: slot.requestId }) }
+        catch (error) { if (error.code !== 'VOICE_UPLOAD_NOT_FOUND') throw error }
+      }
       for (const model of await runtime.privateVoiceModels(tenant, userId)) {
         for (const resource of await runtime.privateVoice(tenant, userId, model.id, 'list')) {
           const route = await runtime.privateVoiceRoute(tenant, userId, resource.id)
@@ -129,15 +137,23 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
       }
       return rows
     },
+    async privateVoiceWarnings(tenant, userId) {
+      const root = await client.claims(), slots = await voiceSlots.pending({ rootId: root.id, organizationId: tenant.id, subjectHash: digest(JSON.stringify([tenant.id, userId])) })
+      return slots.map(slot => ({ requestId: slot.requestId, modelId: slot.model.clientId || slot.model.id, code: 'VOICE_UPLOAD_UNCONFIRMED', message: '上传尚未确认，仍占用音色额度；请按原请求重试或核对后清理' }))
+    },
     async privateVoiceModels(tenant, userId) {
       const root = await client.claims()
       return voiceRouting.models({ rootId: root.id, organizationId: tenant.id, subjectHash: digest(JSON.stringify([tenant.id, userId])) })
     },
     async privateVoice(tenant, userId, modelId, action, input = {}) {
       const root = await client.claims(), context = { rootId: root.id, organizationId: tenant.id, subjectHash: digest(JSON.stringify([tenant.id, userId])), modelId }
-      if (!['upload', 'list', 'preview', 'delete', 'audio', 'deletion'].includes(action)) throw failure('VOICE_ACTION_INVALID', '私有音色操作无效')
+      if (!['upload', 'list', 'preview', 'delete', 'audio', 'deletion', 'upload-status'].includes(action)) throw failure('VOICE_ACTION_INVALID', '私有音色操作无效')
       let model
-      if (['preview', 'delete', 'deletion'].includes(action)) {
+      if (action === 'upload-status') {
+        const slot = await voiceSlots.get(context, input.requestId)
+        if (modelId && slot.model.id !== modelId) throw failure('VOICE_UPLOAD_NOT_FOUND', '本主体原上传不存在', 404)
+        model = slot.model
+      } else if (['preview', 'delete', 'deletion'].includes(action)) {
         const route = await voiceRouting.find(context, action === 'deletion' ? input.requestId : input.resourceId, action === 'deletion' ? 'delete' : 'resource')
         if (modelId && route.model.id !== modelId) throw failure('VOICE_NOT_FOUND', '本主体音色不存在', 404)
         model = route.model; input = { ...input, resourceId: route.resourceId }
@@ -151,11 +167,16 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
       }
       if (!model) throw failure('MODEL_UNAVAILABLE', '私有音色模型不在当前供货目录或历史归属中', 403)
       modelId = model.id; context.modelId = modelId
+      if (action === 'upload') {
+        if (input.consent !== true || !Buffer.isBuffer(input.bytes) || !input.bytes.length || input.bytes.length > 20 * 1024 * 1024 || !['mp3', 'wav', 'm4a'].includes(input.format)) throw failure('VOICE_AUDIO_INVALID', '录音及复刻授权无效')
+        await (inspectPrivateVoiceAudio || inspectVoiceAudio)(input.bytes, input.format)
+        await voiceSlots.reserve(context, model, input)
+      }
       if (action === 'delete') await voiceRouting.remember(context, input.resourceId, model, { deleteRequestId: input.requestId })
       if (model.source === 'official') {
         if (!gatewayUrl) throw failure('GATEWAY_UNCONFIGURED', '官方模型网关未配置', 503)
         const prefix = `/private-voices/${encodeURIComponent(modelId)}`
-        const suffix = { upload: '/upload', list: '', preview: `/resources/${encodeURIComponent(input.resourceId || '')}/preview`, delete: `/resources/${encodeURIComponent(input.resourceId || '')}/delete`, audio: `/requests/${encodeURIComponent(input.requestId || '')}/audio`, deletion: `/deletions/${encodeURIComponent(input.requestId || '')}` }[action]
+        const suffix = { upload: '/upload', 'upload-status': `/uploads/${encodeURIComponent(input.requestId || '')}`, list: '', preview: `/resources/${encodeURIComponent(input.resourceId || '')}/preview`, delete: `/resources/${encodeURIComponent(input.resourceId || '')}/delete`, audio: `/requests/${encodeURIComponent(input.requestId || '')}/audio`, deletion: `/deletions/${encodeURIComponent(input.requestId || '')}` }[action]
         const token = await client.serviceToken('official-models', tenant.id, context.subjectHash)
         let body
         if (action === 'upload') {
@@ -174,19 +195,26 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
         }
         const payload = await response.json()
         if (!response.ok || !payload.success) throw failure(payload.code || 'GATEWAY_ERROR', payload.error || '官方音色服务不可用', response.status)
-        if (action === 'upload') await voiceRouting.remember(context, payload.data.id, model)
+        if (['upload', 'upload-status'].includes(action)) { await voiceRouting.remember(context, payload.data.id, model, { uploadRequestId: input.requestId }); if (payload.data.status === 'deleted') await voiceSlots.release(context, payload.data.id) }
+        if ((action === 'delete' && payload.data?.state === 'done' && payload.data.result?.deleted === true) || (action === 'deletion' && payload.data?.deleted === true)) await voiceSlots.release(context, input.resourceId)
         return payload.data
       }
       if (!privateVoiceStore) throw failure('VOICE_PRIVATE_SUPPLY_UNAVAILABLE', '自接私有音色存储尚未配置', 503)
       const { voices, artifacts } = privateVoiceStore
+      if (action === 'upload-status') {
+        const result = await voices.uploadByRequest(context, input.requestId)
+        await voiceRouting.remember(context, result.id, model, { uploadRequestId: input.requestId })
+        if (result.status === 'deleted') await voiceSlots.release(context, result.id)
+        return result
+      }
       if (action === 'upload') {
         if (input.consent !== true) throw failure('VOICE_CONSENT_REQUIRED', '须确认录音复刻授权')
         const resource = await voices.upload(context, { requestId: input.requestId, format: input.format, bytes: input.bytes })
-        await voiceRouting.remember(context, resource.id, model)
+        await voiceRouting.remember(context, resource.id, model, { uploadRequestId: input.requestId })
         return resource
       }
       if (action === 'list') return voices.list(context)
-      if (action === 'deletion') return voices.deletion(context, input.requestId)
+      if (action === 'deletion') { const result = await voices.deletion(context, input.requestId); if (result.deleted) await voiceSlots.release(context, result.resourceId); return result }
       if (action === 'audio') {
         const operation = await (await runtime.service()).status(tenant, userId, input.requestId)
         if (operation.snapshot.model.id !== modelId || operation.state !== 'settled' || !operation.result?.audioArtifactId || operation.result?.error) throw failure('VOICE_AUDIO_PENDING', '原音频尚未确认', 409)
@@ -195,12 +223,14 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
       const resource = await voices.get(context, input.resourceId)
       const adapter = adapters[model.adapter]
       if (action === 'preview') return adapter.preview(model, input.resourceId, context)
-      if (!resource.bindingHash) return voices.discardUpload(context, input.resourceId, input.requestId)
+      if (!resource.bindingHash) { const result = await voices.discardUpload(context, input.resourceId, input.requestId); await voiceSlots.release(context, input.resourceId); return result }
       const config = await customExecution(await definitionFor(root.id, model, true), root, { credentials: true, credentialId: resource.credentialId, recovery: true })
-      return adapter.remove(config, input.resourceId, { ...context, requestId: input.requestId })
+      const result = await adapter.remove(config, input.resourceId, { ...context, requestId: input.requestId })
+      if (result.state === 'done' && result.result?.deleted === true) await voiceSlots.release(context, input.resourceId)
+      return result
     },
     async startMonitoring() {
-      await store.assertReady(); await monitorStore.read(); await priceStore.read(); await definitionStore.read(); if (privateVoiceStore) await privateVoiceStore.assertReady(); if (runtime.privateVoiceReady) await voiceRouting.assertReady(); monitor.start()
+      await store.assertReady(); await monitorStore.read(); await priceStore.read(); await definitionStore.read(); if (privateVoiceStore) await privateVoiceStore.assertReady(); if (runtime.privateVoiceReady) { await voiceRouting.assertReady(); await voiceSlots.assertReady() }; monitor.start()
       if (!priceTimer) { priceTimer = setInterval(() => runtime.scanPrices().catch(() => {}), 60_000); priceTimer.unref(); void runtime.scanPrices().catch(() => {}) }
     },
     async tenant(context) {

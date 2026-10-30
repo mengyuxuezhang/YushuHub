@@ -14,6 +14,7 @@ const targets = [
   'src/repositories/supply-voices.mjs',
   'src/repositories/supply-voice-artifacts.mjs',
   'src/repositories/supply-voice-routing.mjs',
+  'src/repositories/supply-voice-slots.mjs',
   'src/services/licensing/private-voice-adapter.mjs',
   'src/services/licensing/private-voice-runtime.mjs',
   'src/routes/private-voice-gateway.mjs',

@@ -64,6 +64,10 @@ export function createModelGateway({ ledger, authorize, models, adapters, privat
       const { identity } = await privateAccess(token, modelId)
       return privateVoiceStore.voices.list(identity)
     },
+    async privateUploadStatus(token, modelId, requestId) {
+      const { identity } = await privateAccess(token, modelId)
+      return privateVoiceStore.voices.uploadByRequest(identity, requestId)
+    },
     async privatePreview(token, modelId, resourceId) {
       const { model, adapter, identity } = await privateAccess(token, modelId)
       return adapter.preview(model, identifier(resourceId), identity)
