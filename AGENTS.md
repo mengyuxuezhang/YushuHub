@@ -1,5 +1,7 @@
 # YushuHub 开发约定
 
+授权与代理供货重构接手入口：先读 `docs/AUTHORIZATION_SUPPLY_MASTER_PLAN.md`、`docs/AUTHORIZATION_SUPPLY_STATUS.md` 和 `docs/INDEPENDENT_AUTHORIZATION.md`。它们分别记录目标、实际进度和已实现协议；每次交付更新进度及缺口。该工作继续使用 `feat/independent-license-center`，不要因重新接手另起一套授权或账本。
+
 YushuHub 是管理端的唯一主研发仓库。开始工作先阅读 README.md、CONTRIBUTING.md、docs/DEVELOPMENT.md 和 docs/RELEASING.md，fetch origin，从最新 origin/master 创建分支。
 
 1. 本仓库只维护管理端，禁止加入桌面端源码、私有运行时、内部运维记录、真实凭据和客户数据。

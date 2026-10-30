@@ -1,5 +1,8 @@
 # 文档索引
 
+- [授权中心、代理供货与分级计费总规划](AUTHORIZATION_SUPPLY_MASTER_PLAN.md)
+- [授权与供货重构进度及接手清单](AUTHORIZATION_SUPPLY_STATUS.md)
+
 - [部署指南](DEPLOYMENT.md)
 - [开发指南](DEVELOPMENT.md)
 - [独立授权与分级供货开发说明](INDEPENDENT_AUTHORIZATION.md)
