@@ -3,15 +3,25 @@ import { decimal, failure, micros } from './licensing/protocol.mjs'
 import { capturePaymentMemberships, paymentFulfillmentHash, readPaymentFulfillment, readPaymentMembership } from '../repositories/payment-fulfillments.mjs'
 import { appendPaymentRefundEvent, assertPaymentRefundClear, decodePaymentRefund, PAYMENT_REFUND_PENDING } from '../repositories/payment-refunds.mjs'
 import { paymentMerchantBinding } from './payment-merchant-binding.mjs'
-import { paymentRefundCommand, planPaymentRefund, publicPaymentRefundPlan } from './payment-refund-policy.mjs'
+import { paymentRefundCommand, paymentRefundResolution, planPaymentRefund, publicPaymentRefundPlan } from './payment-refund-policy.mjs'
 
-const publicRefund = row => row ? { orderId: row.order_id, refundNo: row.id, state: row.state, amountFen: row.payload.amountFen, points: row.payload.points,
-  reason: row.payload.command.reason, errorCode: row.payload.errorCode || '', nextRetryAt: Number(row.next_retry_at), updatedAt: Number(row.updated_at) } : null
+const publicRefund = (row, timestamp) => row ? { orderId: row.order_id, refundNo: row.id, state: row.state, amountFen: row.payload.amountFen, points: row.payload.points,
+  reason: row.payload.command.reason, errorCode: row.payload.errorCode || '', nextRetryAt: Number(row.next_retry_at), updatedAt: Number(row.updated_at),
+  releasedPoints: row.payload.releasedPoints, expiredHeldPoints: row.payload.expiredHeldPoints,
+  canResolve: !row.payload.providerOutcome && Number(row.lease_until) <= timestamp && (row.state === 'unknown' || (row.state === 'prepared' && !row.payload.dispatchedAt)),
+  unsubmitted: row.state === 'prepared' && !row.payload.dispatchedAt, localFinalPending: Boolean(row.payload.providerOutcome) && PAYMENT_REFUND_PENDING.includes(row.state),
+  ...(row.payload.resolution ? { resolution: { resolutionId: row.payload.resolution.resolutionId, actor: row.payload.resolution.actor, resultState: row.payload.resolution.resultState, evidence: row.payload.resolution.evidence, at: row.payload.resolution.at } } : {}) } : null
 const same = (one, two) => paymentFulfillmentHash(one) === paymentFulfillmentHash(two)
+function checkedOutcome(result, claimed) {
+  if (!result || !['succeeded', 'closed', 'processing', 'unknown'].includes(result.state) || result.refundNo !== claimed.id || result.amountFen !== claimed.payload.amountFen) throw failure('PAYMENT_REFUND_RESPONSE_INVALID', '原退款结果需要核对', 409)
+  if (result.providerRefundNo !== undefined && (typeof result.providerRefundNo !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(result.providerRefundNo))) throw failure('PAYMENT_REFUND_RESPONSE_INVALID', '平台退款标识需要核对', 409)
+  return { state: result.state, refundNo: claimed.id, amountFen: claimed.payload.amountFen, providerState: String(result.providerState || '').slice(0, 40),
+    ...(result.providerRefundNo ? { providerRefundNo: result.providerRefundNo } : {}), ...(result.notFound === true ? { notFound: true } : {}) }
+}
 
 // Config/adapter dependencies use the same transaction connection for database
 // reads. Provider network calls happen only after the claim transaction ends.
-export function createPaymentRefundService({ pool, configForOrder, freeCardForOwner, pendingWork, providers, now = Date.now, onError = () => {} }) {
+export function createPaymentRefundService({ pool, configForOrder, freeCardForOwner, pendingWork, providers, now = Date.now, databaseClock, onError = () => {} }) {
   if (![configForOrder, freeCardForOwner, pendingWork].every(fn => typeof fn === 'function')) throw new Error('Refund config, free membership and pending-work checks are required')
   async function transaction(work) {
     const connection = await pool.getConnection()
@@ -33,7 +43,7 @@ export function createPaymentRefundService({ pool, configForOrder, freeCardForOw
     if (!user) throw failure('PAYMENT_RIGHTS_UNCONFIRMED', '原用户不存在，保留退款待核对状态', 409)
     return user
   }
-  async function clock(connection) { return (await connection.query('SELECT CAST(CURRENT_TIMESTAMP(3) AS CHAR) AS clock'))[0][0].clock }
+  async function clock(connection) { return databaseClock ? databaseClock(connection) : (await connection.query('SELECT CAST(CURRENT_TIMESTAMP(3) AS CHAR) AS clock'))[0][0].clock }
   async function planFor(connection, scope, order) {
     const user = await userFor(connection, order)
     await assertPaymentRefundClear(connection, order.user_id)
@@ -84,6 +94,7 @@ export function createPaymentRefundService({ pool, configForOrder, freeCardForOw
         || active[0].createdBy !== row.owner_user_id || active[0].expiresAt || active[0].pointsExpiresAt || !purchased || purchased.status !== 'cancelled'
         || !same({ ...purchased, status: 'active' }, receipt.membership)) throw failure('PAYMENT_MEMBERSHIP_CHANGED', '冻结期间会员被修改，保留原现金确认结果等待核对', 409)
       const time = await clock(connection)
+      let restored = false
       let restore = outcome.state === 'closed' ? receipt.membership : row.payload.restoreMembership
       if (restore) {
         const current = await readPaymentMembership(connection, restore.id, user.id)
@@ -91,10 +102,21 @@ export function createPaymentRefundService({ pool, configForOrder, freeCardForOw
         if (!restore.expiresAt || restore.expiresAt > time) {
           await connection.query("UPDATE ai_end_user_memberships SET status='cancelled' WHERE id=? AND user_id=?", [row.payload.temporaryMembershipId, user.id])
           await connection.query("UPDATE ai_end_user_memberships SET status='active' WHERE id=? AND user_id=?", [restore.id, user.id])
+          restored = true
         }
       }
-      if (outcome.state === 'closed' && micros(row.payload.points) > 0n) await movePoints(connection, user.id, row.payload.points, row.id, 'payment_refund_release')
-      await connection.query('UPDATE ai_payment_orders SET status=?,last_error=? WHERE id=?', [outcome.state === 'succeeded' ? 'refunded' : 'paid', outcome.state === 'closed' ? '原退款已关闭；权益暂扣已释放' : '', order.id])
+      if (outcome.state === 'closed') {
+        const deadline = receipt.membership.pointsExpiresAt
+        const expired = Boolean(deadline && deadline <= time)
+        row.payload.releasedPoints = expired ? '0.000000' : row.payload.points
+        row.payload.expiredHeldPoints = expired ? row.payload.points : '0.000000'
+        if (micros(row.payload.points) > 0n) {
+          if (!expired) await movePoints(connection, user.id, row.payload.points, row.id, 'payment_refund_release')
+          else await appendPaymentRefundEvent(connection, row.id, 'held_points_expired', 'system', { points: row.payload.points, originalDeadline: deadline }, now())
+        }
+        if (!restored && !expired && deadline) await connection.query('UPDATE ai_end_user_memberships SET points_expires_at=? WHERE id=? AND user_id=?', [deadline, row.payload.temporaryMembershipId, user.id])
+      }
+      await connection.query('UPDATE ai_payment_orders SET status=?,last_error=? WHERE id=?', [outcome.state === 'succeeded' ? 'refunded' : 'paid', outcome.state === 'closed' ? '原退款已关闭；权益按原期限处理' : '', order.id])
       row.state = outcome.state; row.lease_until = 0; row.next_retry_at = 0; row.payload.errorCode = ''
       await appendPaymentRefundEvent(connection, row.id, outcome.state, row.payload.command.actor, { providerOutcome: outcome, receiptFingerprint: receipt.fingerprint }, now())
       await save(connection, row); return row
@@ -119,10 +141,7 @@ export function createPaymentRefundService({ pool, configForOrder, freeCardForOw
           if (!submitted) return
           result = await adapter.submit(config, input)
         } else result = await adapter.query(config, input)
-        if (!result || !['succeeded', 'closed', 'processing', 'unknown'].includes(result.state) || result.refundNo !== claimed.id || result.amountFen !== claimed.payload.amountFen) throw failure('PAYMENT_REFUND_RESPONSE_INVALID', '原退款结果需要核对', 409)
-        if (result.providerRefundNo !== undefined && (typeof result.providerRefundNo !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(result.providerRefundNo))) throw failure('PAYMENT_REFUND_RESPONSE_INVALID', '平台退款标识需要核对', 409)
-        result = { state: result.state, refundNo: claimed.id, amountFen: claimed.payload.amountFen, providerState: String(result.providerState || '').slice(0, 40),
-          ...(result.providerRefundNo ? { providerRefundNo: result.providerRefundNo } : {}), ...(result.notFound === true ? { notFound: true } : {}) }
+        result = checkedOutcome(result, claimed)
         const recorded = await updateClaim(claimed, async (connection, row) => {
           if (['succeeded', 'closed'].includes(result.state)) {
             row.payload.providerOutcome = result
@@ -174,8 +193,77 @@ export function createPaymentRefundService({ pool, configForOrder, freeCardForOw
       await process(orderId)
       return this.status(scope, orderId)
     },
-    async status(scope, orderId) { return transaction(async connection => { await ownedOrder(connection, scope, orderId); return publicRefund(await rowFor(connection, orderId)) }) },
+    async status(scope, orderId) { return transaction(async connection => { await ownedOrder(connection, scope, orderId); return publicRefund(await rowFor(connection, orderId), now()) }) },
     async recover(scope, orderId) { await this.status(scope, orderId); await process(orderId); return this.status(scope, orderId) },
+    async resolve(scope, orderId, input, actor) {
+      const resolution = paymentRefundResolution(input, actor)
+      let originalConfig
+      const claimed = await transaction(async connection => {
+        const order = await ownedOrder(connection, scope, orderId)
+        await userFor(connection, order)
+        const row = await rowFor(connection, orderId, true)
+        if (!row || row.id !== resolution.refundNo) throw failure('PAYMENT_REFUND_RESULT_SCOPE', '须核对本组织的原退款编号', 404)
+        const previousReview = row.payload.resolution || row.payload.reviewedResolution
+        if (previousReview) {
+          if (previousReview.fingerprint !== resolution.fingerprint) throw failure('IDEMPOTENCY_CONFLICT', '原现金核对编号、凭证或审核人不一致', 409)
+          return row
+        }
+        if (row.payload.providerOutcome || !['unknown', 'prepared'].includes(row.state)) throw failure('PAYMENT_REFUND_IMMUTABLE', '已有明确现金结果或平台仍在处理，不能人工覆盖', 409)
+        if (Number(row.lease_until) > now()) throw failure('PAYMENT_REFUND_BUSY', '原退款正在核对，请稍后按原编号重试', 409)
+        if (!row.payload.dispatchedAt && resolution.resultState !== 'closed') throw failure('PAYMENT_REFUND_NOT_SUBMITTED', '原退款明确未提交，只能取消申请，不能登记退款成功', 409)
+        if (row.payload.dispatchedAt) {
+          const config = await configForOrder(order, connection)
+          if (!config || config.id !== row.payload.configId || config.ownerUserId !== row.owner_user_id || !same(paymentMerchantBinding(order.provider, config), row.payload.merchantBinding)) throw failure('PAYMENT_MERCHANT_CHANGED', '须通过原商户身份核对现金结果，不能换号声明完成', 409)
+          originalConfig = config
+        }
+        row.payload.leaseId = crypto.randomUUID(); row.lease_until = now() + 120_000; row.next_retry_at = 0
+        await save(connection, row); return row
+      })
+      if (!claimed.payload.providerOutcome) {
+        let observation = { state: 'not-submitted' }
+        if (claimed.payload.dispatchedAt) {
+          try {
+            const original = { orderNo: claimed.payload.orderNo, providerTradeNo: claimed.payload.providerTradeNo, refundNo: claimed.id, amountFen: claimed.payload.amountFen, totalFen: claimed.payload.amountFen, reason: claimed.payload.command.reason }
+            observation = checkedOutcome(await providers[claimed.payload.provider].query(originalConfig, original), claimed)
+          } catch (error) { observation = { state: 'unavailable', code: /^[A-Z0-9_]{1,80}$/.test(error.code || '') ? error.code : 'REFUND_QUERY_UNAVAILABLE' } }
+        }
+        const recorded = await updateClaim(claimed, async (connection, row) => {
+          if (observation.state === 'processing') {
+            row.state = 'processing'; row.payload.errorCode = 'PROVIDER_STILL_PROCESSING'; row.lease_until = 0; row.next_retry_at = now() + 60_000
+            await appendPaymentRefundEvent(connection, row.id, 'operator_review_rejected', actor, { resolutionId: resolution.resolutionId, observedState: 'processing' }, now())
+            return
+          }
+          if (['succeeded', 'closed'].includes(observation.state)) {
+            row.payload.reviewedResolution = { ...resolution, at: now(), observedState: observation.state }
+            row.payload.providerOutcome = { ...observation, source: 'provider' }
+            await appendPaymentRefundEvent(connection, row.id, 'provider_confirmed', 'system', { outcome: observation, requestedReview: resolution }, now())
+          } else {
+            row.payload.resolution = { ...resolution, at: now(), queryObservation: observation }
+            row.payload.providerOutcome = { state: resolution.resultState, refundNo: row.id, amountFen: row.payload.amountFen,
+              providerState: row.payload.dispatchedAt ? 'OPERATOR_CONFIRMED' : 'CANCELLED_BEFORE_DISPATCH', source: 'operator' }
+            await appendPaymentRefundEvent(connection, row.id, 'operator_confirmed', actor, { ...resolution, queryObservation: observation, amountFen: row.payload.amountFen, receiptFingerprint: row.payload.receiptFingerprint }, now())
+          }
+        })
+        if (!recorded?.payload.providerOutcome) return this.status(scope, orderId)
+      }
+      if (PAYMENT_REFUND_PENDING.includes(claimed.state)) {
+        try { await applyFinal(claimed) }
+        catch (error) {
+          onError(error)
+          await updateClaim(claimed, async (_connection, row) => { row.state = 'unknown'; row.lease_until = 0; row.next_retry_at = now() + 60_000; row.payload.errorCode = 'REFUND_LOCAL_COMPLETION_PENDING' })
+        }
+      }
+      return this.status(scope, orderId)
+    },
+    async events(scope, orderId) {
+      return transaction(async connection => {
+        await ownedOrder(connection, scope, orderId)
+        const row = await rowFor(connection, orderId)
+        if (!row) return []
+        const [events] = await connection.query("SELECT id,kind,actor,payload,created_at FROM ai_payment_refund_events WHERE refund_id=? ORDER BY created_at,FIELD(kind,'prepared','submitted','operator_review_rejected','provider_confirmed','operator_confirmed','held_points_expired','succeeded','closed'),id LIMIT 100", [row.id])
+        return events.map(event => ({ id: event.id, kind: event.kind, actor: event.actor, at: Number(event.created_at), detail: typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload }))
+      })
+    },
     async tick(limit = 20) {
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Bounded refund recovery required')
       const [rows] = await pool.query(`SELECT order_id FROM ai_payment_refunds WHERE state IN ('prepared','submitted','processing','unknown') AND next_retry_at<=? AND lease_until<=? ORDER BY next_retry_at,created_at LIMIT ${limit}`, [now(), now()])

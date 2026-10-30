@@ -97,6 +97,10 @@ try{
   await receiptProbe.beginTransaction()
   await receiptProbe.query('INSERT INTO ai_payment_fulfillments(order_id,owner_user_id,user_id,membership_id,points,fingerprint,payload) VALUES (?,?,?,?,?,?,?)',['fixture-order-proof','admin','fixture-user','fixture-membership','0','0'.repeat(64),'{}'])
   assert.notEqual((await collectMigrationProofs(receiptProbe)).orders.hash,snapshot.proofs.orders.hash)
+  await receiptProbe.query("INSERT INTO ai_payment_refunds(order_id,id,owner_user_id,user_id,command_id,fingerprint,state,next_retry_at,lease_until,attempts,payload,created_at,updated_at) VALUES (?,?,?,?,?,?,'unknown',0,0,0,'{}',1,1)",['fixture-cash-order','R-fixture-cash','admin','fixture-user','fixture-cash-command','0'.repeat(64)])
+  const cashRollback=await legacyRollbackStatus(receiptProbe,snapshot)
+  assert.equal(cashRollback.cashRefunds,1);assert.equal(cashRollback.pendingCashRefunds,1);assert.equal(cashRollback.compatibleVersionRequired,true);assert.equal(cashRollback.databaseSnapshotRestoreAllowed,false)
+  assert.equal((await readLegacyDeploymentSnapshot(receiptProbe,profile)).blockers.pendingPaymentRefunds,1)
  }finally{await receiptProbe.rollback();receiptProbe.release()}
  const transferManifest={batchId:'resource-legacy-import',snapshot,mapping:{oldOrganizationId:legacyOrganization.id,grantId:'resources-root',packageId:'first-custom',packageVersion:1,domain:profile.domain,instanceId:profile.instanceId,officialModelIds:[],unlimitedExpiryReview:'隔离历史无限期核验'}}
  const importPreview=await center.previewLegacyImport(transferManifest),imported=await center.importLegacy({...transferManifest,previewDigest:importPreview.previewDigest},'test')

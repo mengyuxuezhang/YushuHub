@@ -23,4 +23,9 @@ export function registerPaymentRefundRoutes(app, { refunds }) {
     return refunds.request(scope, req.params.id, { commandId: body.commandId, reason: body.reason, previewDigest: body.previewDigest, confirmEntitlements: body.confirmEntitlements }, req.user.id)
   }))
   app.post('/api/payment-orders/:id/refund-query', ...auth, endpoint(req => { const scope = owner(req); return refunds.recover(scope, req.params.id) }))
+  app.post('/api/payment-orders/:id/refund-resolve', ...auth, endpoint(req => {
+    const scope = owner(req), body = req.body || {}
+    return refunds.resolve(scope, req.params.id, { resolutionId: body.resolutionId, refundNo: body.refundNo, resultState: body.resultState, providerFinal: body.providerFinal, evidence: body.evidence }, req.user.id)
+  }))
+  app.get('/api/payment-orders/:id/refund-events', ...auth, endpoint(req => { const scope = owner(req); return refunds.events(scope, req.params.id) }))
 }

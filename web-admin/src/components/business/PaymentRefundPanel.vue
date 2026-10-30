@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { getPaymentRefund, previewPaymentRefund, queryPaymentRefund, requestPaymentRefund } from '@/api/payment-refunds'
-import type { PaymentRefundCommand, PaymentRefundPreview, PaymentRefundResult } from '@/api/payment-refunds'
+import { getPaymentRefund, getPaymentRefundEvents, previewPaymentRefund, queryPaymentRefund, requestPaymentRefund } from '@/api/payment-refunds'
+import type { PaymentRefundCommand, PaymentRefundEvent, PaymentRefundPreview, PaymentRefundResult } from '@/api/payment-refunds'
 import { ApiError, toUserMessage } from '@/api/client'
+import PaymentRefundResolutionPanel from './PaymentRefundResolutionPanel.vue'
 const props = withDefaults(defineProps<{ order: { id: string; orderNo?: string }; allowNew?: boolean }>(), { allowNew: true })
 const emit = defineEmits<{ close: []; updated: [] }>()
 const busy = ref(false), error = ref(''), preview = ref<PaymentRefundPreview | null>(null), result = ref<PaymentRefundResult | null>(null)
 const reason = ref(''), confirmed = ref(false), submitted = ref<PaymentRefundCommand | null>(null), commandId = crypto.randomUUID()
-const labels: Record<string, string> = { prepared: '已受理，等待提交原退款', submitted: '原退款已提交', processing: '平台处理中', unknown: '结果待核对', succeeded: '退款成功', closed: '原退款已关闭，权益暂扣已返还' }
+const events = ref<PaymentRefundEvent[] | null>(null)
+const labels: Record<string, string> = { prepared: '已受理，等待提交原退款', submitted: '原退款已提交', processing: '平台处理中', unknown: '结果待核对', succeeded: '退款成功', closed: '原退款已关闭，权益按原期限处理' }
 const valid = computed(() => preview.value && confirmed.value && reason.value.trim().length > 0 && [...reason.value].length <= 80)
 const money = (fen: number) => Number.isSafeInteger(fen) ? `${BigInt(fen) / 100n}.${String(BigInt(fen) % 100n).padStart(2, '0')}` : '—'
+const eventLabels: Record<string, string> = { prepared: '受理并暂扣权益', submitted: '原退款提交', provider_confirmed: '平台结果确认', operator_confirmed: '经营方最终核对', operator_review_rejected: '平台仍在处理，保留暂扣', held_points_expired: '暂扣积分已过原有效期，未重新发放', succeeded: '本地退款处理完成', closed: '原退款关闭，按原期限处理权益' }
+const timeOf = (value: number) => new Date(value).toLocaleString('zh-CN')
 async function status(query = false) {
   if (busy.value) return
   busy.value = true; error.value = ''
@@ -24,6 +28,14 @@ async function review() {
   catch (failure) { error.value = toUserMessage(failure) }
   finally { busy.value = false }
 }
+async function audit() {
+  if (busy.value) return
+  busy.value = true; error.value = ''
+  try { events.value = await getPaymentRefundEvents(props.order.id) }
+  catch (failure) { error.value = toUserMessage(failure) }
+  finally { busy.value = false }
+}
+async function resolved() { await status(); if (events.value) await audit() }
 async function submit() {
   if (busy.value || !props.allowNew || (!submitted.value && !valid.value)) return
   if (!submitted.value) submitted.value = { commandId, reason: reason.value.trim(), previewDigest: preview.value!.previewDigest, confirmEntitlements: true }
@@ -49,8 +61,14 @@ onMounted(() => status())
       <p role="status">{{ labels[result.state] || '结果待核对' }} · ¥{{ money(result.amountFen) }}</p>
       <p>原退款编号：{{ result.refundNo }}</p>
       <p>原因：{{ result.reason }}；关联积分：{{ result.points }}</p>
+      <p v-if="result.releasedPoints !== undefined">返还暂扣积分：{{ result.releasedPoints }}；已过原有效期未再发放：{{ result.expiredHeldPoints }}。</p>
       <p v-if="!['succeeded','closed'].includes(result.state)">暂扣权益继续保留，登录和免费权益可用。查询未确认或平台查无记录都不会自动撤销本次退款；请保留原编号核对。</p>
       <p v-if="result.errorCode === 'PAYMENT_MERCHANT_CHANGED'">原收款配置已变化，请恢复原账号后再查询，不能换号处理。</p>
+      <p v-if="result.localFinalPending">原现金结果已确认，正在恢复本地权益；请继续查询原退款。</p>
+      <p v-if="result.resolution">经营方核对凭证：{{ result.resolution.evidence }}（{{ result.resolution.actor }}，{{ timeOf(result.resolution.at) }}）</p>
+      <PaymentRefundResolutionPanel v-if="result.canResolve" :key="result.refundNo" :result="result" @updated="resolved" />
+      <button class="secondary-button" :disabled="busy" @click="audit">查看原退款核对记录</button>
+      <ol v-if="events"><li v-for="event in events" :key="event.id">{{ timeOf(event.at) }} · {{ eventLabels[event.kind] || '售后记录' }} · {{ event.actor }}<p v-if="event.detail.evidence">{{ event.detail.evidence }}</p></li></ol>
     </template>
     <template v-else>
       <p v-if="!allowNew">当前停止受理新的现金退款，已受理的原退款仍可查询和恢复。</p>

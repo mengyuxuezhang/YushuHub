@@ -40,11 +40,11 @@ test('real MySQL cash refund core holds original entitlements once and recovers 
     await mysqlAccountingStore(pool, 'commerce-v2', 'commerce').migrateSchema()
     await pool.query("INSERT INTO ai_membership_cards(id,name,created_by,system_builtin) VALUES ('vip','虚构付费会员','owner',0)")
     const merchant = { version: 1, provider: 'alipay', appId: 'original-app', sellerId: 'original-seller', environment: 'sandbox' }, scope = { ownerUserId: 'owner', centralOrganizationId: 'cash-root' }
-    for (const id of ['success', 'closed', 'closed-late', 'lease', 'stale', 'unknown', 'commit', 'apply', 'not-found', 'insufficient', 'membership', 'pending', 'pending-voice', 'pending-supply', 'merchant', 'legacy']) {
+    for (const id of ['success', 'closed', 'closed-late', 'lease', 'stale', 'unknown', 'commit', 'apply', 'not-found', 'insufficient', 'membership', 'pending', 'pending-voice', 'pending-supply', 'merchant', 'legacy', 'manual-close', 'manual-success', 'cancel-prepared', 'manual-contradiction', 'manual-pending', 'expired-held', 'expired-member']) {
       await pool.query('INSERT INTO ai_end_users(id,credit_balance) VALUES (?,10)', [`user-${id}`])
       await pool.query("INSERT INTO ai_end_user_memberships(id,user_id,card_id,package_name,started_at,expires_at,status,source,created_by) VALUES (?,?,'vip','原会员','2026-01-01','2070-01-01','active','admin','owner')", [`prior-${id}`, `user-${id}`])
       await pool.query("INSERT INTO ai_payment_orders(id,order_no,owner_user_id,user_id,config_id,provider,card_id,card_name,package_name,package_snapshot_json,amount_fen,currency,status,provider_trade_no,fulfillment_membership_id,last_error) VALUES (?,?,'owner',?,'original-config','alipay','vip','虚构付费会员','新会员',?,990,'CNY','pending','','','')",
-        [`order-${id}`, `ORDER_${id}`, `user-${id}`, JSON.stringify({ name: '新会员', durationDays: 30, bonusPoints: 20, pointsDurationDays: 30, ...(id === 'legacy' ? {} : { _paymentMerchant: merchant }) })])
+        [`order-${id}`, `ORDER_${id}`, `user-${id}`, JSON.stringify({ name: '新会员', durationDays: 30, bonusPoints: 20, pointsDurationDays: id === 'expired-member' ? 36500 : 30, ...(id === 'legacy' ? {} : { _paymentMerchant: merchant }) })])
       await fulfillPaidOrder(`order-${id}`, `TRADE_${id}`, 990)
     }
     const reads = {
@@ -52,7 +52,7 @@ test('real MySQL cash refund core holds original entitlements once and recovers 
       order: async id => (await pool.query('SELECT * FROM ai_payment_orders WHERE id=?', [`order-${id}`]))[0][0],
       refund: async id => (await pool.query('SELECT * FROM ai_payment_refunds WHERE order_id=?', [`order-${id}`]))[0][0],
     }
-    let time = Date.now(), losePrepareReply = false, failApplyCommit = false
+    let time = Date.now(), simulatedDatabaseClock, losePrepareReply = false, failApplyCommit = false, loseManualReply = false
     const originalConnection = pool.getConnection.bind(pool)
     await pool.query("INSERT INTO ai_end_users(id,credit_balance) VALUES ('never-billed',0)")
     const retention = await originalConnection()
@@ -68,12 +68,14 @@ test('real MySQL cash refund core holds original entitlements once and recovers 
       connection.query = async function(sql, parameters) {
         if (sql.startsWith('INSERT INTO ai_payment_refunds(')) phase = 'prepare'
         if (sql.startsWith('UPDATE ai_payment_orders SET status=?') && parameters[0] === 'refunded') phase = 'apply'
+        if (sql.startsWith('INSERT INTO ai_payment_refund_events') && parameters[2] === 'operator_confirmed') phase = 'manual'
         return query.call(this, sql, parameters)
       }
       connection.commit = async function() {
         if (phase === 'apply' && failApplyCommit) { failApplyCommit = false; throw new Error('simulated local rights commit failure') }
         await commit.call(this)
         if (phase === 'prepare' && losePrepareReply) { losePrepareReply = false; throw new Error('simulated committed cash hold reply loss') }
+        if (phase === 'manual' && loseManualReply) { loseManualReply = false; throw new Error('simulated committed manual outcome reply loss') }
       }
       connection.release = function() { this.query = query; this.commit = commit; this.release = release; return release.call(this) }
       return connection
@@ -82,16 +84,16 @@ test('real MySQL cash refund core holds original entitlements once and recovers 
     let releaseSend, signalSend
     const sending = new Promise(resolve => { signalSend = resolve }), resumeSend = new Promise(resolve => { releaseSend = resolve })
     const outcome = (input, state) => ({ state, providerState: state.toUpperCase(), refundNo: input.refundNo, amountFen: input.amountFen, raw: { payer: 'fictional-private-payer', secret: 'must-not-store' } })
-    const make = () => createPaymentRefundService({ pool, now: () => time, onError: error => errors.push(error.code || error.message),
-      configForOrder: async order => ({ id: 'original-config', ownerUserId: 'owner', provider: 'alipay', ...merchant, appId: brokenMerchants.has(order.id) ? 'another-app' : merchant.appId, appPrivateKey: 'fictional-signing-secret' }),
+    const make = () => createPaymentRefundService({ pool, now: () => time, databaseClock: async connection => simulatedDatabaseClock || (await connection.query('SELECT CAST(CURRENT_TIMESTAMP(3) AS CHAR) AS clock'))[0][0].clock, onError: error => errors.push(error.code || error.message),
+      configForOrder: async (order, connection) => ({ id: 'original-config', ownerUserId: 'owner', provider: 'alipay', ...merchant, appId: brokenMerchants.has(order.id) || (order.id === 'order-cancel-prepared' && connection === pool) ? 'another-app' : merchant.appId, appPrivateKey: 'fictional-signing-secret' }),
       freeCardForOwner: ensureAccountFreeMembership, pendingWork: paymentRefundPendingWork,
       providers: { alipay: {
         submit: async (_config, input) => {
           requests.push({ ...input }); assert.equal(requests.filter(value => value.refundNo === input.refundNo).length, 1, 'A fixed cash transfer must never be resubmitted')
-          const id = input.orderNo.slice('ORDER_'.length), state = ['closed', 'closed-late'].includes(id) ? 'closed' : id === 'not-found' ? 'unknown' : 'succeeded'
+          const id = input.orderNo.slice('ORDER_'.length), state = ['closed', 'closed-late', 'expired-held', 'expired-member'].includes(id) ? 'closed' : ['not-found', 'manual-close', 'manual-success', 'manual-contradiction', 'manual-pending'].includes(id) ? 'unknown' : 'succeeded'
           transferStates.set(input.refundNo, state)
           if (id === 'unknown') throw new Error('simulated cash transfer succeeded but response lost')
-          if (id === 'closed-late') return outcome(input, 'processing')
+          if (['closed-late', 'expired-held', 'expired-member'].includes(id)) return outcome(input, 'processing')
           if (id === 'lease') { signalSend(); await resumeSend }
           return outcome(input, state)
         },
@@ -192,6 +194,57 @@ test('real MySQL cash refund core holds original entitlements once and recovers 
     const nextMembership = await grantMembershipBenefits({ userId: 'user-success', card: { id: 'vip' }, createdBy: 'owner', membershipPackage: { name: '售后后新权益', durationDays: 1, bonusPoints: 0 }, database: pool })
     await service.request(scope, 'order-success', succeededCommand, 'owner')
     assert.equal((await pool.query('SELECT status FROM ai_end_user_memberships WHERE id=?', [nextMembership.id]))[0][0].status, 'active')
+    const manualCommand = await command('manual-close'), manualCash = await service.request(scope, 'order-manual-close', manualCommand, 'owner')
+    assert.equal(manualCash.canResolve, true)
+    const resolution = { resolutionId: 'manual-close-review', refundNo: manualCash.refundNo, resultState: 'closed', providerFinal: true, evidence: '虚构原商户最终工单，已核对原退款关闭且没有资金退回' }
+    const countsBeforeManual = { submits: requests.length, queries: queries.length }
+    await assert.rejects(service.resolve(scope, 'order-manual-close', { ...resolution, providerFinal: false }, 'owner'), { code: 'PAYMENT_REFUND_EVIDENCE_REQUIRED' })
+    await assert.rejects(service.resolve({ ownerUserId: 'other-owner' }, 'order-manual-close', resolution, 'owner'), { code: 'NOT_FOUND' })
+    brokenMerchants.add('order-manual-close')
+    await assert.rejects(service.resolve(scope, 'order-manual-close', resolution, 'owner'), { code: 'PAYMENT_MERCHANT_CHANGED' })
+    brokenMerchants.delete('order-manual-close')
+    assert.equal((await service.resolve(scope, 'order-manual-close', resolution, 'owner')).state, 'closed'); assert.equal(await reads.balance('manual-close'), '30.000000')
+    await service.resolve(scope, 'order-manual-close', resolution, 'owner')
+    await assert.rejects(service.resolve(scope, 'order-manual-close', { ...resolution, resultState: 'succeeded' }, 'owner'), { code: 'IDEMPOTENCY_CONFLICT' })
+    assert.deepEqual({ submits: requests.length, queries: queries.length }, { ...countsBeforeManual, queries: countsBeforeManual.queries + 1 })
+    const audit = await service.events(scope, 'order-manual-close'); assert.deepEqual(audit.map(event => event.kind), ['prepared', 'submitted', 'operator_confirmed', 'closed'])
+    assert.equal(audit[2].actor, 'owner'); assert.equal(audit[2].detail.evidence, resolution.evidence)
+    const manualSuccess = await service.request(scope, 'order-manual-success', await command('manual-success'), 'owner')
+    const successResolution = { ...resolution, resolutionId: 'manual-success-review', refundNo: manualSuccess.refundNo, resultState: 'succeeded', evidence: '虚构原商户最终全额退款凭证，已核对资金退回' }
+    loseManualReply = true
+    await assert.rejects(service.resolve(scope, 'order-manual-success', successResolution, 'owner'), /manual outcome reply loss/)
+    const recoveredManual = await make().resolve(scope, 'order-manual-success', successResolution, 'owner')
+    assert.equal(recoveredManual.state, 'succeeded'); assert.equal(await reads.balance('manual-success'), '10.000000')
+    const cancellation = await service.request(scope, 'order-cancel-prepared', await command('cancel-prepared'), 'owner')
+    assert.equal(cancellation.unsubmitted, true); assert.equal(cancellation.canResolve, true)
+    await assert.rejects(service.resolve(scope, 'order-cancel-prepared', { ...successResolution, refundNo: cancellation.refundNo }, 'owner'), { code: 'PAYMENT_REFUND_NOT_SUBMITTED' })
+    assert.equal((await service.resolve(scope, 'order-cancel-prepared', { ...resolution, resolutionId: 'cancel-before-send', refundNo: cancellation.refundNo }, 'owner')).state, 'closed')
+    assert.equal(await reads.balance('cancel-prepared'), '30.000000')
+    for (const [id, platformState] of [['manual-contradiction', 'succeeded'], ['manual-pending', 'processing']]) {
+      const cash = await service.request(scope, `order-${id}`, await command(id), 'owner')
+      transferStates.set(cash.refundNo, platformState)
+      const reviewed = await service.resolve(scope, `order-${id}`, { ...resolution, resolutionId: `review-${id}`, refundNo: cash.refundNo }, 'owner')
+      assert.equal(reviewed.state, platformState)
+      assert.equal(await reads.balance(id), '10.000000', 'A platform success or processing response cannot release held rights')
+      assert.equal((await service.events(scope, `order-${id}`)).some(event => event.kind === 'operator_confirmed'), false)
+    }
+    const expiryCash = await service.request(scope, 'order-expired-held', await command('expired-held'), 'owner')
+    simulatedDatabaseClock = '2060-01-01 00:00:00.000'; time += 60_001
+    const expiredFinal = await make().recover(scope, 'order-expired-held')
+    assert.equal(expiredFinal.state, 'closed'); assert.equal(expiredFinal.releasedPoints, '0.000000'); assert.equal(expiredFinal.expiredHeldPoints, '20.000000')
+    assert.equal(await reads.balance('expired-held'), '10.000000')
+    assert((await service.events(scope, 'order-expired-held')).some(event => event.kind === 'held_points_expired'))
+    assert.equal(requests.filter(value => value.refundNo === expiryCash.refundNo).length, 1)
+    simulatedDatabaseClock = undefined
+    await service.request(scope, 'order-expired-member', await command('expired-member'), 'owner')
+    const originalExpiry = (await pool.query("SELECT CAST(points_expires_at AS CHAR) AS deadline FROM ai_end_user_memberships WHERE id=(SELECT fulfillment_membership_id FROM ai_payment_orders WHERE id='order-expired-member')"))[0][0].deadline
+    simulatedDatabaseClock = '2080-01-01 00:00:00.000'; time += 60_001
+    assert.equal((await make().recover(scope, 'order-expired-member')).releasedPoints, '20.000000')
+    assert.equal(await reads.balance('expired-member'), '30.000000')
+    const freeAfterExpiry = (await pool.query("SELECT source,CAST(points_expires_at AS CHAR) AS deadline FROM ai_end_user_memberships WHERE user_id='user-expired-member' AND status='active'"))[0]
+    assert.equal(freeAfterExpiry.length, 1); assert.equal(freeAfterExpiry[0].source, 'refund'); assert.equal(freeAfterExpiry[0].deadline, originalExpiry)
+    simulatedDatabaseClock = undefined
+    await assert.rejects(service.resolve(scope, 'order-success', { ...resolution, refundNo: (await service.status(scope, 'order-success')).refundNo }, 'owner'), { code: 'PAYMENT_REFUND_IMMUTABLE' })
     assert(errors.some(value => value.includes('response lost')))
   } finally {
     if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }

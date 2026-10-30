@@ -32,6 +32,15 @@ export function paymentRefundCommand(input, actor) {
   return { commandId: input.commandId, reason: input.reason.trim(), previewDigest: input.previewDigest, actor }
 }
 
+export function paymentRefundResolution(input, actor) {
+  if (typeof actor !== 'string' || !actor || actor.length > 120 || input?.providerFinal !== true
+    || typeof input.resolutionId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(input.resolutionId)
+    || typeof input.refundNo !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(input.refundNo)
+    || !['succeeded', 'closed'].includes(input.resultState) || typeof input.evidence !== 'string' || input.evidence.trim().length < 5 || input.evidence.length > 1000) throw failure('PAYMENT_REFUND_EVIDENCE_REQUIRED', '须确认原退款最终结果、原编号、核对凭证和幂等核对编号')
+  const resolution = { resolutionId: input.resolutionId, refundNo: input.refundNo, resultState: input.resultState, providerFinal: true, evidence: input.evidence.trim(), actor }
+  return { ...resolution, fingerprint: paymentFulfillmentHash(resolution) }
+}
+
 export const publicPaymentRefundPlan = plan => ({ orderId: plan.orderId, orderNo: plan.orderNo, provider: plan.provider, amountFen: plan.amountFen,
   pointsToWithdraw: plan.pointsToWithdraw, balanceBefore: plan.balanceBefore, balanceAfter: plan.balanceAfter,
   cancelMembership: { id: plan.cancelMembership.id, name: plan.cancelMembership.packageName, expiresAt: plan.cancelMembership.expiresAt },

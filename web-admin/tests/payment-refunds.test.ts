@@ -1,15 +1,15 @@
 import { createApp, nextTick } from 'vue'
 import PaymentRefundPanel from '@/components/business/PaymentRefundPanel.vue'
-import { getPaymentRefund, previewPaymentRefund, queryPaymentRefund, requestPaymentRefund } from '@/api/payment-refunds'
+import { getPaymentRefund, getPaymentRefundEvents, previewPaymentRefund, queryPaymentRefund, requestPaymentRefund, resolvePaymentRefund } from '@/api/payment-refunds'
 import { ApiError } from '@/api/client'
-vi.mock('@/api/payment-refunds', () => ({ getPaymentRefund: vi.fn(), previewPaymentRefund: vi.fn(), queryPaymentRefund: vi.fn(), requestPaymentRefund: vi.fn() }))
+vi.mock('@/api/payment-refunds', () => ({ getPaymentRefund: vi.fn(), getPaymentRefundEvents: vi.fn(), previewPaymentRefund: vi.fn(), queryPaymentRefund: vi.fn(), requestPaymentRefund: vi.fn(), resolvePaymentRefund: vi.fn() }))
 const settle = async () => { for (let i = 0; i < 12; i++) { await Promise.resolve(); await nextTick() } }
 const preview = { orderId: 'original-order', orderNo: 'ORIGINAL_ORDER', provider: 'alipay', amountFen: 990, pointsToWithdraw: '20.000000', balanceBefore: '30.000000', balanceAfter: '10.000000', previewDigest: 'a'.repeat(64), cancelMembership: { id: 'paid-member', name: '付费权益', expiresAt: '2070-01-31' }, restoreMembership: { id: 'prior-member', name: '原会员', expiresAt: '2070-01-01' } }
 const original = { orderId: 'original-order', refundNo: 'R-original', state: 'unknown' as const, amountFen: 990, points: '20.000000', reason: '原订单退款', errorCode: '', nextRetryAt: 1000, updatedAt: 1000 }
 const button = (host: HTMLElement, text: string) => [...host.querySelectorAll('button')].find(item => item.textContent?.includes(text))!
 function fill(input: HTMLInputElement, value: string | boolean) { if (typeof value === 'boolean') { input.checked = value; input.dispatchEvent(new Event('change', { bubbles: true })) } else { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })) } }
 function mounted() { const host = document.createElement('div'), app = createApp(PaymentRefundPanel, { order: { id: 'original-order', orderNo: 'ORIGINAL_ORDER' } }); app.mount(host); return { host, close: () => { app.unmount(); host.remove() } } }
-beforeEach(() => { vi.mocked(getPaymentRefund).mockReset().mockResolvedValue(null); vi.mocked(previewPaymentRefund).mockReset().mockResolvedValue(preview); vi.mocked(queryPaymentRefund).mockReset().mockResolvedValue(original); vi.mocked(requestPaymentRefund).mockReset() })
+beforeEach(() => { vi.mocked(getPaymentRefund).mockReset().mockResolvedValue(null); vi.mocked(getPaymentRefundEvents).mockReset().mockResolvedValue([]); vi.mocked(resolvePaymentRefund).mockReset(); vi.mocked(previewPaymentRefund).mockReset().mockResolvedValue(preview); vi.mocked(queryPaymentRefund).mockReset().mockResolvedValue(original); vi.mocked(requestPaymentRefund).mockReset() })
 
 describe('cash refund review and recovery', () => {
   it('requires the original preview and confirmation, preserves the exact command after reply loss', async () => {
@@ -57,5 +57,35 @@ describe('cash refund review and recovery', () => {
     const host = document.createElement('div'), app = createApp(PaymentRefundPanel, { order: { id: 'original-order' }, allowNew: false }); app.mount(host)
     try { await settle(); expect(host.querySelector('form')).toBeNull(); button(host, '查询原退款').click(); await settle(); expect(queryPaymentRefund).toHaveBeenCalledWith('original-order'); expect(requestPaymentRefund).not.toHaveBeenCalled() }
     finally { app.unmount(); host.remove() }
+  })
+  it('keeps final operator review and its original evidence visible with new acceptance disabled', async () => {
+    vi.mocked(getPaymentRefund).mockResolvedValue({ ...original, canResolve: true })
+    vi.mocked(resolvePaymentRefund).mockRejectedValueOnce(new Error('manual reply lost')).mockResolvedValue({ ...original, state: 'closed' })
+    const host = document.createElement('div'), app = createApp(PaymentRefundPanel, { order: { id: 'original-order' }, allowNew: false }); app.mount(host)
+    try {
+      await settle(); const form = host.querySelector('form[aria-label="现金退款最终核对"]')!
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await settle(); expect(resolvePaymentRefund).not.toHaveBeenCalled()
+      const evidence = host.querySelector('textarea') as HTMLTextAreaElement; evidence.value = '虚构原商户最终关闭凭证'; evidence.dispatchEvent(new Event('input', { bubbles: true }))
+      fill(host.querySelector('input[type="checkbox"]') as HTMLInputElement, true); await settle()
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await settle()
+      expect((form.querySelector('fieldset') as HTMLFieldSetElement).disabled).toBe(true)
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await settle()
+      const calls = vi.mocked(resolvePaymentRefund).mock.calls; expect(calls).toHaveLength(2); expect(calls[0]).toEqual(calls[1])
+      expect(calls[0]).toEqual(['original-order', { resolutionId: expect.any(String), refundNo: 'R-original', resultState: 'closed', providerFinal: true, evidence: '虚构原商户最终关闭凭证' }])
+      expect(requestPaymentRefund).not.toHaveBeenCalled()
+    } finally { app.unmount(); host.remove() }
+  })
+  it('only offers cancellation for a provably unsubmitted application and shows owned audit records', async () => {
+    vi.mocked(getPaymentRefund).mockResolvedValue({ ...original, state: 'prepared', unsubmitted: true, canResolve: true })
+    vi.mocked(getPaymentRefundEvents).mockResolvedValue([{ id: 'audit', actor: 'original-owner', at: 1000, kind: 'operator_confirmed', detail: { evidence: '原退款最终凭证' } }])
+    const { host, close } = mounted()
+    try { await settle(); expect([...host.querySelectorAll('select option')].map(option => (option as HTMLOptionElement).value)).toEqual(['closed']); button(host, '查看原退款核对记录').click(); await settle(); expect(getPaymentRefundEvents).toHaveBeenCalledWith('original-order'); expect(host.textContent).toContain('original-owner'); expect(host.textContent).toContain('原退款最终凭证') }
+    finally { close() }
+  })
+  it('does not offer manual override of a confirmed platform result awaiting local completion', async () => {
+    vi.mocked(getPaymentRefund).mockResolvedValue({ ...original, canResolve: false, localFinalPending: true })
+    const { host, close } = mounted()
+    try { await settle(); expect(host.querySelector('form')).toBeNull(); expect(host.textContent).toContain('正在恢复本地权益'); expect(resolvePaymentRefund).not.toHaveBeenCalled() }
+    finally { close() }
   })
 })
