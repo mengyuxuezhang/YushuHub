@@ -6,6 +6,7 @@ import { grantMembershipBenefits } from './memberships.mjs'
 import { isPaginationRequested, pageResult, parsePagination } from '../utils/pagination.mjs'
 import { buildListSearch } from './list-search.mjs'
 import { capturePaymentMemberships, recordPaymentFulfillment } from '../repositories/payment-fulfillments.mjs'
+import { paymentMerchantBinding } from './payment-merchant-binding.mjs'
 import {
   PaymentProviderError,
   closeAlipayOrder,
@@ -339,7 +340,7 @@ function createOrderNo() {
 
 function normalizeOrderRow(row) {
   if (!row) return null
-  const snapshot = parseJson(row.package_snapshot_json, {})
+  const { _paymentMerchant, ...snapshot } = parseJson(row.package_snapshot_json, {}) || {}
   return {
     id: row.id,
     orderNo: row.order_no,
@@ -433,7 +434,7 @@ export async function createPaymentOrder({ userId, ownerUserId, input = {}, clie
          idempotency_key, card_id, card_name, package_name, package_snapshot_json,
          amount_fen, currency, status, client_ip, expires_at
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CNY', 'creating', ?, ?)`,
-      [orderId, orderNo, ownerUserId, userId, config.id, provider, mode, idempotencyKey, card.id, card.name, selected.name, JSON.stringify(selected), amountFen, String(clientIp || '').slice(0, 64), expiresAt],
+      [orderId, orderNo, ownerUserId, userId, config.id, provider, mode, idempotencyKey, card.id, card.name, selected.name, JSON.stringify({ ...selected, _paymentMerchant: paymentMerchantBinding(provider, config) }), amountFen, String(clientIp || '').slice(0, 64), expiresAt],
     )
   } catch (err) {
     if (err?.code === 'ER_DUP_ENTRY') {

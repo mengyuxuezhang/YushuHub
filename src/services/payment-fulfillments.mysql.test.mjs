@@ -30,7 +30,7 @@ test('real MySQL payment fulfillment receipts preserve prior rights, serialize c
       await pool.query('INSERT INTO ai_end_users VALUES (?,10)', [`user-${id}`])
       await pool.query("INSERT INTO ai_end_user_memberships(id,user_id,card_id,package_name,started_at,expires_at,status,source,created_by) VALUES (?,?,'vip','原会员','2026-01-01','2070-01-01','active','payment','owner')", [`prior-${id}`, `user-${id}`])
       await pool.query("INSERT INTO ai_payment_orders(id,order_no,owner_user_id,user_id,config_id,provider,card_id,card_name,package_name,package_snapshot_json,amount_fen,currency,status,provider_trade_no,fulfillment_membership_id,last_error) VALUES (?,?,'owner',?,'original-config','alipay','vip','虚构会员','新会员',?,990,'CNY','pending','','','')",
-        [`order-${id}`, `ORDER_${id}`, `user-${id}`, JSON.stringify({ name: '新会员', durationDays: 30, bonusPoints: id === 'zero' ? 0 : 20.123456, pointsDurationDays: 30 })])
+        [`order-${id}`, `ORDER_${id}`, `user-${id}`, JSON.stringify({ name: '新会员', durationDays: 30, bonusPoints: id === 'zero' ? 0 : 20.123456, pointsDurationDays: 30, _paymentMerchant: { version: 1, provider: 'alipay', appId: 'original-app', sellerId: 'original-seller', environment: 'sandbox' } })])
     }
     const order = async id => (await pool.query('SELECT * FROM ai_payment_orders WHERE id=?', [`order-${id}`]))[0][0]
     const balance = async id => (await pool.query('SELECT CAST(credit_balance AS CHAR) AS value FROM ai_end_users WHERE id=?', [`user-${id}`]))[0][0].value
@@ -38,6 +38,7 @@ test('real MySQL payment fulfillment receipts preserve prior rights, serialize c
     assert.equal(await balance('one'), '30.123456')
     const original = await order('one'), receipt = await readPaymentFulfillment(pool, original, { ownerUserId: 'owner', userId: 'user-one' })
     assert.equal(receipt.points, '20.123456'); assert.equal(receipt.membership.id, original.fulfillment_membership_id)
+    assert.equal(receipt.merchantBinding.appId, 'original-app')
     assert.equal(receipt.previousMemberships.length, 1); assert.equal(receipt.previousMemberships[0].id, 'prior-one')
     assert.equal(receipt.previousMemberships[0].expiresAt, '2070-01-01 00:00:00.000')
     assert.equal(receipt.membership.expiresAt, '2070-01-31 00:00:00.000')
@@ -45,6 +46,8 @@ test('real MySQL payment fulfillment receipts preserve prior rights, serialize c
     assert.equal(Number(counts.receipts), 1); assert.equal(Number(counts.entries), 1)
     await assert.rejects(readPaymentFulfillment(pool, original, { ownerUserId: 'another-owner' }), { code: 'NOT_FOUND' })
     await assert.rejects(readPaymentFulfillment(pool, { ...original, amount_fen: 991 }), { code: 'PAYMENT_FULFILLMENT_CHANGED' })
+    const changedPackage = typeof original.package_snapshot_json === 'string' ? JSON.parse(original.package_snapshot_json) : original.package_snapshot_json
+    await assert.rejects(readPaymentFulfillment(pool, { ...original, package_snapshot_json: { ...changedPackage, _paymentMerchant: { ...changedPackage._paymentMerchant, appId: 'changed-merchant' } } }), { code: 'PAYMENT_FULFILLMENT_CHANGED' })
     await assert.rejects(readPaymentFulfillment(pool, await order('two')), { code: 'PAYMENT_FULFILLMENT_MISSING' })
     await assert.rejects(fulfillPaidOrder('order-two', 'TRADE_two', 1), /金额不一致/)
     assert.equal(await balance('two'), '10.000000')

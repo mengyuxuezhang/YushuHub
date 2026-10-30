@@ -259,6 +259,9 @@ const createdOrder = await createPaymentOrder({
   input: { cardId: 'vip-card', packageIndex: 99, packageName: '伪造套餐', provider: 'alipay', mode: 'page', idempotencyKey: 'same-request', amountFen: 1 },
 })
 assert.equal(createdOrder.amountFen, 990)
+assert.equal(createdOrder.package._paymentMerchant, undefined)
+assert.equal(JSON.parse(creation.state.orders[0].package_snapshot_json)._paymentMerchant.appId, alipayConfig.appId)
+assert.equal(JSON.parse(creation.state.orders[0].package_snapshot_json)._paymentMerchant.environment, 'sandbox')
 assert.match(createdOrder.checkoutUrl, /^https:\/\//)
 const retriedOrder = await createPaymentOrder({
   userId: 'end-user-1', ownerUserId: 'agent-a', input: { cardId: 'vip-card', provider: 'alipay', mode: 'page', idempotencyKey: 'same-request' },

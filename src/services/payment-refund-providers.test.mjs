@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import { refundWechatOrder, queryWechatRefund, refundAlipayOrder, queryAlipayRefund } from './payment-providers.mjs'
+import { paymentMerchantBinding } from './payment-merchant-binding.mjs'
 
 const keyPair = () => {
   const pair = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 })
@@ -92,4 +93,15 @@ test('refund adapters reject partial, non-integer, negative, oversized and ambig
     }
   }
   assert.equal(calls, 0)
+})
+
+test('payment merchant identity binds the original account and environment without retaining signing secrets', () => {
+  const binding = paymentMerchantBinding('alipay', { ...alipay, sellerId: 'original-seller', environment: 'sandbox' })
+  assert.deepEqual(binding, { version: 1, provider: 'alipay', appId: alipay.appId, sellerId: 'original-seller', environment: 'sandbox' })
+  assert.deepEqual(paymentMerchantBinding('alipay', { ...alipay, appPrivateKey: 'rotated-secret', sellerId: 'original-seller', environment: 'sandbox' }), binding)
+  assert.notDeepEqual(paymentMerchantBinding('alipay', { ...alipay, appId: 'another-app', sellerId: 'original-seller', environment: 'sandbox' }), binding)
+  assert.notDeepEqual(paymentMerchantBinding('alipay', { ...alipay, sellerId: 'original-seller' }), binding)
+  assert.deepEqual(paymentMerchantBinding('wechat', wechat), { version: 1, provider: 'wechat', appId: wechat.appId, mchId: wechat.mchId })
+  assert.throws(() => paymentMerchantBinding('wechat', { ...wechat, mchId: '' }), { code: 'PAYMENT_MERCHANT_INVALID' })
+  assert.throws(() => paymentMerchantBinding('alipay', { ...alipay, appId: 'https://arbitrary.example.com' }), { code: 'PAYMENT_MERCHANT_INVALID' })
 })

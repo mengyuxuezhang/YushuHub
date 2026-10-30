@@ -2,6 +2,7 @@ import { decimal, digest, failure, micros } from '../services/licensing/protocol
 
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value
 export const paymentFulfillmentHash = value => digest(JSON.stringify(canonical(value)))
+const packageOf = order => (typeof order.package_snapshot_json === 'string' ? JSON.parse(order.package_snapshot_json) : order.package_snapshot_json) || {}
 
 export async function migratePaymentFulfillments(pool) {
   await pool.query(`CREATE TABLE IF NOT EXISTS ai_payment_fulfillments (
@@ -37,7 +38,7 @@ export async function recordPaymentFulfillment(connection, order, granted, previ
   if ((micros(points) === 0n && entries.length) || (micros(points) > 0n && (entries.length !== 1 || decimal(micros(entries[0].points)) !== points))) throw failure('PAYMENT_FULFILLMENT_INVALID', '实际发放积分流水与原订单不一致', 409)
   const payload = { version: 1, orderId: order.id, orderNo: order.order_no, ownerUserId: order.owner_user_id, userId: order.user_id,
     provider: order.provider, configId: order.config_id, providerTradeNo: String(order.provider_trade_no || ''), amountFen: String(order.amount_fen), currency: order.currency || 'CNY',
-    membership, previousMemberships, points, creditEntryId: entries[0]?.id || '' }
+    membership, previousMemberships, points, creditEntryId: entries[0]?.id || '', merchantBinding: packageOf(order)._paymentMerchant || null }
   const fingerprint = paymentFulfillmentHash(payload)
   await connection.query(`INSERT INTO ai_payment_fulfillments (order_id,owner_user_id,user_id,membership_id,points,fingerprint,payload) VALUES (?,?,?,?,?,?,?)`,
     [order.id, order.owner_user_id, order.user_id, granted.id, points, fingerprint, JSON.stringify(payload)])
@@ -52,6 +53,7 @@ export async function readPaymentFulfillment(connection, order, { ownerUserId, u
   if (payload?.version !== 1 || paymentFulfillmentHash(payload) !== row.fingerprint || payload.orderId !== order.id || payload.orderNo !== order.order_no
     || payload.ownerUserId !== order.owner_user_id || payload.userId !== order.user_id || payload.membership?.id !== order.fulfillment_membership_id
     || payload.configId !== order.config_id || payload.provider !== order.provider || payload.providerTradeNo !== order.provider_trade_no
+    || paymentFulfillmentHash(payload.merchantBinding || null) !== paymentFulfillmentHash(packageOf(order)._paymentMerchant || null)
     || payload.amountFen !== String(order.amount_fen) || payload.currency !== (order.currency || 'CNY') || payload.points !== decimal(micros(row.exact_points))
     || row.owner_user_id !== payload.ownerUserId || row.user_id !== payload.userId || row.membership_id !== payload.membership.id) throw failure('PAYMENT_FULFILLMENT_CHANGED', '原订单或权益凭证已变化，须核对后处理', 409)
   return { ...payload, fingerprint: row.fingerprint }
