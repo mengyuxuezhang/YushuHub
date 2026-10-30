@@ -253,3 +253,25 @@ test('center retry rejects invalid login themes before changing a build', async 
   assert.equal(res.statusCode, 400)
   assert.equal(writes, 0)
 })
+
+test('central build operations stay inside the signed organization and admission confirms both quotas', async () => {
+  for (const suffix of ['retry', 'publish', 'artifacts/cleanup']) {
+    let writes = 0
+    const handler = postHandler(`/api/center/builds/:id/${suffix}`, {
+      findBuildById: async () => ({ id: 'remote', centerSupplierId: 'supplier-demo', organizationId: 'other-child', status: 'failed' }),
+      resetBuildForRetry: async () => { writes++ }, releaseBuild: async () => { writes++ }, cleanupBuildArtifacts: async () => { writes++ },
+    })
+    const res = responseRecorder()
+    await handler({ params: { id: 'remote' }, centerSupplier: { id: 'supplier-demo' }, centralAuthorization: { sub: 'child' }, body: {} }, res)
+    assert.equal(res.statusCode, 404); assert.equal(writes, 0)
+  }
+  const actions = []
+  const handler = postHandler('/api/center/builds', {
+    officialResources: async (_req, input) => { actions.push(input); return { reservationId: 'quota-proof' } },
+    createCenterBuild: async () => { assert.equal(actions.length, 3); return { id: 'remote' } },
+  })
+  const res = responseRecorder()
+  await handler({ centralAuthorization: { sub: 'child' }, centerSupplier: { id: 'supplier-demo' }, body: { localBuildId: 'local-build', brand: { aiProjectId: 'project-one' } } }, res)
+  assert.equal(res.statusCode, 200)
+  assert.deepEqual(actions, [{ kind: 'projects', resourceId: 'project-one' }, { kind: 'builds', resourceId: 'local-build' }, { action: 'confirm', kind: 'builds', resourceId: 'local-build', reservationId: 'quota-proof' }])
+})

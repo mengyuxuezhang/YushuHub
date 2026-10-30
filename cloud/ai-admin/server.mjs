@@ -113,6 +113,10 @@ import { createSupplierLicenseService } from '../../src/services/supplier-licens
 import { deploymentRuntime, officialAuthorization } from '../../src/services/licensing/admin-runtime.mjs'
 import { registerDeploymentAuthorizationRoutes } from '../../src/routes/deployment-authorization.mjs'
 import { agentCommerceRuntime } from '../../src/services/licensing/commerce-runtime.mjs'
+import { resourceRuntime, buildResourceIdentity, lockBuildProject, assertProjectUserRetention } from '../../src/services/licensing/resource-runtime.mjs'
+import { officialResourceClient } from '../../src/services/licensing/official-resources.mjs'
+import { centerBuildScopes, assertRecordedOrganization } from '../../src/services/licensing/build-scopes.mjs'
+import { ensureOfficialSupplierRegistration } from '../../src/services/licensing/official-registration.mjs'
 import { assertAccountingRuntime } from '../../src/services/licensing/accounting-mode.mjs'
 import { registerAgentSupplyRoutes } from '../../src/routes/agent-supply.mjs'
 import { supplierLicenseAllowsPermission } from '../../src/services/supplier-license-contract.mjs'
@@ -294,10 +298,17 @@ async function buildCenterEnabled() {
   return config.enabled
 }
 
-async function buildCenterApi(pathname, body = {}, config = null) {
+async function buildCenterApi(pathname, body = {}, config = null, organizationId = undefined) {
   const resolved = config || await getBuildCenterConfig()
   if (!resolved.enabled) throw new Error('官方构建中心未配置')
-  const serviceToken = authorizationClient ? await authorizationClient.serviceToken(/skill|mcp|agent|model-service/.test(pathname) ? 'official-resources' : 'official-build') : resolved.token
+  if (authorizationClient && organizationId === undefined) {
+    const groups = await centerBuildScopes(pathname, body, db(), organizationRepository.findOrganizationById)
+    if (groups) {
+      if (pathname === '/api/center/builds/status') return (await Promise.all(groups.map(group => buildCenterApi(pathname, { ...body, buildIds: group.buildIds }, resolved, group.grantId)))).flat()
+      organizationId = groups[0].grantId
+    }
+  }
+  const serviceToken = authorizationClient ? await authorizationClient.serviceToken(/skill|mcp|agent|model-service/.test(pathname) ? 'official-resources' : 'official-build', organizationId) : resolved.token
   const response = await fetch(`${resolved.url}${pathname}`, {
     method: 'POST',
     headers: {
@@ -322,6 +333,7 @@ async function listLocalSupplierProjectIds(extraProjectId = '') {
 }
 
 async function reserveProjectQuotaAtCenter(projectId, existingProject = null) {
+  if (authorizationClient) return false
   if (CENTER_SUPPLIER_MANAGEMENT_ENABLED || existingProject) return false
   const config = await getBuildCenterConfig()
   if (!config.enabled) return false
@@ -334,6 +346,7 @@ async function reserveProjectQuotaAtCenter(projectId, existingProject = null) {
 }
 
 async function releaseProjectQuotaAtCenter(projectId) {
+  if (authorizationClient) return false
   if (CENTER_SUPPLIER_MANAGEMENT_ENABLED) return false
   const config = await getBuildCenterConfig()
   if (!config.enabled) return false
@@ -3795,36 +3808,38 @@ async function deleteEndUsersByProject(conn, projectId) {
   return ids.length
 }
 
-async function deleteProject(projectId, actor) {
+async function deleteProject(projectId, actor, connection = null) {
   const id = safeProjectId(projectId)
-  const project = await findProjectById(id)
+  const project = await findProjectById(id, PUBLIC_ADMIN_BASE_URL, connection)
   if (!project || !canAccessProject(actor, project)) throw new Error('AI 项目不存在或无权删除')
   if (!canOperateProject(actor, project)) throw new Error('只能删除自己名下的 AI 项目')
-  const [[active]] = await db().query('SELECT COUNT(*) AS count FROM ai_builds WHERE project_id = ? AND status IN ("queued","running")', [id])
+  const [[active]] = await (connection || db()).query('SELECT COUNT(*) AS count FROM ai_builds WHERE project_id = ? AND status IN ("queued","running")', [id])
   if (Number(active?.count || 0) > 0) throw new Error('该项目存在排队中或构建中的任务，请先结束任务后再删除')
-  const [[paymentOrders]] = await db().query(
+  const [[paymentOrders]] = await (connection || db()).query(
     `SELECT COUNT(*) AS count FROM ai_payment_orders
      WHERE user_id IN (SELECT id FROM ai_end_users WHERE source_project_id = ?)`,
     [id],
   )
   if (Number(paymentOrders?.count || 0) > 0) throw new Error('该项目下已有会员支付订单，为保留支付和财务记录，不能删除项目')
+  if (authorizationClient) await assertProjectUserRetention(connection || db(), id)
+  if (resourcesRuntime && !connection) return resourcesRuntime.removeProject(id, project.organizationId, conn => deleteProject(id, actor, conn))
   const quotaReleased = await releaseProjectQuotaAtCenter(id)
-  const conn = await db().getConnection()
+  const conn = connection || await db().getConnection()
   try {
-    await conn.beginTransaction()
+    if (!connection) await conn.beginTransaction()
     const deletedUsers = await deleteEndUsersByProject(conn, id)
     await conn.query('DELETE FROM ai_builds WHERE project_id = ?', [id])
     await conn.query('DELETE FROM ai_projects WHERE id = ?', [id])
-    await conn.commit()
+    if (!connection) await conn.commit()
     return { id, deleted: true, deletedEndUsers: deletedUsers }
   } catch (err) {
-    await conn.rollback()
+    if (!connection) await conn.rollback()
     if (quotaReleased) await reserveProjectQuotaAtCenter(id).catch((restoreErr) => {
       writeAppLog('supplier-quota', `恢复项目额度失败 ${id}: ${restoreErr instanceof Error ? restoreErr.message : String(restoreErr)}`)
     })
     throw err
   } finally {
-    conn.release()
+    if (!connection) conn.release()
   }
 }
 
@@ -3895,6 +3910,7 @@ setAuthDependencies({
   getSupplierLicense,
   findCenterSupplierById,
   authorizeOfficialService,
+  ensureOfficialSupplierRegistration: root => ensureOfficialSupplierRegistration(db(), root),
   getClientAuthorization: authorizationClient ? async user => {
     const ownerId = await keyOwnerUserIdForEndUser(user.id)
     const resolved = await organizationRepository.findOrganizationContextForUser(ownerId)
@@ -4031,8 +4047,8 @@ async function validateProject(input, currentUser, existingProject = null, publi
   }
 }
 
-async function findProjectById(id, publicAdminBaseUrl = PUBLIC_ADMIN_BASE_URL) {
-  const [rows] = await db().query('SELECT * FROM ai_projects WHERE id = ? LIMIT 1', [id])
+async function findProjectById(id, publicAdminBaseUrl = PUBLIC_ADMIN_BASE_URL, connection = null) {
+  const [rows] = await (connection || db()).query('SELECT * FROM ai_projects WHERE id = ? LIMIT 1', [id])
   return normalizeProject(rows[0], publicAdminBaseUrl)
 }
 
@@ -4062,8 +4078,8 @@ async function upsertProject(input, user, existingProject = null, publicAdminBas
   const policy = normalizeClientPolicy(input.clientPolicy === undefined ? existingProject?.clientPolicy : input.clientPolicy)
   await assertProjectQuota(project.ownerUserId, existingProject)
   const quotaReserved = await reserveProjectQuotaAtCenter(project.id, existingProject)
-  try {
-    await db().query(
+  const write = async connection => {
+    await connection.query(
       `INSERT INTO ai_projects (
         id, owner_user_id, organization_id, client_mode, app_name, brand_name, short_name, description, app_id, config_dir_name,
         logo_url, icon_url, contact_qr_url, login_logo_url, login_design, login_title, login_subtitle,
@@ -4129,6 +4145,11 @@ async function upsertProject(input, user, existingProject = null, publicAdminBas
         JSON.stringify(policy),
       ],
     )
+    return findProjectById(project.id, publicAdminBaseUrl, connection)
+  }
+  try {
+    if (resourcesRuntime) return await resourcesRuntime.project(project.id, project.organizationId, write)
+    return await write(db())
   } catch (err) {
     if (quotaReserved) await releaseProjectQuotaAtCenter(project.id).catch((releaseErr) => {
       writeAppLog('supplier-quota', `释放失败项目额度 ${project.id}: ${releaseErr instanceof Error ? releaseErr.message : String(releaseErr)}`)
@@ -4136,12 +4157,12 @@ async function upsertProject(input, user, existingProject = null, publicAdminBas
     if (err?.code === 'ER_DUP_ENTRY') throw new Error('项目 ID、App ID 或本地数据目录已被占用')
     throw err
   }
-  return findProjectById(project.id, publicAdminBaseUrl)
 }
 
-async function upsertCenterProject(supplierId, brand) {
+async function upsertCenterProject(supplierId, brand, authorizationOrganizationId = undefined) {
   const originalProjectId = safeProjectId(brand?.aiProjectId || brand?.id)
   const id = centerProjectId(supplierId, originalProjectId)
+  if (authorizationOrganizationId) assertRecordedOrganization(await findProjectById(id), authorizationOrganizationId)
   const appName = String(brand?.appName || brand?.brandName || id).trim()
   const brandName = String(brand?.brandName || appName).trim()
   const appId = `com.agent.center.${id.replace(/_/g, '-')}`.slice(0, 160)
@@ -4172,7 +4193,7 @@ async function upsertCenterProject(supplierId, brand) {
       status = 'enabled'`,
     [
       id,
-      supplierId,
+      authorizationOrganizationId || supplierId,
       'personal',
       appName,
       brandName,
@@ -4206,10 +4227,10 @@ async function createCenterBuild(input, supplier) {
     'SELECT * FROM ai_builds WHERE center_supplier_id = ? AND center_local_build_id = ? LIMIT 1',
     [supplierId, localBuildId],
   )
-  if (existingRows[0]) return normalizeBuild(existingRows[0])
+  if (existingRows[0]) { assertRecordedOrganization(existingRows[0], supplier.authorizationOrganizationId); return normalizeBuild(existingRows[0]) }
   const originalProjectId = safeProjectId(brand.aiProjectId || brand.id)
-  await reserveCenterSupplierProject(supplier, originalProjectId, input?.projectIds || [originalProjectId])
-  const project = await upsertCenterProject(supplierId, brand)
+  if (!supplier.authorizationOrganizationId) await reserveCenterSupplierProject(supplier, originalProjectId, input?.projectIds || [originalProjectId])
+  const project = await upsertCenterProject(supplierId, brand, supplier.authorizationOrganizationId)
   const centerBrand = preserveSubmittedLoginBrandFields(projectToBrand(project), brand)
   centerBrand.updateUrl = brand.updateUrl || centerBrand.updateUrl
   centerBrand.clientApiUrl = brand.clientApiUrl || BUILD_CENTER_PUBLIC_URL || PUBLIC_ADMIN_BASE_URL
@@ -4235,6 +4256,7 @@ async function createCenterBuild(input, supplier) {
     )
     const transactionExistingBuild = lockedExistingRows[0] || null
     if (transactionExistingBuild) {
+      assertRecordedOrganization(transactionExistingBuild, supplier.authorizationOrganizationId)
       await connection.commit()
       return normalizeBuild(transactionExistingBuild)
     }
@@ -4243,7 +4265,7 @@ async function createCenterBuild(input, supplier) {
       [supplierId],
     )
     const actualBuildCount = Number(buildUsage?.count || 0)
-    assertSupplierBuildQuota(actualBuildCount, supplierRows[0].max_builds)
+    if (!supplier.authorizationOrganizationId) assertSupplierBuildQuota(actualBuildCount, supplierRows[0].max_builds)
     await connection.query(
       `INSERT INTO ai_builds (
         id, project_id, owner_user_id, organization_id, requested_by, version, status, log, brand_json, center_supplier_id, center_local_build_id
@@ -4251,7 +4273,7 @@ async function createCenterBuild(input, supplier) {
       [
         id,
         project.id,
-        supplierId,
+        supplier.authorizationOrganizationId || supplierId,
         String(input?.requestedBy || supplierId).slice(0, 64),
         buildVersion,
         `[center] Submitted by ${supplierId}, local build ${localBuildId}\n`,
@@ -4274,15 +4296,23 @@ async function createCenterBuild(input, supplier) {
   return findBuildById(id)
 }
 
-async function createBuild(project, requestedBy, version = '') {
-  const id = crypto.randomUUID()
+async function createBuild(project, requestedBy, version = '', options = {}) {
   const buildVersion = String(version || await getSourceVersion() || '')
-  await db().query(
+  const { id, fingerprint } = buildResourceIdentity(project, requestedBy, buildVersion, resourcesRuntime ? options.idempotencyKey : undefined)
+  const write = async connection => {
+    if (resourcesRuntime) {
+      const active = await lockBuildProject(connection, project)
+      if (active) return { ...normalizeBuild(active), alreadyActive: true }
+    }
+    await connection.query(
     `INSERT INTO ai_builds (id, project_id, owner_user_id, organization_id, requested_by, version, status, log)
      VALUES (?, ?, ?, ?, ?, ?, 'queued', '')`,
     [id, project.id, project.ownerUserId || '', project.organizationId || '', requestedBy || null, buildVersion],
   )
-  return findBuildById(id)
+    return findBuildById(id, connection)
+  }
+  if (resourcesRuntime) return resourcesRuntime.build(id, project.organizationId, fingerprint, write)
+  return write(db())
 }
 
 async function prepareBuildCenterBrand(build, project, user, publicUrls = {}) {
@@ -4303,6 +4333,7 @@ async function submitBuildToCenter(build, project, user, publicUrls = {}) {
   try {
     const brand = await prepareBuildCenterBrand(build, project, user, publicUrls)
     build = await updateBuild(build.id, { brand })
+    const scope = authorizationClient ? await organizationRepository.findOrganizationById(project.organizationId) : null
     const submitted = await buildCenterApi('/api/center/builds', {
       supplierId: config.supplierId,
       localBuildId: build.id,
@@ -4310,7 +4341,7 @@ async function submitBuildToCenter(build, project, user, publicUrls = {}) {
       version: build.version,
       brand,
       projectIds: await listLocalSupplierProjectIds(),
-    }, config)
+    }, config, scope?.externalId || (scope?.agentLevel === 2 ? scope.id : null))
     const nextLog = `${build.log || ''}[admin] Submitted to Agent build center: ${submitted.id}\n`
     return updateBuild(build.id, {
       status: submitted.status || 'queued',
@@ -4350,8 +4381,8 @@ async function resetBuildForRetry(buildId, extraPatch = {}) {
   })
 }
 
-async function findBuildById(id) {
-  const [rows] = await db().query('SELECT * FROM ai_builds WHERE id = ? LIMIT 1', [id])
+async function findBuildById(id, connection = null) {
+  const [rows] = await (connection || db()).query('SELECT * FROM ai_builds WHERE id = ? LIMIT 1', [id])
   return normalizeBuild(rows[0])
 }
 
@@ -6694,6 +6725,7 @@ registerOrganizationRoutes(app, {
 })
 
 const commerceRuntime = agentCommerceRuntime({ client: authorizationClient, database: db })
+const resourcesRuntime = resourceRuntime({ client: authorizationClient, database: db, resolveOrganization: organizationRepository.findOrganizationById, readBuild: findBuildById })
 registerDeploymentAuthorizationRoutes(app, { client: authorizationClient, repository: organizationRepository, database: db, ensureAccountFreeMembership, monitor: commerceRuntime?.monitor })
 registerAgentSupplyRoutes(app, { runtime: commerceRuntime, client: authorizationClient,
   resolveUserContext: async user => {
@@ -6922,6 +6954,7 @@ registerAdminBusinessRoutes(app, {
 })
 
 registerBuildRoutes(app, {
+  officialResources: process.env.AI_OFFICIAL_AUTHORIZATION_MODE === 'center' ? officialResourceClient({ centerUrl: process.env.AI_LICENSE_CENTER_URL }) : null,
   findProjectById,
   findActiveBuildForProject,
   assertBuildQuota,
@@ -6987,6 +7020,7 @@ pool = await initDatabase({
 })
 await assertAccountingRuntime(pool, Boolean(authorizationClient))
 await commerceRuntime?.startMonitoring()
+await resourcesRuntime?.start()
 const updateDatabaseMigration = await migrateOfficialUpdateDatabaseSettings(pool)
 if (updateDatabaseMigration.changedRows > 0) console.log(`[ai-admin] migrated ${updateDatabaseMigration.changedRows} saved official update source setting(s)`)
 await reconcileCenterSupplierOrganizations()

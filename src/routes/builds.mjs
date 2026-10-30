@@ -17,6 +17,7 @@ import { readAgentReleaseHistory } from '../services/release-history.mjs'
 import { PUBLIC_ADMIN_BASE_URL, PUBLIC_UPDATE_BASE_URL, PUBLIC_PREVIEW_BASE_URL } from '../config/env.mjs'
 import { resolvePublicUrlsForRequest } from '../utils/public-url.mjs'
 import { annotateWorkerSourceStatus, isManagedWorkerId, resolveWorkerHeartbeatBuildId } from '../services/worker-scheduling.mjs'
+import { centralServiceLicense } from '../services/licensing/build-scopes.mjs'
 
 export function isCenterDelegatedBuild(build) {
   return Boolean(String(build?.centerSupplierId || '').trim())
@@ -51,6 +52,7 @@ export function registerBuildRoutes(app, deps) {
     getSourceVersionInfo,
     touchWorker,
     appendBuildLog,
+    officialResources,
   } = deps
 
   app.post('/api/builds', requireAuth, requirePermission('builds.create', '提交测试打包'), async (req, res, next) => {
@@ -71,7 +73,7 @@ export function registerBuildRoutes(app, deps) {
         return
       }
       await assertBuildQuota(project.ownerUserId)
-      let build = await createBuild(project, req.user.id, req.body?.version || '')
+      let build = await createBuild(project, req.user.id, req.body?.version || '', { idempotencyKey: req.headers?.['idempotency-key'] || req.body?.requestId })
       build = await submitBuildToCenter(build, project, req.user, resolvePublicUrlsForRequest(req, {
         adminBaseUrl: PUBLIC_ADMIN_BASE_URL,
         updateBaseUrl: PUBLIC_UPDATE_BASE_URL,
@@ -199,6 +201,13 @@ export function registerBuildRoutes(app, deps) {
 
   app.post('/api/center/builds', requireCenterAuth, async (req, res) => {
     try {
+      if (req.centralAuthorization) {
+        if (!officialResources) throw Object.assign(new Error('官方资源额度接入未配置'), { statusCode: 503 })
+        await officialResources(req, { kind: 'projects', resourceId: safeProjectId(req.body?.brand?.aiProjectId || req.body?.brand?.id) })
+        const resourceId = safeCenterId(req.body?.localBuildId || '', '本地构建ID')
+        const reservation = await officialResources(req, { kind: 'builds', resourceId })
+        await officialResources(req, { action: 'confirm', kind: 'builds', resourceId, reservationId: reservation.reservationId })
+      }
       const build = await createCenterBuild(req.body || {}, req.centerSupplier)
       res.json({ success: true, data: build })
     } catch (err) {
@@ -215,8 +224,8 @@ export function registerBuildRoutes(app, deps) {
         return
       }
       const [rows] = await db().query(
-        `SELECT * FROM ai_builds WHERE center_supplier_id = ? AND id IN (${ids.map(() => '?').join(',')}) ORDER BY created_at DESC`,
-        [supplierId, ...ids],
+        `SELECT * FROM ai_builds WHERE center_supplier_id = ?${req.centralAuthorization ? ' AND organization_id=?' : ''} AND id IN (${ids.map(() => '?').join(',')}) ORDER BY created_at DESC`,
+        [supplierId, ...(req.centralAuthorization ? [req.centralAuthorization.sub] : []), ...ids],
       )
       res.json({ success: true, data: rows.map(normalizeBuild) })
     } catch (err) {
@@ -228,7 +237,7 @@ export function registerBuildRoutes(app, deps) {
     try {
       const supplierId = safeCenterId(req.centerSupplier?.id || req.body?.supplierId || '', '供应商 ID')
       const current = await findBuildById(req.params.id)
-      if (!current || current.centerSupplierId !== supplierId) {
+      if (!current || current.centerSupplierId !== supplierId || (req.centralAuthorization && current.organizationId !== req.centralAuthorization.sub)) {
         res.status(404).json({ success: false, error: '构建任务不存在或无权重试' })
         return
       }
@@ -262,7 +271,7 @@ export function registerBuildRoutes(app, deps) {
     try {
       const supplierId = safeCenterId(req.centerSupplier?.id || req.body?.supplierId || '', '供应商 ID')
       const build = await findBuildById(req.params.id)
-      if (!build || build.centerSupplierId !== supplierId) {
+      if (!build || build.centerSupplierId !== supplierId || (req.centralAuthorization && build.organizationId !== req.centralAuthorization.sub)) {
         res.status(404).json({ success: false, error: '构建任务不存在或无权发布' })
         return
       }
@@ -281,7 +290,7 @@ export function registerBuildRoutes(app, deps) {
     try {
       const supplierId = safeCenterId(req.centerSupplier?.id || req.body?.supplierId || '', '供应商 ID')
       const build = await findBuildById(req.params.id)
-      if (!build || build.centerSupplierId !== supplierId) {
+      if (!build || build.centerSupplierId !== supplierId || (req.centralAuthorization && build.organizationId !== req.centralAuthorization.sub)) {
         res.status(404).json({ success: false, error: '构建任务不存在或无权清理' })
         return
       }
@@ -293,7 +302,8 @@ export function registerBuildRoutes(app, deps) {
 
   app.post('/api/center/license', requireCenterAuth, async (req, res) => {
     try {
-      res.json({ success: true, data: centerSupplierLicenseResponse(await supplierLicensePayload(req.centerSupplier, req.body?.projectIds)) })
+      const license = req.centralAuthorization ? centralServiceLicense(req.centralAuthorization) : await supplierLicensePayload(req.centerSupplier, req.body?.projectIds)
+      res.json({ success: true, data: centerSupplierLicenseResponse(license) })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
     }
@@ -303,7 +313,9 @@ export function registerBuildRoutes(app, deps) {
     try {
       res.json({
         success: true,
-        data: await reserveCenterSupplierProject(req.centerSupplier, req.body?.projectId, req.body?.projectIds),
+        data: req.centralAuthorization
+          ? await officialResources(req, { kind: 'projects', resourceId: safeProjectId(req.body?.projectId) })
+          : await reserveCenterSupplierProject(req.centerSupplier, req.body?.projectId, req.body?.projectIds),
       })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
@@ -314,7 +326,9 @@ export function registerBuildRoutes(app, deps) {
     try {
       res.json({
         success: true,
-        data: await releaseCenterSupplierProject(req.centerSupplier, req.body?.projectId, req.body?.projectIds),
+        data: req.centralAuthorization
+          ? await officialResources(req, { action: 'release', kind: 'projects', resourceId: safeProjectId(req.body?.projectId), reservationId: req.body?.reservationId })
+          : await releaseCenterSupplierProject(req.centerSupplier, req.body?.projectId, req.body?.projectIds),
       })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })

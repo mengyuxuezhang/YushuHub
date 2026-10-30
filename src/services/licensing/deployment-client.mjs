@@ -108,6 +108,10 @@ export function createDeploymentLicenseClient({ store, centerUrl, instanceId, pu
       const state = await refresh(true)
       return (await request('service-token', { audience, organizationId: organizationId || state.rootId }, state.credential)).token
     },
+    async resource(action, kind, resourceId, organizationId, input = {}) {
+      const token = await this.serviceToken('official-build', organizationId)
+      return request(`resources/${action}`, { ...input, kind, resourceId }, token)
+    },
     async invitationFor(code, grantId) {
       const seed = await store.transaction(state => state.invitationSeed ||= crypto.randomBytes(32).toString('base64url'))
       return crypto.createHmac('sha256', seed).update(`${grantId}:${crypto.createHash('sha256').update(code).digest('hex')}`).digest('base64url')

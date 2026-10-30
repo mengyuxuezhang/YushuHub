@@ -15,6 +15,8 @@ import { auditAccounting } from './accounting-migration.mjs'
 import { createAccountingMonitor, emptyMonitorState } from './accounting-monitor.mjs'
 import { ModelCredentialVault } from '../model-credentials.mjs'
 import { readChatStream, readSse } from './streaming.mjs'
+import { deploymentRuntime, officialAuthorization } from './admin-runtime.mjs'
+import { reserveCentralQuota } from './quotas.mjs'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -25,6 +27,11 @@ function setup() {
   const store = memoryStateStore(emptyCenterState()), center = createLicenseCenter({ store, ...keys, privateKey: keys.privateKey, publicKeys, keyId: 'test', credentialKey: crypto.randomBytes(32), now })
   return { center, store, now, publicKeys, advance: value => { timestamp += value } }
 }
+
+test('explicit legacy deployment mode does not become a licensed instance just because the official service uses a center URL', () => {
+  assert.equal(deploymentRuntime({ AI_AUTHORIZATION_MODE: 'legacy', AI_LICENSE_CENTER_URL: 'https://center.example.com', NODE_ENV: 'production' }), null)
+  assert.throws(() => officialAuthorization({ AI_OFFICIAL_AUTHORIZATION_MODE: 'center', AI_LICENSE_CENTER_URL: 'http://127.0.0.1', NODE_ENV: 'production' }), /HTTPS/)
+})
 
 test('SSE streams incrementally across UTF-8/CRLF boundaries and rejects missing usage, truncation and oversized frames', async () => {
   const chunk = (delta, finish_reason = null) => ({ id: 'sse-test', model: 'chat', created: 1, choices: [{ index: 0, delta, finish_reason }] })
@@ -60,6 +67,7 @@ const price = () => validateSupplyPrice({ version: 1, components: [{ meter: 'req
 
 test('activation is bound, idempotent and codes cannot be reused for another request', async () => {
   const { center, publicKeys, now } = setup(), first = await root(center)
+  await assert.rejects(center.issue({ id: 'a'.repeat(65), name: '过长代理ID', packageId: 'first-fixed', expiresAt: null }, 'operator'), { code: 'INVALID_GRANT' })
   assert.equal((await center.activate(first.input)).credential, first.credential)
   await assert.rejects(center.activate({ ...first.input, requestId: 'another' }), { code: 'CODE_USED' })
   await assert.rejects(center.activate({ ...first.input, instanceId: 'wrong' }), { code: 'CODE_USED' })
@@ -98,6 +106,10 @@ test('package versions immutable and explicit updates invalidate old service tok
 })
 
 test('central quotas serialize parent and child use; build retries do not consume twice', async () => {
+  const aliases = {}, a = { id: 'a:projects:b', quotas: { projects: { mode: 'unlimited' } } }, b = { id: 'a', quotas: { projects: { mode: 'unlimited' } } }
+  reserveCentralQuota(aliases, a, a, 'projects', 'c', 1)
+  reserveCentralQuota(aliases, b, b, 'projects', 'b:projects:c', 1)
+  assert.equal(Object.keys(aliases.resources).length, 2)
   const { center } = setup(), first = await root(center)
   const child = await center.issue({ id: 'child-quota', name: '额度二级', packageId: 'second', parentId: 'first', expiresAt: '2027-01-01T00:00:00Z' }, 'operator')
   await center.activate({ code: child.code, instanceId: 'instance-one', domain: 'https://agent.example.com', requestId: 'child-quota-activation' }, first.credential)
@@ -105,7 +117,8 @@ test('central quotas serialize parent and child use; build retries do not consum
   const results = await Promise.allSettled(['project-one', 'project-two'].map(resourceId => center.resource(token, { kind: 'projects', resourceId })))
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1)
   await center.resource(token, { kind: 'projects', resourceId: 'project-one' })
-  await center.resource(token, { kind: 'projects', resourceId: 'project-one' }, true)
+  const occupied = await center.resource(token, { kind: 'projects', resourceId: 'project-one' })
+  await center.resource(token, { kind: 'projects', resourceId: 'project-one', reservationId: occupied.reservationId }, true)
   await center.resource(token, { kind: 'projects', resourceId: 'project-two' })
   for (let i = 0; i < 10; i++) await center.resource(token, { kind: 'builds', resourceId: `build-${i}` })
   await center.resource(token, { kind: 'builds', resourceId: 'build-0' })

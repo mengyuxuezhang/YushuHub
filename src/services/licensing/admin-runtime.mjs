@@ -6,6 +6,7 @@ import { createDeploymentLicenseClient, emptyDeploymentState } from './deploymen
 import { failure } from './protocol.mjs'
 
 export function deploymentRuntime(env = process.env) {
+  if (env.AI_AUTHORIZATION_MODE === 'legacy') return null
   const enabled = env.AI_AUTHORIZATION_MODE === 'center' || Boolean(env.AI_LICENSE_CENTER_URL) || (env.NODE_ENV === 'production' && env.AI_AUTHORIZATION_MODE !== 'legacy')
   if (!enabled) return null
   const keys = env.AI_LICENSE_PUBLIC_KEYS_FILE ? JSON.parse(fs.readFileSync(env.AI_LICENSE_PUBLIC_KEYS_FILE, 'utf8')) : {}
@@ -18,7 +19,7 @@ export function deploymentRuntime(env = process.env) {
 export function officialAuthorization(env = process.env) {
   if (env.AI_OFFICIAL_AUTHORIZATION_MODE !== 'center') return null
   const origin = new URL(env.AI_LICENSE_CENTER_URL)
-  if (origin.protocol !== 'https:') throw new Error('Official authorization requires HTTPS')
+  if (origin.protocol !== 'https:' && !(env.NODE_ENV === 'test' && origin.hostname === '127.0.0.1')) throw new Error('Official authorization requires HTTPS')
   return async (token, audience) => {
     const response = await fetch(`${origin.origin}/api/license-center/v1/introspect`, { method: 'POST', redirect: 'error',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ audience }), signal: AbortSignal.timeout(8000) })

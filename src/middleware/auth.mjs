@@ -210,9 +210,9 @@ export async function requireCenterAuth(req, res, next) {
         : req.path.includes('/projects/') ? 'projects.manage' : req.path.includes('skills') ? 'curated_skills.view'
           : req.path.includes('mcps') ? 'curated_mcps.view' : req.path.includes('agents') ? 'curated_agents.view' : null
       if (permission && !claims.grant.capabilities.some(cap => cap.enabled && cap.key === permission)) throw Object.assign(new Error('中心授权不包含所需能力'), { statusCode: 403 })
-      const supplier = await deps.findCenterSupplierById(claims.rootId)
+      const supplier = await deps.findCenterSupplierById(claims.rootId) || await deps.ensureOfficialSupplierRegistration?.(claims.root)
       if (!supplier) throw Object.assign(new Error('官方服务代理注册记录不存在'), { statusCode: 403 })
-      req.centerSupplier = { ...supplier, status: 'enabled', expires_at: claims.root.expiresAt }
+      req.centerSupplier = { ...supplier, status: 'enabled', expires_at: claims.root.expiresAt, authorizationOrganizationId: claims.sub }
       req.centralAuthorization = claims
       req.body = { ...req.body, supplierId: claims.rootId }
       next()

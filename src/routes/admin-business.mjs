@@ -112,7 +112,7 @@ export function registerAdminBusinessRoutes(app, deps) {
       const saved = await upsertProject(req.body || {}, req.user, existing, publicUrls.adminBaseUrl)
       res.json({ success: true, data: saved })
     } catch (err) {
-      res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
+      res.status(Number(err?.statusCode) || 400).json({ success: false, code: err?.code || 'PROJECT_OPERATION_FAILED', error: err instanceof Error ? err.message : String(err) })
     }
   })
 
@@ -120,7 +120,7 @@ export function registerAdminBusinessRoutes(app, deps) {
     try {
       res.json({ success: true, data: await deleteProject(req.params.id, req.user) })
     } catch (err) {
-      res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
+      res.status(Number(err?.statusCode) || 400).json({ success: false, code: err?.code || 'PROJECT_OPERATION_FAILED', error: err instanceof Error ? err.message : String(err) })
     }
   })
 

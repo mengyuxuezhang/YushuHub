@@ -26,8 +26,83 @@ import { httpGatewayAdapters } from './http-adapters.mjs'
 import { registerClientSupplyBridge } from '../../routes/client-supply-bridge.mjs'
 import { setAuthDependencies } from '../../middleware/auth.mjs'
 import { supplyMembershipBenefit } from './benefits.mjs'
+import { createResourceCoordinator, emptyResourceIntents } from './resource-runtime.mjs'
+import { centerBuildScopes } from './build-scopes.mjs'
 
 const configured = Boolean(process.env.LICENSING_TEST_DB)
+
+test('real MySQL resource quotas: business atomicity, lost replies, project generations and cumulative builds', { skip: !configured }, async () => {
+  const { licenseDatabase = 'yushu_license_test', gatewayDatabase = 'yushu_gateway_test', ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || ![licenseDatabase, gatewayDatabase].every(name => /^yushu_[a-z0-9_]+$/.test(name))) throw new Error('Separate disposable test databases required')
+  const pool = mysql.createPool({ ...config, database: gatewayDatabase, connectionLimit: 12 }), centerPool = mysql.createPool({ ...config, database: licenseDatabase, connectionLimit: 12 })
+  let server
+  try {
+    await pool.query('CREATE TABLE quota_projects (id VARCHAR(120) PRIMARY KEY,organization_id VARCHAR(120))')
+    await pool.query('CREATE TABLE quota_builds (id VARCHAR(120) PRIMARY KEY,organization_id VARCHAR(120),remote_build_id VARCHAR(120))')
+    const state = mysqlStateStore(centerPool, 'resource-center', emptyCenterState()), intents = mysqlStateStore(pool, 'resource-intents', emptyResourceIntents())
+    await state.migrate(); await intents.migrate()
+    const keys = crypto.generateKeyPairSync('ed25519'), center = createLicenseCenter({ store: state, privateKey: keys.privateKey, publicKeys: { test: keys.publicKey }, keyId: 'test', credentialKey: crypto.randomBytes(32) })
+    const issued = await center.issue({ id: 'quota-root', name: '虚构额度一级', packageId: 'first-fixed', domain: 'https://quota.example.com', expiresAt: null }, 'test')
+    const activation = await center.activate({ code: issued.code, requestId: 'quota-activate', instanceId: 'quota-instance', domain: 'https://quota.example.com' })
+    const child = await center.issue({ id: 'quota-child', name: '虚构额度二级', packageId: 'second', parentId: 'quota-root', expiresAt: null }, 'test')
+    await center.activate({ code: child.code, requestId: 'quota-child-activate', instanceId: 'quota-instance', domain: 'https://quota.example.com' }, activation.credential)
+    const app = serviceApp(); registerLicenseCenterRoutes(app, { center, operators: {} }); serviceErrors(app)
+    server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)) })
+    let loseReserve = false, loseRelease = false, loseConfirm = false
+    const remote = async (action, kind, resourceId, organizationId, input = {}) => {
+      if (action === 'release' && loseRelease) throw new Error('release temporarily unavailable')
+      if (action === 'confirm' && loseConfirm) throw new Error('confirm temporarily unavailable')
+      const token = (await center.serviceToken(activation.credential, 'official-build', organizationId)).token
+      const response = await fetch(`http://127.0.0.1:${server.address().port}/api/license-center/v1/resources/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...input, kind, resourceId }) })
+      const payload = await response.json()
+      if (!payload.success) throw Object.assign(new Error(payload.error), { code: payload.code })
+      if (action === 'reserve' && loseReserve) throw new Error('accepted reply lost')
+      return payload.data
+    }
+    const make = () => createResourceCoordinator({ store: intents, remote, resolveOrganization: async id => ({ id, agentLevel: id === 'quota-root' ? 1 : 2, externalId: id }),
+      exists: async (kind, id, connection) => { const [[row]] = await connection.query(`SELECT id FROM ${kind === 'projects' ? 'quota_projects' : 'quota_builds'} WHERE id=?`, [id]); return Boolean(row) },
+      readBuild: async (id, connection) => { const [[row]] = await connection.query('SELECT * FROM quota_builds WHERE id=?', [id]); return row } })
+    let coordinator = make()
+    const project = id => coordinator.project(id, 'quota-root', async connection => { await connection.query('INSERT INTO quota_projects VALUES (?,?)', [id, 'quota-root']); return { id } })
+    loseReserve = true; await assert.rejects(project('lost-project'))
+    loseReserve = false; loseRelease = true; await coordinator.flush()
+    await assert.rejects(project('blocked-project'), { code: 'QUOTA_EXHAUSTED' })
+    loseRelease = false; coordinator = make(); await coordinator.flush()
+    const results = await Promise.allSettled([project('quota-one'), project('quota-two')])
+    assert.equal(results.filter(r => r.status === 'fulfilled').length, 1)
+    const live = results.find(r => r.status === 'fulfilled').value.id
+    await assert.rejects(coordinator.project('child-project', 'quota-child', async () => {}), { code: 'QUOTA_EXHAUSTED' })
+    const original = await remote('status', 'projects', live, 'quota-root')
+    loseRelease = true
+    await coordinator.removeProject(live, 'quota-root', async connection => { await connection.query('DELETE FROM quota_projects WHERE id=?', [live]) })
+    assert.equal((await intents.read()).intents[`projects:${live}`].state, 'releasing')
+    loseRelease = false; coordinator = make(); await coordinator.flush(); await project(live)
+    await assert.rejects(remote('release', 'projects', live, 'quota-root', { reservationId: original.reservationId }), { code: 'RESOURCE_VERSION_CONFLICT' })
+    let writes = 0
+    const build = (id, failed = false, worker = coordinator) => worker.build(id, 'quota-root', id, async connection => { writes++; await connection.query('INSERT INTO quota_builds VALUES (?,?,?)', [id, 'quota-root', `remote-${id}`]); if (failed) throw new Error('business rollback'); return { id } })
+    await assert.rejects(build('rollback-build', true)); await coordinator.flush()
+    assert.equal(await remote('status', 'builds', 'rollback-build', 'quota-root'), null)
+    loseConfirm = true; await build('confirmed-build'); assert.equal((await intents.read()).intents['builds:confirmed-build'].state, 'confirming')
+    loseConfirm = false; coordinator = make(); await coordinator.flush()
+    const before = writes; await build('confirmed-build'); assert.equal(writes, before)
+    const coalesced = await coordinator.build('coalesced-build', 'quota-root', 'same-project', async () => ({ id: 'confirmed-build', alreadyActive: true }))
+    assert.equal(coalesced.alreadyActive, true); assert.equal(await remote('status', 'builds', 'coalesced-build', 'quota-root'), null)
+    const peer = make()
+    const concurrent = await Promise.allSettled(Array.from({ length: 11 }, (_, i) => build(`quota-build-${i}`, false, i % 2 ? peer : coordinator)))
+    assert.equal(concurrent.filter(r => r.status === 'fulfilled').length, 9)
+    await center.update('quota-root', { expectedVersion: 1, expiresAt: '2027-12-31T00:00:00Z' }, 'test')
+    await assert.rejects(build('after-renewal'), { code: 'QUOTA_EXHAUSTED' })
+    const confirmed = await remote('status', 'builds', 'confirmed-build', 'quota-root')
+    await assert.rejects(remote('cancel', 'builds', 'confirmed-build', 'quota-root', { reservationId: confirmed.reservationId }), { code: 'BUILD_QUOTA_IMMUTABLE' })
+    const [[count]] = await pool.query('SELECT COUNT(*) n FROM quota_builds'); assert.equal(Number(count.n), 10)
+    const scopes = await centerBuildScopes('/api/center/builds/status', { buildIds: ['remote-confirmed-build'], organizationId: 'forged' },
+      { query: async (_sql, args) => pool.query('SELECT remote_build_id,organization_id FROM quota_builds WHERE remote_build_id IN (?)', args) }, async id => ({ id, externalId: id, agentLevel: 1 }))
+    assert.deepEqual(scopes, [{ grantId: 'quota-root', buildIds: ['remote-confirmed-build'] }])
+  } finally {
+    if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+    await pool.end(); await centerPool.end()
+  }
+})
 test('real MySQL: independent services, HTTP activation, concurrent accounting, restart and SQL user funds', { skip: !configured }, async () => {
   const { licenseDatabase = 'yushu_license_test', gatewayDatabase = 'yushu_gateway_test', ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
   if (config.host !== '127.0.0.1') throw new Error('Test database must be disposable localhost')

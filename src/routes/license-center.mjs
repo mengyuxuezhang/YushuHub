@@ -22,6 +22,7 @@ export function registerLicenseCenterRoutes(app, { center, operators }) {
   app.post(`${base}/recovery-token`, endpoint(req => center.recoveryToken(bearer(req), req.body.organizationId, req.body.requestId)))
   // Introspection verifies a short-lived signed token; it does not trust caller-supplied claims.
   app.post(`${base}/introspect`, endpoint(req => center.introspect(bearer(req), req.body.audience)))
-  app.post(`${base}/resources/reserve`, endpoint(req => center.resource(bearer(req), req.body)))
+  app.post(`${base}/resources/reserve`, endpoint(req => center.resource(bearer(req), { ...req.body, action: 'reserve' })))
   app.post(`${base}/resources/release`, endpoint(req => center.resource(bearer(req), req.body, true)))
+  for (const action of ['status', 'confirm', 'cancel']) app.post(`${base}/resources/${action}`, endpoint(req => center.resource(bearer(req), { ...req.body, action })))
 }

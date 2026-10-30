@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import { BASE_PACKAGES, validatePackage } from './packages.mjs'
 import { digest, domain, equal, failure, HOUR, identifier, secret, signClaims, verifyClaims } from './protocol.mjs'
-import { reserveCentralQuota, releaseCentralProject } from './quotas.mjs'
+import { reserveCentralQuota, releaseCentralProject, centralResourceAction } from './quotas.mjs'
 
 export function emptyCenterState() {
   return { packages: Object.fromEntries(Object.values(BASE_PACKAGES).map(p => [`${p.id}:1`, p])), grants: {}, codes: {}, credentials: {}, audit: [], sessions: {}, otpCounters: {}, notices: {} }
@@ -66,6 +66,7 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
         const pkg = state.packages[`${identifier(input.packageId)}:${input.packageVersion || 1}`]
         if (!pkg) throw failure('PACKAGE_NOT_FOUND', '套餐不存在', 404)
         const id = identifier(input.id || crypto.randomUUID()), expiresAt = expiry(input.expiresAt), name = String(input.name || '').trim().slice(0, 120)
+        if (id.length > 64) throw failure('INVALID_GRANT', '代理授权ID不能超过64字符，以兼容经营与官方服务主体标识')
         if (!name || state.grants[id]) throw failure('INVALID_GRANT', '名称为空或授权ID重复', 409)
         if (expiresAt && Date.parse(expiresAt) <= now()) throw failure('INVALID_EXPIRY', '新授权有效期必须晚于当前时间')
         let parent = null
@@ -208,8 +209,11 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
         const permission = input.kind === 'builds' ? 'builds.create' : 'projects.manage'
         if (!grant.capabilities.some(cap => cap.enabled && cap.key === permission)) throw failure('CAPABILITY_DENIED', '授权不包含所需能力', 403)
         if (release && input.kind !== 'projects') throw failure('BUILD_QUOTA_IMMUTABLE', '已受理构建次数不能释放')
-        const result = release ? releaseCentralProject(state, root, grant, input.resourceId) : reserveCentralQuota(state, root, grant, input.kind, input.resourceId, now())
-        audit(state, grant.id, release ? 'project_released' : 'quota_reserved', input.resourceId, { kind: input.kind }, now())
+        const action = release ? 'release' : input.action || 'reserve'
+        const result = action === 'release' ? releaseCentralProject(state, root, grant, input.resourceId, input.reservationId)
+          : action === 'reserve' ? reserveCentralQuota(state, root, grant, input.kind, input.resourceId, now(), input.provisional === true)
+            : centralResourceAction(state, root, grant, { ...input, action })
+        if (action !== 'status') audit(state, grant.id, action === 'release' ? 'project_released' : action === 'reserve' ? 'quota_reserved' : `resource_${action}`, input.resourceId, { kind: input.kind }, now())
         return result
       })
     },
