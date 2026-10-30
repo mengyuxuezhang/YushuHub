@@ -43,6 +43,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       if (outcome.state !== 'settled' && outcome.state !== 'done') {
         if (['running', 'reserved'].includes(outcome.state)) return operation
         operation.state = outcome.state === 'pending' ? 'pending' : 'unknown'; operation.updatedAt = now()
+        if (outcome.state === 'pending' && outcome.job) operation.job = structuredClone(outcome.job)
         return operation
       }
       const usage = outcome.usage || [], snapshot = operation.snapshot
@@ -131,6 +132,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       if (micros(snapshot.discount) < 0n) throw failure('INVALID_DISCOUNT', '折扣无效')
       // Trusted model adapters calculate bounds; client estimatedUsage is ignored.
       const prepared = await snapshot.model.prepare(input.request), upperUsage = prepared.upperUsage
+      if (snapshot.model.adapter === 'minimax.speech_async' && snapshot.model.source !== 'official') throw failure('ASYNC_SOURCE_UNSUPPORTED', '本阶段异步任务仅开放官方供货模型')
       if (snapshot.model.taskType === 'speech_synthesis') snapshot.speechVoiceId = prepared.request.voiceId
       if (prepared.request.stream === true && (snapshot.model.source !== 'official' || typeof onChunk !== 'function')) throw failure('STREAM_UNAVAILABLE', '实时流式供货需使用官方流式传输入口')
       if (!Array.isArray(upperUsage)) throw failure('UNBOUNDED_REQUEST', '缺少可执行计费上界')

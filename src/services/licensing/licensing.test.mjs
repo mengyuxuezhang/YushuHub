@@ -235,6 +235,54 @@ test('speech rejects arbitrary private upstream voice identifiers before reserva
   assert.equal(timed.request.includeTimings, true); assert.equal(timed.request.timingGranularity, 'word')
 })
 
+test('async speech binds durable int64 jobs, retries reads only and never invents usage or a free failure', async t => {
+  process.env.ASYNC_TEST_KEY = 'fixture-account-key'
+  t.after(() => { delete process.env.ASYNC_TEST_KEY })
+  const { center, now } = setup(), first = await root(center), store = memoryStateStore(emptyLedgerState()), ledger = createSupplyLedger({ store, now })
+  await ledger.open('first', 'first'); await ledger.credit('first', '100', 'async-credit', 'operator', 'async-receipt')
+  const model = { id: 'chat', taskType: 'speech_synthesis', adapter: 'minimax.speech_async', model: 'speech-2.8-turbo', status: 'enabled', version: 1,
+    baseUrl: 'https://async.example.com', keyEnv: 'ASYNC_TEST_KEY', allowedVoiceIds: ['public'],
+    price: { version: 1, components: [{ meter: 'request', phase: 'request', unitSize: '1', amount: '1' }, { meter: 'billable_characters', unitSize: '1', amount: '0.1' }] } }
+  let posts = 0, queries = 0, state = 'Processing', wrongId = false, badHost = false, unavailable = false, missingUsage = false, lostCreate = false
+  const tar = Buffer.alloc(1024); tar.write('ustar', 257)
+  const adapters = httpGatewayAdapters(async (target, options) => {
+    const url = new URL(target)
+    const json = value => new Response(JSON.stringify(value))
+    if (url.pathname === '/v1/t2a_async_v2') { posts++; if (lostCreate) throw new Error('Response lost after provider accepted work'); return json({ task_id: '9876543210123456789', usage_characters: missingUsage ? undefined : 5, task_token: 'must-not-persist', base_resp: { status_code: 0 } }) }
+    if (url.pathname === '/v1/query/t2a_async_query_v2') { queries++; if (unavailable) throw new Error('temporary network loss'); return json({ task_id: wrongId ? '1' : '9876543210123456789', status: state, file_id: '9876543210123456790', base_resp: { status_code: 0 } }) }
+    if (url.pathname === '/v1/files/retrieve') return json({ file: { file_id: '9876543210123456790', download_url: badHost ? 'https://attacker.example.com/private' : 'https://minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com/task.tar' }, base_resp: { status_code: 0 } })
+    assert.equal(options.headers, undefined); assert.equal(options.redirect, 'error'); return new Response(tar)
+  })
+  const gateway = createModelGateway({ ledger, models: [model], adapters, now, authorize: (token, audience) => center.introspect(token, audience) })
+  const token = (await center.serviceToken(first.credential, 'official-models')).token
+  const input = { modelId: 'chat', requestId: 'async-original', request: { text: '你好。', voiceId: 'public' } }
+  assert.equal((await gateway.submit(token, input)).state, 'pending'); await gateway.submit(token, input); assert.equal(posts, 1)
+  const saved = await ledger.find(input.requestId, 'first'); assert.equal(saved.job.taskId, '9876543210123456789'); assert(!JSON.stringify(saved).includes('must-not-persist'))
+  await assert.rejects(ledger.pending(input.requestId, { ...saved.job, taskId: '2' }), { code: 'ASYNC_JOB_CONFLICT' })
+  unavailable = true; assert.equal((await gateway.status(token, input.requestId, true)).state, 'unknown')
+  unavailable = false; wrongId = true; assert.equal((await gateway.status(token, input.requestId, true)).state, 'unknown')
+  wrongId = false; assert.equal((await gateway.status(token, input.requestId, true)).state, 'pending')
+  state = 'Success'; badHost = true; assert.equal((await gateway.status(token, input.requestId, true)).state, 'unknown')
+  const before = queries; process.env.ASYNC_TEST_KEY = 'different-account'; assert.equal((await gateway.status(token, input.requestId, true)).state, 'unknown'); assert.equal(queries, before)
+  process.env.ASYNC_TEST_KEY = 'fixture-account-key'; badHost = false
+  const settled = await gateway.status(token, input.requestId, true)
+  assert.equal(settled.state, 'settled'); assert.equal(settled.actual, '1.500000')
+  assert.equal(settled.result.byteLength, tar.length); assert.equal(settled.result.sha256, crypto.createHash('sha256').update(tar).digest('hex'))
+  assert.equal((await ledger.pending(input.requestId, saved.job)).state, 'settled')
+  for (const [requestId, finalState, missing] of [['async-failed', 'Failed', false], ['async-missing', 'Success', true]]) {
+    missingUsage = missing; state = finalState
+    await gateway.submit(token, { ...input, requestId })
+    assert.equal((await gateway.status(token, requestId, true)).state, 'unknown')
+    const count = queries; await gateway.status(token, requestId, true)
+    if (finalState === 'Failed') assert.equal(queries, count, 'known terminal failure must not repeatedly query the provider')
+  }
+  lostCreate = true
+  const lostInput = { ...input, requestId: 'async-no-receipt' }
+  assert.equal((await gateway.submit(token, lostInput)).state, 'unknown'); await gateway.submit(token, lostInput)
+  assert.equal((await gateway.status(token, lostInput.requestId, true)).state, 'unknown')
+  assert.equal(posts, 4); assert.equal((await ledger.view('first')).reserved, '4.800000')
+})
+
 test('New API receipts survive response loss and repeated requests never resubmit inference', async t => {
   process.env.LICENSING_NEWAPI_TEST_KEY = 'sk-test-only'
   t.after(() => { delete process.env.LICENSING_NEWAPI_TEST_KEY })

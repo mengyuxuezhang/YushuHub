@@ -341,7 +341,7 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
   if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable test database required')
   const pool = mysql.createPool({ ...config, database: gatewayDatabase, connectionLimit: 12 })
   let upstreamServer, localServer, runtime
-  const releases = new Map(), ready = new Set(); let submissions = 0, speechCalls = 0
+  const releases = new Map(), ready = new Set(); let submissions = 0, speechCalls = 0, asyncCreates = 0, asyncQueries = 0
   process.env.STREAM_FIXTURE_INFERENCE = 'sk-fixture-only'; process.env.STREAM_FIXTURE_SETTLEMENT = `okpa_${'a'.repeat(64)}`
   try {
     await migrateAccounting({ pool, book: 'stream-official', kind: 'ledger', sourceId: 'stream-official-old' })
@@ -351,7 +351,7 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     await pool.query('INSERT INTO ai_end_users VALUES (?,?,?)', ['stream-user', 'enabled', '100'])
     const keys = crypto.generateKeyPairSync('ed25519'), center = createLicenseCenter({ store: memoryStateStore(emptyCenterState()), privateKey: keys.privateKey,
       publicKeys: { test: keys.publicKey }, keyId: 'test', credentialKey: crypto.randomBytes(32) })
-    const issued = await center.issue({ id: 'stream-root', name: '测试一级', packageId: 'first-fixed', domain: 'https://stream.example.com', modelIds: ['stream-chat', 'public-speech'], expiresAt: null }, 'operator')
+    const issued = await center.issue({ id: 'stream-root', name: '测试一级', packageId: 'first-fixed', domain: 'https://stream.example.com', modelIds: ['stream-chat', 'public-speech', 'async-speech'], expiresAt: null }, 'operator')
     const activated = await center.activate({ code: issued.code, requestId: 'stream-activate', instanceId: 'stream-instance', domain: 'https://stream.example.com' })
     const child = await center.issue({ id: 'stream-child', name: '测试二级', packageId: 'second', parentId: 'stream-root', expiresAt: null }, 'operator')
     await center.activate({ code: child.code, requestId: 'stream-child-activate', instanceId: 'stream-instance', domain: 'https://stream.example.com' }, activated.credential)
@@ -365,8 +365,19 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
       baseUrl: 'https://stream-provider.example.com', keyEnv: 'STREAM_FIXTURE_INFERENCE', allowedVoiceIds: ['approved-public-voice'],
       publicVoices: [{ id: 'approved-public-voice', name: '公共男声', description: '验收音色' }, { id: 'private-secret-voice', name: '不得分发', secret: 'fixture-secret' }],
       price: { version: 1, components: [{ meter: 'request', phase: 'request', amount: '1', unitSize: '1' }, { meter: 'billable_characters', amount: '0.1', unitSize: '1' }] } }
+    const asyncModel = { ...speech, id: 'async-speech', clientId: 'async-speech-client', adapter: 'minimax.speech_async' }
+    const archive = Buffer.alloc(1024); archive.write('ustar', 257)
     const provider = async (url, options) => {
       url = String(url)
+      if (url.endsWith('/v1/t2a_async_v2')) { asyncCreates++; return new Response('{"task_id":9876543210123456789,"usage_characters":5,"task_token":"fixture-secret-token","base_resp":{"status_code":0}}') }
+      if (url.includes('/v1/query/t2a_async_query_v2?')) {
+        asyncQueries++
+        assert(url.endsWith('task_id=9876543210123456789'))
+        if (asyncQueries === 1) throw new Error('Temporary query outage')
+        return new Response(JSON.stringify({ task_id: '9876543210123456789', status: asyncQueries === 2 ? 'Processing' : 'Success', file_id: '9876543210123456790', base_resp: { status_code: 0 } }))
+      }
+      if (url.includes('/v1/files/retrieve?')) return new Response(JSON.stringify({ file: { file_id: '9876543210123456790', download_url: 'https://minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com/task.tar' }, base_resp: { status_code: 0 } }))
+      if (url.endsWith('/task.tar')) { assert.equal(options.headers, undefined); return new Response(archive) }
       if (url === 'https://minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com/fixture-subtitles.json') {
         assert.equal(options.headers, undefined)
         return new Response(JSON.stringify([{ text: '你好AI', time_begin: 0, time_end: 1100 }]))
@@ -405,7 +416,7 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     }
     const officialStore = mysqlAccountingStore(pool, 'stream-official', 'ledger'), ledger = createSupplyLedger({ store: officialStore })
     await ledger.open(root.id, root.id); await ledger.credit(root.id, '100', 'stream-funds', 'operator', 'stream-funds-receipt')
-    const gateway = createModelGateway({ ledger, models: [model, speech], adapters: httpGatewayAdapters(provider), authorize: (token, audience) => center.introspect(token, audience) })
+    const gateway = createModelGateway({ ledger, models: [model, speech, asyncModel], adapters: httpGatewayAdapters(provider), authorize: (token, audience) => center.introspect(token, audience) })
     const officialApp = serviceApp(); registerModelGatewayRoutes(officialApp, { gateway, ledger, operators: {} }); serviceErrors(officialApp)
     upstreamServer = await new Promise(resolve => { const server = officialApp.listen(0, '127.0.0.1', () => resolve(server)) })
     const upstreamUrl = `http://127.0.0.1:${upstreamServer.address().port}`
@@ -433,6 +444,8 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     await service.configure(second, { modelId: model.id, enabled: true, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.2' }], pointsPerCny: '1', expectedVersion: 0 }, 'child')
     await service.configure(root, { modelId: speech.id, enabled: true, saleMarkup: [], supplyMarkup: [{ meter: 'request', phase: 'request', amount: '0.3' }], pointsPerCny: '1', expectedVersion: 0 }, 'operator')
     await service.configure(second, { modelId: speech.id, enabled: true, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.2' }], pointsPerCny: '1', expectedVersion: 0 }, 'child')
+    await service.configure(root, { modelId: asyncModel.id, enabled: true, saleMarkup: [], supplyMarkup: [{ meter: 'request', phase: 'request', amount: '0.3' }], pointsPerCny: '1', expectedVersion: 0 }, 'operator')
+    await service.configure(second, { modelId: asyncModel.id, enabled: true, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.2' }], pointsPerCny: '1', expectedVersion: 0 }, 'child')
     await service.credit(root, second.id, '100', 'stream-child-funds', 'stream-child-receipt', 'operator')
     setAuthDependencies({ getEndUserByToken: async token => ['stream-client', 'other-client'].includes(token) ? { id: token === 'stream-client' ? 'stream-user' : 'other-user', status: 'enabled' } : null, getClientAuthorization: async () => true })
     const localApp = serviceApp(); registerClientSupplyBridge(localApp, { runtime, tenantForUser: async req => req.headers['x-test-other-org'] ? { ...second, id: 'another-child' } : second }); serviceErrors(localApp)
@@ -507,6 +520,28 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     await speak({ ...speechBody, idempotencyKey: 'speech-unknown', text: 'missing speech usage' }); await runtime.flush()
     assert.equal(speechCalls, 2, 'unknown speech must never be resent')
     assert.equal((await fetch(`${voiceUrl}/tasks/speech-unknown/audio`, { headers })).status, 409)
+    const taskUrl = `http://127.0.0.1:${localServer.address().port}/api/client/model-tasks`
+    const taskInput = { model: asyncModel.clientId, idempotencyKey: 'async-client', request: { text: '你好。', voiceId: 'approved-public-voice' } }
+    const createTask = () => fetch(taskUrl, { method: 'POST', headers, body: JSON.stringify(taskInput) })
+    const accepted = (await (await createTask()).json()).data
+    assert.equal(accepted.status, 'pending'); assert.equal(accepted.id, 'async-client')
+    assert.equal((await (await createTask()).json()).data.id, accepted.id); assert.equal(asyncCreates, 1)
+    assert.equal((await fetch(`${taskUrl}/${accepted.id}/result`, { headers })).status, 409)
+    assert.equal((await (await fetch(`${taskUrl}/${accepted.id}/poll`, { method: 'POST', headers })).json()).data.status, 'outcome_unknown')
+    assert.equal((await (await fetch(`${taskUrl}/${accepted.id}`, { headers })).json()).data.status, 'outcome_unknown')
+    const savedJob = (await officialStore.readRequest(accepted.id)).job
+    assert.equal(savedJob.taskId, '9876543210123456789'); assert(!JSON.stringify(savedJob).includes('fixture-secret-token'))
+    runtime.stop(); runtime = makeRuntime()
+    asyncModel.price = { ...asyncModel.price, version: 2, components: asyncModel.price.components.map(c => ({ ...c, amount: '9' })) }
+    await runtime.flush(); await runtime.flush(); await runtime.flush()
+    const doneTask = (await (await fetch(`${taskUrl}/${accepted.id}`, { headers })).json()).data
+    assert.equal(doneTask.status, 'succeeded'); assert.equal(doneTask.settledPoints, 2)
+    assert.equal(doneTask.result.sha256, crypto.createHash('sha256').update(archive).digest('hex')); assert(!JSON.stringify(doneTask).includes('archiveBase64'))
+    const artifact = await fetch(`${taskUrl}/${accepted.id}/result`, { headers }); assert.equal(artifact.status, 200)
+    assert.deepEqual(Buffer.from(await artifact.arrayBuffer()), archive)
+    assert.equal((await fetch(`${taskUrl}/${accepted.id}/result`, { headers: { ...headers, Authorization: 'Bearer other-client' } })).status, 404)
+    assert.equal((await fetch(`${taskUrl}/${accepted.id}/result`, { headers: { ...headers, 'x-test-other-org': 'true' } })).status, 404)
+    await createTask(); assert.equal(asyncCreates, 1); assert.equal((await ledger.view(root.id)).balance, '92.700000')
     const heldSpeech = (await ledger.view(root.id)).reserved
     const missing = await call('stream-missing'); await wait(() => releases.has('stream-missing'), 'missing-usage admission')
     releases.get('stream-missing')(); const missingText = await missing.text()

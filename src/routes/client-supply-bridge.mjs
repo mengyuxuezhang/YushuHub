@@ -27,7 +27,7 @@ export function projectSupplyCatalog(rows) {
     const modelType = ({ chat: 'text', web_search: 'search', image_generation: 'image', image_edit: 'image', speech_synthesis: 'audio' })[row.model.taskType] || row.model.taskType
     return { id: row.model.clientId || row.model.id, modelId: row.model.clientId || row.model.id, capabilityId: row.model.id, name: row.model.name || row.model.id,
       description: '', providerId: 'supply', providerName: '授权模型', modelType, capabilities: [], reasoning: {}, contextWindow: row.model.contextWindow || 0,
-      configured: true, isDefault: false, supportsStreaming: row.model.supportsStreaming === true, pricing: {
+    configured: true, isDefault: false, supportsStreaming: row.model.supportsStreaming === true, executor: row.model.executor || 'sync', pricing: {
         billingType: modelType === 'image' ? 'per_image_resolution' : modelType === 'text' ? 'per_token' : 'per_request',
         inputPointsPerMTokens: points('input_tokens', '1000000'), outputPointsPerMTokens: points('output_tokens', '1000000'),
         pointsPerRequest: points('request', '1', 'request'), consumptionMultiplier: 1,
@@ -41,7 +41,7 @@ export function projectSupplyCatalog(rows) {
 export function registerClientSupplyBridge(app, { runtime, tenantForUser }) {
   if (!runtime) return
   async function submit(req, options = {}) {
-    const requestId = String(options.requestId || req.headers['idempotency-key'] || req.body.requestId || crypto.randomUUID())
+    const requestId = String(options.requestId || req.headers['idempotency-key'] || req.body.requestId || req.body.idempotencyKey || crypto.randomUUID())
     if (requestId.length > 80) throw failure('INVALID_ID', '请求ID不能超过80字符')
     const tenant = await tenantForUser(req), service = await runtime.service(), requested = req.body.model || req.body.modelId || req.body.capabilityId
     const row = (await service.list(tenant)).find(item => item.sale && (item.model.id === requested || item.model.clientId === requested))
@@ -106,14 +106,28 @@ export function registerClientSupplyBridge(app, { runtime, tenantForUser }) {
         results: (result?.data?.webPages?.value || []).map(item => ({ title: item.name, url: item.url, snippet: item.summary || item.snippet || '', siteName: item.siteName || '' })) } })
     } catch (error) { sendError(res, error) }
   })
-  const publicTask = operation => ({ id: operation.requestId, status: operation.state === 'settled' ? 'succeeded' : operation.state === 'unknown' ? 'outcome_unknown' : 'pending',
-    reservedPoints: Number(operation.reservedPoints), settledPoints: Number(operation.points || 0), result: operation.result || null })
+  const publicTask = operation => ({ id: operation.requestId, status: operation.state === 'settled' ? operation.result?.error ? 'failed' : 'succeeded' : operation.state === 'unknown' ? 'outcome_unknown' : 'pending',
+    reservedPoints: Number(operation.reservedPoints), settledPoints: Number(operation.points || 0), result: operation.result?.kind === 'speech_archive'
+      ? { kind: operation.result.kind, fileName: operation.result.fileName, mimeType: operation.result.mimeType, sha256: operation.result.sha256, byteLength: operation.result.byteLength } : operation.result || null })
   app.post('/api/client/model-tasks', requireClientAuth, async (req, res) => {
     try { res.json({ success: true, data: publicTask(await submit(req)) }) } catch (error) { sendError(res, error) }
   })
   app.get('/api/client/model-tasks/:id', requireClientAuth, async (req, res) => {
-    try { res.json({ success: true, data: publicTask(await (await runtime.service()).recover(await tenantForUser(req), req.clientUser.id, req.params.id)) }) }
+    try { res.setHeader('Cache-Control', 'private, no-store'); res.json({ success: true, data: publicTask(await (await runtime.service()).status(await tenantForUser(req), req.clientUser.id, req.params.id)) }) }
     catch (error) { sendError(res, error) }
+  })
+  app.get('/api/client/model-tasks/:id/result', requireClientAuth, async (req, res) => {
+    try {
+      const operation = await (await runtime.service()).status(await tenantForUser(req), req.clientUser.id, req.params.id), result = operation.result
+      if (operation.state !== 'settled' || operation.snapshot.model.adapter !== 'minimax.speech_async' || result?.kind !== 'speech_archive') throw failure('TASK_RESULT_UNAVAILABLE', '原任务产物尚不可用', 409)
+      if (typeof result.archiveBase64 !== 'string' || result.archiveBase64.length > 24 * 1024 * 1024) throw failure('TASK_RESULT_INVALID', '原任务产物需要核对', 409)
+      const bytes = Buffer.from(result.archiveBase64, 'base64')
+      if (!bytes.length || bytes.toString('base64') !== result.archiveBase64 || crypto.createHash('sha256').update(bytes).digest('hex') !== result.sha256) throw failure('TASK_RESULT_INVALID', '产物摘要不匹配', 409)
+      const extension = { 'application/x-tar': 'tar', 'application/zip': 'zip', 'application/gzip': 'tar.gz' }[result.mimeType]
+      if (!extension) throw failure('TASK_RESULT_INVALID', '产物格式未批准', 409)
+      res.setHeader('Cache-Control', 'private, no-store'); res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('X-Artifact-Sha256', result.sha256)
+      res.setHeader('Content-Disposition', `attachment; filename="speech.${extension}"`); res.type(result.mimeType).send(bytes)
+    } catch (error) { sendError(res, error) }
   })
   app.post('/api/client/model-tasks/:id/poll', requireClientAuth, async (req, res) => {
     try { res.json({ success: true, data: publicTask(await (await runtime.service()).recover(await tenantForUser(req), req.clientUser.id, req.params.id)) }) }

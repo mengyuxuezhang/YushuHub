@@ -2,6 +2,7 @@ import { failure } from './protocol.mjs'
 import { MiniMaxAdapter } from '../minimax-adapter.mjs'
 import { withNewApiSettlement } from './newapi-settlement.mjs'
 import { readChatStream } from './streaming.mjs'
+import { asyncSpeechAdapter } from './async-speech.mjs'
 import { normalizeImageGenerationRequest, buildUpstreamImagePayload, resolveResolutionTier } from '../image-generation.mjs'
 
 const event = (meter, quantity, extra = {}) => ({ meter, quantity: String(quantity), ...extra })
@@ -103,5 +104,6 @@ export function httpGatewayAdapters(fetcher = fetch) {
     },
   }
   adapters['newapi.chat'] = withNewApiSettlement(adapters['openai.chat'], fetcher)
+  adapters['minimax.speech_async'] = asyncSpeechAdapter(adapters['minimax.speech'], fetcher)
   return adapters
 }

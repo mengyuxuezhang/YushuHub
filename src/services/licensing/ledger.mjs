@@ -108,7 +108,11 @@ export function createSupplyLedger({ store, now = Date.now }) {
     pending(requestId, job) {
       return transact({ requestId }, state => {
         const operation = state.operations[identifier(requestId)]
+        if (operation?.state === 'settled') return operation
         if (!operation || !['running', 'pending', 'unknown'].includes(operation.state)) throw failure('INVALID_TRANSITION', '任务状态不允许更新', 409)
+        if (operation.job?.provider === 'minimax-async') for (const key of ['provider', 'taskId', 'configHash', 'characters', 'fileId', 'terminalStatus']) {
+          if (operation.job[key] != null && job?.[key] !== operation.job[key]) throw failure('ASYNC_JOB_CONFLICT', '原异步任务凭证不能替换', 409)
+        }
         operation.state = 'pending'; operation.job = structuredClone(job); operation.updatedAt = now()
         return operation
       })

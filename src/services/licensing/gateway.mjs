@@ -24,6 +24,7 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
   async function finish(claims, operation, outcome) {
     if (outcome.receipt) await ledger.confirmReceipt(operation.requestId, outcome.receipt)
     if (outcome.state === 'pending') return ledger.pending(operation.requestId, outcome.job)
+    if (!['done', 'settled'].includes(outcome.state)) return ledger.unknown(operation.requestId, 'ASYNC_OUTCOME_UNCONFIRMED')
     if (!Array.isArray(outcome.usage)) return ledger.unknown(operation.requestId, 'MISSING_USAGE')
     const amount = quoteSupply(operation.snapshot.price, outcome.usage)
     return ledger.settle(operation.requestId, amount, outcome.usage, outcome.result)
@@ -49,6 +50,7 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
         result.push({ id: model.id, clientId: model.clientId || model.id, name: model.name, taskType: model.taskType, version: model.version, adapter: model.adapter,
           contextWindow: model.contextWindow, maxOutputTokens: model.maxOutputTokens, maxImages: model.maxImages,
           supportsStreaming: model.supportsStreaming === true && model.adapter === 'newapi.chat' && model.settlementProtocol === 'okpa-v1',
+          executor: model.adapter === 'minimax.speech_async' ? 'async_job' : 'sync',
           allowedVoiceIds: model.allowedVoiceIds,
           publicVoices: (model.publicVoices || []).filter(voice => model.allowedVoiceIds?.includes(voice.id)).map(voice => ({ id: voice.id, name: String(voice.name || voice.id).slice(0, 120), description: String(voice.description || '').slice(0, 512) })),
           price: await currentPrice(model) })
@@ -84,6 +86,7 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
           requestId,
           onChunk,
           recordReceipt: receipt => ledger.receipt(requestId, receipt),
+          recordJob: job => ledger.pending(requestId, job),
         }))
       } catch (error) {
         // Only an explicit adapter assertion of no billed usage may release a hold.
@@ -97,7 +100,8 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
       if (!poll || !['pending', 'unknown'].includes(operation.state)) return operation
       const { model, adapter } = select(claims, operation.snapshot.modelId)
       if (model.version !== operation.snapshot.version || (operation.state === 'pending' ? !adapter.poll : !adapter.recover)) throw failure('CONFIG_CHANGED', '异步任务配置变更，需要对账处理', 409)
-      try { return await finish(claims, operation, await (operation.state === 'pending' ? adapter.poll(model, operation.job) : adapter.recover(model, operation))) }
+      const context = { recordJob: job => ledger.pending(requestId, job) }
+      try { return await finish(claims, operation, await (operation.state === 'pending' ? adapter.poll(model, operation.job, context) : adapter.recover(model, operation, context))) }
       catch { return ledger.unknown(requestId, 'POLL_OUTCOME_UNKNOWN') }
     },
     async acknowledge(token, requestId) {
@@ -113,7 +117,8 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
       // current grant no longer lists this model. Only query the original job.
       const model = catalog.get(operation.snapshot.modelId), adapter = model && adapters[model.adapter]
       if (!model || model.version !== operation.snapshot.version || (operation.state === 'pending' ? !adapter?.poll : !adapter?.recover)) throw failure('CONFIG_CHANGED', '原任务配置不可用，需要人工对账', 409)
-      try { return await finish(claims, operation, await (operation.state === 'pending' ? adapter.poll(model, operation.job) : adapter.recover(model, operation))) }
+      const context = { recordJob: job => ledger.pending(requestId, job) }
+      try { return await finish(claims, operation, await (operation.state === 'pending' ? adapter.poll(model, operation.job, context) : adapter.recover(model, operation, context))) }
       catch { return ledger.unknown(requestId, 'POLL_OUTCOME_UNKNOWN') }
     },
     async acknowledgeRecovery(token, requestId) {
