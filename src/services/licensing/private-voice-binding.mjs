@@ -49,7 +49,7 @@ export async function guardCustomVoiceBinding(connection, scope, credentialId, {
     const [[key]] = await connection.query(`SELECT k.id FROM ai_model_provider_keys k JOIN ai_organizations o ON o.id=k.organization_id
       JOIN ai_model_upstream_accounts a ON a.id=k.upstream_account_id WHERE k.id=? AND k.provider_id=? AND o.external_id=?
       AND k.owner_user_id=o.legacy_owner_user_id AND (COALESCE(k.provider_model_id,'')='' OR k.provider_model_id=?)
-      AND k.status='enabled' AND a.status='enabled' AND a.provider_id=k.provider_id AND a.organization_id=k.organization_id FOR UPDATE`, [credentialId, provider.id, scope.rootId, model.id])
+      ${action === 'delete' ? '' : "AND k.status='enabled' AND a.status='enabled'"} AND a.provider_id=k.provider_id AND a.organization_id=k.organization_id FOR UPDATE`, [credentialId, provider.id, scope.rootId, model.id])
     if (!key) throw failure('VOICE_BINDING_CHANGED', '原音色凭据不可用，禁止替换账号', 409)
   }
 }

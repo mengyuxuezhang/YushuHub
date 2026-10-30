@@ -24,9 +24,10 @@ export function createModelGateway({ ledger, authorize, models, adapters, privat
     const state = ledger.store.readConfiguration ? await ledger.store.readConfiguration() : await ledger.store.read(), versions = state.prices[model.id] || []
     return publicSupplyPlan(validateSupplyPrice(versions.filter(p => p.effectiveAt <= now()).sort((a, b) => a.effectiveAt - b.effectiveAt || a.version - b.version).at(-1) || model.price))
   }
-  async function privateAccess(token, modelId) {
-    const claims = await check(token), { model, adapter } = select(claims, modelId)
-    if (!privateVoiceStore || model.adapter !== 'minimax.private_voice') throw failure('VOICE_PRIVATE_SUPPLY_UNAVAILABLE', '该模型未开放私有音色', 503)
+  async function privateAccess(token, modelId, write = false) {
+    const claims = await check(token), model = catalog.get(identifier(modelId)), adapter = model && adapters[model.adapter]
+    if (write) select(claims, modelId)
+    if (!privateVoiceStore || model?.adapter !== 'minimax.private_voice' || !adapter?.remove) throw failure('VOICE_PRIVATE_SUPPLY_UNAVAILABLE', '该模型未开放私有音色', 503)
     if (!/^[a-f0-9]{64}$/.test(claims.subjectHash || '')) throw failure('VOICE_SUBJECT_REQUIRED', '私有音色须绑定已认证终端主体', 403)
     const identity = { rootId: claims.rootId, organizationId: claims.sub, subjectHash: claims.subjectHash, modelId: model.id }
     return { model, adapter, identity }
@@ -53,9 +54,9 @@ export function createModelGateway({ ledger, authorize, models, adapters, privat
     await adapter.acknowledge(model, operation)
   }
   return {
-    async privateAccess(token, modelId) { await privateAccess(token, modelId); return true },
+    async privateAccess(token, modelId, write = false) { await privateAccess(token, modelId, write); return true },
     async privateUpload(token, modelId, input) {
-      const { identity } = await privateAccess(token, modelId)
+      const { identity } = await privateAccess(token, modelId, true)
       if (input.consent !== true) throw failure('VOICE_CONSENT_REQUIRED', '须确认录音复刻授权')
       return privateVoiceStore.voices.upload(identity, { requestId: input.requestId, format: input.format, bytes: input.bytes })
     },
@@ -69,7 +70,13 @@ export function createModelGateway({ ledger, authorize, models, adapters, privat
     },
     async privateDelete(token, modelId, resourceId, requestId) {
       const { model, adapter, identity } = await privateAccess(token, modelId)
+      const resource = await privateVoiceStore.voices.get(identity, identifier(resourceId))
+      if (!resource.bindingHash) return privateVoiceStore.voices.discardUpload(identity, resourceId, requestId)
       return adapter.remove(model, identifier(resourceId), { ...identity, requestId: identifier(requestId) })
+    },
+    async privateDeletion(token, modelId, requestId) {
+      const { identity } = await privateAccess(token, modelId)
+      return privateVoiceStore.voices.deletion(identity, requestId)
     },
     async privateAudio(token, modelId, requestId) {
       const { identity } = await privateAccess(token, modelId), operation = await ledger.find(identifier(requestId), identity.rootId)

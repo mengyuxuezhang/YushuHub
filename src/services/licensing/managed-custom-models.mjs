@@ -48,8 +48,8 @@ export function managedCustomModels({ pool, materializeKey }) {
     let key
     if (credentialId) {
       const [[original]] = await pool.query(`SELECT k.* FROM ai_model_provider_keys k JOIN ai_model_upstream_accounts a ON a.id=k.upstream_account_id
-        WHERE k.id=? AND k.provider_id=? AND k.organization_id=? AND k.owner_user_id=? AND k.status='enabled'
-        AND (COALESCE(k.provider_model_id,'')='' OR k.provider_model_id=?) AND a.provider_id=k.provider_id AND a.organization_id=k.organization_id AND a.status='enabled'`,
+        WHERE k.id=? AND k.provider_id=? AND k.organization_id=? AND k.owner_user_id=?${recovery ? '' : " AND k.status='enabled' AND a.status='enabled'"}
+        AND (COALESCE(k.provider_model_id,'')='' OR k.provider_model_id=?) AND a.provider_id=k.provider_id AND a.organization_id=k.organization_id`,
       [identifier(credentialId), row.provider_id, organization.id, organization.legacy_owner_user_id, row.id])
       key = original
     } else {

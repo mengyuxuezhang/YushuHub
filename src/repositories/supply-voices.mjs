@@ -4,6 +4,7 @@ import path from 'node:path'
 import { digest, failure, identifier } from '../services/licensing/protocol.mjs'
 import { inspectVoiceAudio } from '../services/voice-audio.mjs'
 import { SUPPLY_VOICE_ARTIFACT_SCHEMA } from './supply-voice-artifacts.mjs'
+import { SUPPLY_VOICE_ROUTING_SCHEMA } from './supply-voice-routing.mjs'
 
 const table = (name, columns) => `CREATE TABLE IF NOT EXISTS supply_voice_${name} (${columns}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin`
 const bookColumn = 'book VARCHAR(80) CHARACTER SET ascii COLLATE ascii_bin NOT NULL'
@@ -20,7 +21,7 @@ export const SUPPLY_VOICE_SCHEMA = [
     action VARCHAR(24) NOT NULL,state VARCHAR(24) NOT NULL,fingerprint CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     updated_at BIGINT NOT NULL,payload JSON NOT NULL,PRIMARY KEY(book,id),KEY active_jobs(book,resource_id,state)`),
 ]
-export async function migrateSupplyVoiceSchema(pool) { for (const sql of [...SUPPLY_VOICE_SCHEMA, SUPPLY_VOICE_ARTIFACT_SCHEMA]) await pool.query(sql) }
+export async function migrateSupplyVoiceSchema(pool) { for (const sql of [...SUPPLY_VOICE_SCHEMA, SUPPLY_VOICE_ARTIFACT_SCHEMA, SUPPLY_VOICE_ROUTING_SCHEMA]) await pool.query(sql) }
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value
 const decode = row => row ? { ...parse(row.payload), id: row.id, status: row.status, expiresAt: Number(row.expires_at), createdAt: Number(row.created_at) } : null
 const sha = value => /^[a-f0-9]{64}$/.test(value || '')
@@ -111,6 +112,32 @@ export function supplyVoiceRepository({ pool, book, directory, inspectAudio = in
       }
     },
     async get(input, id) { return find(pool, scopeOf(input), id) },
+    async discardUpload(input, id, requestId) {
+      const scope = scopeOf(input); identifier(requestId)
+      const fingerprint = digest(JSON.stringify([scope, id, requestId, 'discard-upload']))
+      const outcome = { state: 'done', usage: [], result: { voiceId: id, deleted: true } }
+      await transaction(async connection => {
+        const resource = await find(connection, scope, id, true)
+        const [[previous]] = await connection.query('SELECT * FROM supply_voice_jobs WHERE book=? AND id=? FOR UPDATE', [book, requestId])
+        if (previous) { if (previous.fingerprint !== fingerprint) throw failure('IDEMPOTENCY_CONFLICT', '删除编号已用于其他操作', 409); return }
+        if (resource.bindingHash || !['uploaded', 'expired'].includes(resource.status)) throw failure('VOICE_NOT_READY', '已有供应商操作的音色不能作为未受理录音清理', 409)
+        const [[pending]] = await connection.query('SELECT COUNT(*) AS n FROM supply_voice_jobs WHERE book=? AND resource_id=?', [book, id])
+        if (Number(pending.n)) throw failure('VOICE_BUSY', '原录音已有受理记录', 409)
+        await update(connection, resource, 'deleted', 0)
+        await connection.query('INSERT INTO supply_voice_jobs(book,id,resource_id,organization_id,subject_hash,action,state,fingerprint,updated_at,payload) VALUES (?,?,?,?,?,?,?,?,?,?)',
+          [book, requestId, id, scope.organizationId, scope.subjectHash, 'delete', 'done', fingerprint, now(), JSON.stringify({ resourceId: id, stage: 'clean', outcome })])
+      })
+      await api.releaseSource(scope, id)
+      return outcome
+    },
+    async deletion(input, requestId) {
+      const scope = scopeOf(input); identifier(requestId)
+      const [[row]] = await pool.query(`SELECT j.* FROM supply_voice_jobs j JOIN supply_voice_resources r ON r.id=j.resource_id AND r.book=j.book
+        WHERE j.book=? AND j.id=? AND j.action='delete' AND r.root_id=? AND r.organization_id=? AND r.subject_hash=? AND r.model_id=?`, [book, requestId, ...scopeValues(scope)])
+      if (!row) throw failure('VOICE_JOB_NOT_FOUND', '原删除操作不存在', 404)
+      const job = parse(row.payload)
+      return { requestId, resourceId: row.resource_id, state: row.state, deleted: row.state === 'done' && job.outcome?.result?.deleted === true }
+    },
     async list(input) {
       const scope = scopeOf(input)
       const [rows] = await pool.query(`SELECT * FROM supply_voice_resources WHERE book=? AND ${ownedWhere} AND status NOT IN ('deleted','uploaded','expired') ORDER BY created_at DESC,id LIMIT 100`, [book, ...scopeValues(scope)])

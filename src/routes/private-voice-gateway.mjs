@@ -5,7 +5,7 @@ import { failure } from '../services/licensing/protocol.mjs'
 export function registerPrivateVoiceGatewayRoutes(app, { gateway }) {
   const base = '/api/model-gateway/v1/private-voices/:modelId'
   const authenticate = async (req, _res, next) => {
-    try { await gateway.privateAccess(bearer(req), req.params.modelId); next() } catch (error) { next(error) }
+    try { await gateway.privateAccess(bearer(req), req.params.modelId, req.path.endsWith('/upload')); next() } catch (error) { next(error) }
   }
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 1, fields: 4, fieldSize: 512, parts: 5 } }).single('audio')
   const receive = (req, res, next) => upload(req, res, error => {
@@ -17,6 +17,7 @@ export function registerPrivateVoiceGatewayRoutes(app, { gateway }) {
   })))
   app.get(base, authenticate, endpoint(req => gateway.privateList(bearer(req), req.params.modelId)))
   app.post(`${base}/resources/:id/delete`, authenticate, endpoint(req => gateway.privateDelete(bearer(req), req.params.modelId, req.params.id, req.body.requestId)))
+  app.get(`${base}/deletions/:id`, authenticate, endpoint(req => gateway.privateDeletion(bearer(req), req.params.modelId, req.params.id)))
   const audio = work => async (req, res, next) => {
     try {
       const file = await work(req)
