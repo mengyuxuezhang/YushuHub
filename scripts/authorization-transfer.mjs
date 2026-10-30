@@ -8,11 +8,12 @@ import { previewOfficialLegacyScope, applyOfficialLegacyScope } from '../src/ser
 import { reviewLegacyModels } from '../src/services/licensing/legacy-model-review.mjs'
 import { generateLegacyPriceShadowCases, shadowLegacyModelPrices } from '../src/services/licensing/legacy-price-shadow.mjs'
 import { stageLegacyModels } from '../src/services/licensing/legacy-model-stage.mjs'
+import { previewAccountingRetirement, applyAccountingRetirement } from '../src/services/licensing/accounting-retirement.mjs'
 
 const [command, ...args] = process.argv.slice(2), env = process.env
 const read = async file => JSON.parse(await fs.readFile(file, 'utf8'))
-const commands = { export: 2, manifest: 3, preview: 2, receipt: 2, 'apply-center': 3, 'bind-local': 3, 'official-preview': 3, 'official-apply': 4, 'model-preview': 4, 'model-shadow-samples': 4, 'model-shadow': 5, 'model-stage': 5, shadow: 2, 'rollback-check': 2 }
-if (!Object.hasOwn(commands, command) || args.length !== commands[command]) throw new Error('Usage: authorization-transfer.mjs export profile.json snapshot.json | manifest snapshot.json mapping.json manifest.json | preview manifest.json preview.json | receipt manifest.json receipt.json | apply-center manifest.json preview.json receipt.json | bind-local manifest.json receipt.json report.json | official-preview manifest.json receipt.json preview.json | official-apply manifest.json receipt.json preview.json report.json | model-preview manifest.json receipt.json reviews.json report.json | model-shadow-samples manifest.json receipt.json reviews.json samples.json | model-shadow manifest.json receipt.json reviews.json samples.json report.json | model-stage manifest.json receipt.json reviews.json bounds.json report.json | shadow manifest.json report.json | rollback-check snapshot.json report.json')
+const commands = { export: 2, manifest: 3, preview: 2, receipt: 2, 'apply-center': 3, 'bind-local': 3, 'official-preview': 3, 'official-apply': 4, 'model-preview': 4, 'model-shadow-samples': 4, 'model-shadow': 5, 'model-stage': 5, 'runtime-preview': 4, 'runtime-apply': 5, shadow: 2, 'rollback-check': 2 }
+if (!Object.hasOwn(commands, command) || args.length !== commands[command]) throw new Error('Usage: authorization-transfer.mjs export profile.json snapshot.json | manifest snapshot.json mapping.json manifest.json | preview manifest.json preview.json | receipt manifest.json receipt.json | apply-center manifest.json preview.json receipt.json | bind-local manifest.json receipt.json report.json | official-preview manifest.json receipt.json preview.json | official-apply manifest.json receipt.json preview.json report.json | model-preview manifest.json receipt.json reviews.json report.json | model-shadow-samples manifest.json receipt.json reviews.json samples.json | model-shadow manifest.json receipt.json reviews.json samples.json report.json | model-stage manifest.json receipt.json reviews.json bounds.json report.json | runtime-preview manifest.json receipt.json retire|resume preview.json | runtime-apply manifest.json receipt.json preview.json commandId report.json | shadow manifest.json report.json | rollback-check snapshot.json report.json')
 
 function database() {
   const fields = ['HOST', 'USER', 'PASSWORD', 'NAME']
@@ -91,6 +92,19 @@ try {
     result = await stageLegacyModels({ pool, ...manifest, result: await read(args[1]), reviews: await read(args[2]), input: await read(args[3]),
       publicKeys: await publicKeys(), maintenance: env.AI_AUTH_TRANSFER_MAINTENANCE === '1', actor: env.AI_AUTH_TRANSFER_ACTOR,
       fileIds: fileModels.map(model => model.id) }); output = args[4]
+  }
+  if (command === 'runtime-preview' || command === 'runtime-apply') {
+    const manifest = await read(args[0]), imported = await read(args[1]); pool = database()
+    const common = { pool, ...manifest, result: imported, publicKeys: await publicKeys() }
+    if (command === 'runtime-preview') {
+      result = await previewAccountingRetirement({ ...common, action: args[2] }); output = args[3]
+      if (result.blockers.length) process.exitCode = 2
+    } else {
+      if (env.AI_AUTHORIZATION_MIGRATION !== 'approved' || !env.AI_AUTH_TRANSFER_ACTOR) throw new Error('Explicit migration approval and audit actor are required')
+      const preview = await read(args[2])
+      result = await applyAccountingRetirement({ ...common, action: preview.action, previewDigest: preview.previewDigest,
+        commandId: args[3], actor: env.AI_AUTH_TRANSFER_ACTOR, maintenance: env.AI_AUTH_TRANSFER_MAINTENANCE === '1' }); output = args[4]
+    }
   }
   if (command === 'model-shadow') {
     const manifest = await read(args[0]), imported = await read(args[1]), reviews = await read(args[2]), samples = await read(args[3]), cachedKeys = await publicKeys(); pool = database()

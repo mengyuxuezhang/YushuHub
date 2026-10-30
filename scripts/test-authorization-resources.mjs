@@ -28,6 +28,8 @@ import { shadowLegacyAuthorization, legacyRollbackStatus } from '../src/services
 import { previewOfficialLegacyScope, applyOfficialLegacyScope } from '../src/services/licensing/official-legacy-scope.mjs'
 import { canonicalJson } from '../src/services/curated-skills.mjs'
 import { verifyLegacyStageRuntime } from './test-legacy-stage-runtime.mjs'
+import { assertAccountingRuntime } from '../src/services/licensing/accounting-mode.mjs'
+import { verifyRetirementBackup } from './test-accounting-retirement-backup.mjs'
 // Invoked by the disposable MySQL runner. Boot both real admin processes with
 // fictional resources; never inherit a deployment database or paid model route.
 if (!process.env.LICENSING_TEST_DB) throw new Error('Run through npm run test:licensing:mysql with its disposable database')
@@ -161,25 +163,80 @@ try{
  const stageInput={modelPreviewDigest:modelReview.previewDigest,items:[{sourcePlanId:'legacy-plan',adapter:'openai.chat',contextWindow:100,maxOutputTokens:20}]}
  await fs.writeFile(dir+'/model-bounds.json',JSON.stringify({...stageInput,items:[{...stageInput.items[0],contextWindow:101}]}),{mode:0o600})
  await assert.rejects(runTransfer('model-stage',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/price-reviews.json',dir+'/model-bounds.json',dir+'/bad-stage.json'))
- assert.equal(Number((await localPool.query("SELECT COUNT(*) AS n FROM accounting_settings WHERE book='commerce-v2' AND section='offers'"))[0][0].n),0)
+ assert.equal(Number((await localPool.query("SELECT COUNT(*) AS n FROM accounting_settings WHERE book='commerce-v2' AND section='offers' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.modelId'))='legacy-model'"))[0][0].n),0)
  assert.equal(JSON.stringify((await localPool.query("SELECT document FROM licensing_state WHERE id='commerce-v2-custom-definitions'"))[0]).includes('legacy-model'),false)
  await fs.writeFile(dir+'/model-bounds.json',JSON.stringify(stageInput),{mode:0o600})
  await localPool.query("CREATE TRIGGER stage_insert_denied BEFORE INSERT ON accounting_settings FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fictional stage storage failure'")
  try{await assert.rejects(runTransfer('model-stage',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/price-reviews.json',dir+'/model-bounds.json',dir+'/storage-failed-stage.json'))}
  finally{await localPool.query('DROP TRIGGER stage_insert_denied')}
  assert.equal(JSON.stringify((await localPool.query("SELECT document FROM licensing_state WHERE id='commerce-v2-custom-definitions'"))[0]).includes('legacy-model'),false)
- assert.equal(Number((await localPool.query("SELECT COUNT(*) AS n FROM accounting_settings WHERE book='commerce-v2' AND section='offers'"))[0][0].n),0)
+ assert.equal(Number((await localPool.query("SELECT COUNT(*) AS n FROM accounting_settings WHERE book='commerce-v2' AND section='offers' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.modelId'))='legacy-model'"))[0][0].n),0)
  await assert.rejects(fs.access(dir+'/storage-failed-stage.json'))
  await Promise.all(['a','b'].map(label=>runTransfer('model-stage',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/price-reviews.json',dir+'/model-bounds.json',dir+`/model-stage-${label}.json`)))
  const stagedResults=await Promise.all(['a','b'].map(async label=>JSON.parse(await fs.readFile(dir+`/model-stage-${label}.json`,'utf8'))))
  assert.equal(stagedResults.filter(row=>row.alreadyApplied).length,1);assert.equal(stagedResults[0].staged.length,1);assert.equal(stagedResults[0].cutoverReady,false);assert(stagedResults[0].blockers.length>0)
- const [[stagedSetting]]=await localPool.query("SELECT payload FROM accounting_settings WHERE book='commerce-v2' AND section='offers'")
+ const [[stagedSetting]]=await localPool.query("SELECT payload FROM accounting_settings WHERE book='commerce-v2' AND section='offers' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.modelId'))='legacy-model'")
  const stagedOffer=typeof stagedSetting.payload==='string'?JSON.parse(stagedSetting.payload):stagedSetting.payload
  assert.equal(stagedOffer.enabled,false);assert.equal(stagedOffer.pointsPerCny,'10.000000');assert.equal(stagedOffer.saleMarkup.find(row=>row.meter==='cached_tokens').amount,'1.000000')
  assert.equal((await collectMigrationProofs(localPool)).modelPrices.hash,snapshot.proofs.modelPrices.hash)
  await fs.writeFile(dir+'/model-bounds.json',JSON.stringify({...stageInput,modelPreviewDigest:'0'.repeat(64)}),{mode:0o600})
  await assert.rejects(runTransfer('model-stage',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/price-reviews.json',dir+'/model-bounds.json',dir+'/conflicting-stage.json'))
  await assert.rejects(fs.access(dir+'/conflicting-stage.json'))
+
+ // Actual old-mode start is allowed only after an empty-book retirement.
+ await localPool.query("INSERT INTO ai_end_users(id,username,display_name,password_hash,status,source_agent_id,organization_id,credit_balance) VALUES ('rollback-preserved-user','rollback-preserved-user','虚构回退权益用户',?,'enabled','admin',?,'7.123456')",[hashPassword(password),legacyOrganization.id])
+ const beforeRetirementProof=await collectMigrationProofs(localPool)
+ const stoppedOffer={modelId:'rollback-fixture-model',organizationId:'resources-root',enabled:true,version:1,actor:'fixture',at:Date.now(),priceEffectiveAt:Date.now(),pointsPerCny:'1',consumptionMultiplier:'1',saleMarkup:[],supplyMarkup:[],history:[]}
+ await localPool.query("INSERT INTO accounting_settings(book,id,section,payload) VALUES ('commerce-v2','offers:rollback-fixture','offers',?)",[JSON.stringify(stoppedOffer)])
+ await runTransfer('runtime-preview',dir+'/transfer.json',dir+'/readonly-receipt.json','retire',dir+'/runtime-retire-preview.json')
+ const retirementPreview=JSON.parse(await fs.readFile(dir+'/runtime-retire-preview.json','utf8'));assert.deepEqual(retirementPreview.blockers,[])
+ const [[oldBuildStatus]]=await localPool.query("SELECT status FROM ai_builds WHERE id='legacy-build'")
+ await localPool.query("UPDATE ai_builds SET status='queued' WHERE id='legacy-build'")
+ await assert.rejects(runTransfer('runtime-preview',dir+'/transfer.json',dir+'/readonly-receipt.json','retire',dir+'/runtime-pending-build.json'))
+ assert(JSON.parse(await fs.readFile(dir+'/runtime-pending-build.json','utf8')).blockers.includes('LEGACY_WORK_PENDING'))
+ await localPool.query("UPDATE ai_builds SET status=? WHERE id='legacy-build'",[oldBuildStatus.status])
+
+ await assert.rejects(runTransfer('runtime-apply',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/runtime-retire-preview.json','retire-fixture',dir+'/runtime-peer-denied.json'))
+ await localPool.query("UPDATE accounting_settings SET payload=JSON_SET(payload,'$.memo','fictional reviewed change') WHERE book='commerce-v2' AND id='offers:rollback-fixture'")
+ await localPool.end();localPool=null
+ await assert.rejects(runTransfer('runtime-apply',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/runtime-retire-preview.json','stale-retirement',dir+'/runtime-stale-denied.json'))
+ await runTransfer('runtime-preview',dir+'/transfer.json',dir+'/readonly-receipt.json','retire',dir+'/runtime-retire-reviewed.json')
+ await runTransfer('runtime-apply',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/runtime-retire-reviewed.json','retire-fixture',dir+'/runtime-retired.json')
+ await runTransfer('runtime-apply',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/runtime-retire-reviewed.json','retire-fixture',dir+'/runtime-retired-retry.json')
+ assert.equal(JSON.parse(await fs.readFile(dir+'/runtime-retired-retry.json','utf8')).alreadyApplied,true)
+ localPool=mysql.createPool({...config,database:names[0]})
+ await assertAccountingRuntime(localPool,false);await assert.rejects(assertAccountingRuntime(localPool,true),{code:'ACCOUNTING_BOOK_RETIRED'})
+ await assert.rejects(localPool.query("INSERT INTO accounting_requests(book,id,wallet_id,state,source,updated_at,payload) VALUES ('commerce-v2','old-writer-bypass','resources-root','running','custom',1,'{}')"),/ACCOUNTING_BOOK_RETIRED/)
+ await assert.rejects(localPool.query("INSERT INTO accounting_settings(book,id,section,payload) VALUES ('commerce-v2','offers:retired-bypass','offers','{}')"),/ACCOUNTING_BOOK_RETIRED/)
+ await assert.rejects(localPool.query("INSERT INTO ai_payment_refunds(order_id,id,owner_user_id,user_id,command_id,fingerprint,state,next_retry_at,lease_until,attempts,payload,created_at,updated_at) VALUES ('retired-cash','retired-cash','admin','fixture-user','retired-cash',?,'prepared',0,0,0,'{}',1,1)",['0'.repeat(64)]),/ACCOUNTING_BOOK_RETIRED/)
+ assert.equal((await legacyRollbackStatus(localPool,snapshot)).centralizedBookRetired,true)
+ assert.deepEqual(await collectMigrationProofs(localPool),beforeRetirementProof)
+ const oldWriter=await localPool.getConnection()
+ try{await oldWriter.beginTransaction();await oldWriter.query("UPDATE ai_end_users SET credit_balance=credit_balance-1 WHERE id='rollback-preserved-user'")
+  await assert.rejects(oldWriter.query("INSERT INTO accounting_requests(book,id,wallet_id,state,source,updated_at,payload) VALUES ('commerce-v2','old-writer-tx','resources-root','running','custom',1,'{}')"),/ACCOUNTING_BOOK_RETIRED/)
+ }finally{await oldWriter.rollback();oldWriter.release()}
+ assert.equal(String((await localPool.query("SELECT credit_balance FROM ai_end_users WHERE id='rollback-preserved-user'"))[0][0].credit_balance),'7.123456')
+ assert.equal(await verifyRetirementBackup(config,names[0]),true)
+ const beforeLegacyBootProof=await collectMigrationProofs(localPool)
+ await start('local','legacy');await login('local');await stop('local')
+ const afterLegacyBootProof=await collectMigrationProofs(localPool)
+ for(const group of ['balances','memberships','orders','ledger','projects','builds'])assert.deepEqual(afterLegacyBootProof[group],beforeLegacyBootProof[group],group)
+
+ await runTransfer('runtime-preview',dir+'/transfer.json',dir+'/readonly-receipt.json','resume',dir+'/runtime-resume-preview.json')
+ const beforeResumeProof=await collectMigrationProofs(localPool)
+ await localPool.end();localPool=null
+ await runTransfer('runtime-apply',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/runtime-resume-preview.json','resume-fixture',dir+'/runtime-resumed.json')
+ localPool=mysql.createPool({...config,database:names[0]})
+ assert.deepEqual(await collectMigrationProofs(localPool),beforeResumeProof)
+ await assertAccountingRuntime(localPool,true);await assert.rejects(assertAccountingRuntime(localPool,false),{code:'ACCOUNTING_MODE_DOWNGRADE_FORBIDDEN'})
+ const [[resumedOffer]]=await localPool.query("SELECT payload FROM accounting_settings WHERE book='commerce-v2' AND id='offers:rollback-fixture'")
+ const resumedOfferPayload=typeof resumedOffer.payload==='string'?JSON.parse(resumedOffer.payload):resumedOffer.payload
+ assert.equal(resumedOfferPayload.enabled,false);assert.equal(resumedOfferPayload.version,2)
+ assert.equal(JSON.parse(await fs.readFile(dir+'/runtime-resumed.json','utf8')).disabledOffers,1)
+ await runTransfer('runtime-apply',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/runtime-retire-reviewed.json','retire-fixture',dir+'/runtime-old-retire-replayed.json')
+ const oldRetireReplayed=JSON.parse(await fs.readFile(dir+'/runtime-old-retire-replayed.json','utf8'));assert.equal(oldRetireReplayed.alreadyApplied,true);assert.equal(oldRetireReplayed.currentStatus,'active');assert.equal(oldRetireReplayed.currentVersion,2)
+ await assertAccountingRuntime(localPool,true)
+
 
  const grant={code:imported.activationCode}
 
@@ -298,7 +355,11 @@ try{
  await restartLocal()
  assert(ok(await request('local','/api/client/skill-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.skill))
  assert(ok(await request('local','/api/client/agent-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.agent))
- const report={actualOfficialAndLocalProcesses:true,legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,officialScopeBackfillCli:true,oldBuildReadableByRootOnly:true,legacyPriceReviewCli:true,legacyUsageShadowCli:true,disabledModelStageCli:true,atomicModelStageRetry:true,installedModelRuntimeMock:true,cachedLegacyPricePreserved:true,sourcePriceMutationRejected:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,masterKeyReplacementDenied:true,restoredMasterAllowsRotation:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,inactiveTerminalRefundHttp:true,terminalRefundDoesNotCreditSupply:true,paidSupplierCalls:0,productionChanged:false}
+ await assert.rejects(runTransfer('runtime-preview',dir+'/transfer.json',dir+'/readonly-receipt.json','retire',dir+'/runtime-after-charge.json'))
+ const afterChargeRetirement=JSON.parse(await fs.readFile(dir+'/runtime-after-charge.json','utf8'));assert(afterChargeRetirement.blockers.includes('NEW_ACCOUNTING_HISTORY_PRESENT'));assert(afterChargeRetirement.blockers.includes('SECONDARY_ORGANIZATIONS_PRESENT'))
+ await stop('local');await localPool.end();localPool=null
+ await assert.rejects(runTransfer('runtime-apply',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/runtime-after-charge.json','retire-after-charge',dir+'/runtime-after-charge-denied.json'))
+ const report={actualOfficialAndLocalProcesses:true,legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,officialScopeBackfillCli:true,oldBuildReadableByRootOnly:true,legacyPriceReviewCli:true,legacyUsageShadowCli:true,disabledModelStageCli:true,atomicModelStageRetry:true,installedModelRuntimeMock:true,preSettlementRetirementAndResume:true,retirementBackupAndFencesRestored:true,retiredSqlWriterBlocked:true,postSettlementRetirementDenied:true,cachedLegacyPricePreserved:true,sourcePriceMutationRejected:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,masterKeyReplacementDenied:true,restoredMasterAllowsRotation:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,inactiveTerminalRefundHttp:true,terminalRefundDoesNotCreditSupply:true,paidSupplierCalls:0,productionChanged:false}
  await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2),{mode:0o600});console.log('Resource HTTP regression: '+JSON.stringify(report));completed=true
 }finally{
  await stop('local');await stop('official');if(centerServer){centerServer.closeAllConnections();await new Promise(r=>centerServer.close(r))}

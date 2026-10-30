@@ -1,5 +1,6 @@
 import { ACCOUNTING_SCHEMA } from './accounting-schema.mjs'
 import { decimal, digest, failure, identifier, micros } from '../services/licensing/protocol.mjs'
+import { assertAccountingNotRetired } from '../services/licensing/accounting-retirement-state.mjs'
 
 const decode = value => typeof value === 'string' ? JSON.parse(value) : value
 export const canonicalAccounting = value => JSON.stringify(value, function (_key, v) {
@@ -18,6 +19,7 @@ export function mysqlAccountingStore(pool, book, kind) {
   async function ready(connection) {
     const [[row]] = await connection.query('SELECT kind FROM accounting_books WHERE book=?', [book])
     if (row?.kind !== kind) throw failure('ACCOUNTING_NOT_READY', '账务表尚未显式初始化或迁入', 503)
+    await assertAccountingNotRetired(connection, book)
   }
   async function locked(connection, resources) {
     for (const resource of [...new Set(resources)].sort()) {

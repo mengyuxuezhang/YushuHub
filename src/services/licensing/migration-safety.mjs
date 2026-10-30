@@ -42,13 +42,13 @@ export async function legacyRollbackStatus(connection, snapshot) {
   }
   const runtime = await accountingRuntimeStatus(connection)
   const newAccountingHistoryPresent = requests > 0 || entries > 0 || activeHolds > 0 || cashRefunds > 0
-  const compatibleVersionRequired = newAccountingHistoryPresent || runtime.centralizedBookPresent
+  const compatibleVersionRequired = newAccountingHistoryPresent || (runtime.centralizedBookPresent && !runtime.centralizedBookRetired)
   const preSettlementReviewCandidate = !newAccountingHistoryPresent && rights.equal
   return { schemaVersion: 2, sourceId: snapshot.sourceId, checkedAt: Date.now(), requests, unsettled, entries, activeHolds, cashRefunds, pendingCashRefunds, rights,
     ...runtime, newAccountingHistoryPresent, preSettlementReviewCandidate,
     compatibleVersionRequired, oldModeCandidate: preSettlementReviewCandidate && runtime.legacyRuntimeAllowed, databaseSnapshotRestoreAllowed: false,
     automaticRollbackPerformed: false, authorizesRollback: false,
     instruction: newAccountingHistoryPresent ? '只能回退到兼容新账务的版本，保留现库和新增流水；先核对未结任务和预占。'
-      : runtime.centralizedBookPresent ? '尚无新资金记录，但新账务已经初始化，启动保护仍禁止旧计费模式；本工具不解除保护、不恢复数据库。'
+      : runtime.centralizedBookPresent && !runtime.centralizedBookRetired ? '尚无新资金记录，但新账务已经初始化，启动保护仍禁止旧计费模式；本工具不解除保护、不恢复数据库。'
         : '仅可作为结算前回退审核候选；仍须确认授权源、单写和服务配置，本工具不批准恢复旧库。' }
 }

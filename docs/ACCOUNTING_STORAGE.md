@@ -64,7 +64,7 @@ node scripts/accounting-migrate.mjs local audit
 
 网关入口兼容显式`--migrate`，有旧账时须`--migrate --import-legacy`；本地`authorization-local-migrate.mjs`仍要求原来的批准变量，并可用`--import-legacy`。两种入口调用同一迁入实现。本地邀请表仍由本地授权迁移命令创建。
 
-完成verify后配置center模式并启动新版本。已有`commerce-v2`账本的当前管理端拒绝以legacy模式启动，防止环境误配回到旧计费。预切换无损回退工具仍属P5待交付；目前不得直接改.env绕过保护。受理新结算后只能回退兼容新账务的代码，不能恢复旧库快照覆盖新流水。
+完成verify后配置center模式并启动新版本。已有且未受控退役的`commerce-v2`账本拒绝以legacy模式启动，防止环境误配回到旧计费。仅结算前、无二级/新资源/私有音色/资金记录的单一级库可以通过显式预览及退役工具改为旧模式，保留全部数据；恢复会停用全部报价。步骤、SQL保护、备份及版本边界见[迁移手册](AUTHORIZATION_MIGRATION_RUNBOOK.md#本地新账务结算前退役与恢复)，不得直接改.env、删除账本或修改状态绕过。受理新结算后只能回退兼容新账务的代码，不能恢复旧库快照覆盖新流水。
 
 ## 恢复与未知结果
 

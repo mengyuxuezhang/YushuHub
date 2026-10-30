@@ -6,8 +6,9 @@ import { auditAccounting, migrateAccounting } from '../src/services/licensing/ac
 import { createSupplyLedger } from '../src/services/licensing/ledger.mjs'
 
 const argumentsForTest = process.argv.slice(2)
-if (argumentsForTest.length > 1 || (argumentsForTest.length && !argumentsForTest[0].startsWith('--test-name-pattern='))) throw new Error('Only an optional --test-name-pattern is supported')
-const focused = argumentsForTest.length === 1
+const resourcesOnly = argumentsForTest.length === 1 && argumentsForTest[0] === '--resources-only'
+if (argumentsForTest.length > 1 || (argumentsForTest.length && !resourcesOnly && !argumentsForTest[0].startsWith('--test-name-pattern='))) throw new Error('Only --test-name-pattern or --resources-only is supported')
+const focused = argumentsForTest.length === 1 && !resourcesOnly
 if (focused) { if (argumentsForTest[0].length > 220) throw new Error('Bounded test pattern required'); new RegExp(argumentsForTest[0].slice('--test-name-pattern='.length)) }
 
 const name = `yushu-license-test-${crypto.randomBytes(6).toString('hex')}`, password = crypto.randomBytes(32).toString('hex')
@@ -33,16 +34,21 @@ try {
   await connection.end()
   console.log(`Running against disposable MySQL ${server.version}; no deployment credentials are used.`)
   if (focused) console.log('Focused database regression only; full resource HTTP, supply backup and capacity checks are skipped. Matching domain tests retain their own acceptance checks.')
-  const child = spawn(process.execPath, ['--test', ...argumentsForTest, 'src/services/licensing/licensing.mysql.test.mjs'], {
+  process.exitCode = 0
+  if (resourcesOnly) console.log('Resource/transfer/retirement HTTP and its backup regression only; native domain suite and supply capacity checks are skipped.')
+  if (!resourcesOnly) {
+    const child = spawn(process.execPath, ['--test', ...argumentsForTest, 'src/services/licensing/licensing.mysql.test.mjs'], {
     stdio: 'inherit', windowsHide: true, env: { ...process.env, LICENSING_TEST_DB: JSON.stringify(config), LICENSING_TEST_CONTAINER: name },
   })
   process.exitCode = await new Promise(resolve => { child.on('error', () => resolve(1)); child.on('exit', code => resolve(typeof code === 'number' ? code : 1)) })
+  }
   if (process.exitCode === 0 && !focused) {
     const resources = spawn(process.execPath, ['scripts/test-authorization-resources.mjs'], {
-      stdio: 'inherit', windowsHide: true, env: { ...process.env, LICENSING_TEST_DB: JSON.stringify(config) },
+      stdio: 'inherit', windowsHide: true, env: { ...process.env, LICENSING_TEST_DB: JSON.stringify(config), LICENSING_TEST_CONTAINER: name },
     })
     const resourceCode = await new Promise(resolve => { resources.on('error', () => resolve(1)); resources.on('exit', code => resolve(typeof code === 'number' ? code : 1)) })
     if (resourceCode !== 0) throw new Error('Isolated authorization resource HTTP regression failed')
+    if (!resourcesOnly) {
     // Backup/restore stays inside this disposable container; never print the dump.
     const env = { ...process.env, MYSQL_PWD: password }
     const dump = docker(['exec', '-e', 'MYSQL_PWD', name, 'mysqldump', '-uroot', '--single-transaction', '--set-gtid-purged=OFF', '--routines', '--triggers', 'yushu_gateway_test'], env)
@@ -102,6 +108,7 @@ try {
         console.log(`Accounting baseline: 20 wallets, 1000 requests, 40 concurrent workers across two pools; exact funds/zero holds/1000 durable events verified in ${Date.now() - began}ms (database-only, not supplier throughput).`)
       } finally { await secondPool.end() }
     } finally { await Promise.all([source.end(), restored.end()]) }
+    }
   }
 } finally {
   if (started) docker(['rm', '--force', '--volumes', name])
