@@ -27,6 +27,7 @@ import { applyLocalLegacyBinding } from '../src/services/licensing/local-legacy-
 import { shadowLegacyAuthorization, legacyRollbackStatus } from '../src/services/licensing/migration-safety.mjs'
 import { previewOfficialLegacyScope, applyOfficialLegacyScope } from '../src/services/licensing/official-legacy-scope.mjs'
 import { canonicalJson } from '../src/services/curated-skills.mjs'
+import { verifyLegacyStageRuntime } from './test-legacy-stage-runtime.mjs'
 // Invoked by the disposable MySQL runner. Boot both real admin processes with
 // fictional resources; never inherit a deployment database or paid model route.
 if (!process.env.LICENSING_TEST_DB) throw new Error('Run through npm run test:licensing:mysql with its disposable database')
@@ -68,7 +69,7 @@ try{
  await fs.writeFile(dir+'/public-keys.json',JSON.stringify(publicKeys),{mode:0o600})
  const operatorLogin=await fetch(centerUrl+'/api/license-center/v1/operator/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'fixture-operator',password,code:totp('JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',Math.floor(Date.now()/30000))})})
  const operatorSession=await operatorLogin.json();assert(operatorSession.success);await fs.writeFile(dir+'/operator-token',operatorSession.data.token,{mode:0o600})
- const runTransfer=async(...args)=>{const out=await promisify(execFile)(process.execPath,['scripts/authorization-transfer.mjs',...args],{cwd:root,windowsHide:true,env:{...process.env,NODE_ENV:'test',AI_AUTH_TRANSFER_DB_HOST:config.host,AI_AUTH_TRANSFER_DB_PORT:String(config.port),AI_AUTH_TRANSFER_DB_USER:config.user,AI_AUTH_TRANSFER_DB_PASSWORD:config.password,AI_AUTH_TRANSFER_DB_NAME:names[args[0].startsWith('official-')?1:0],AI_AUTHORIZATION_MIGRATION:'approved',AI_AUTH_TRANSFER_PUBLIC_KEYS_FILE:dir+'/public-keys.json',AI_AUTH_TRANSFER_MAINTENANCE:'1',AI_AUTH_TRANSFER_PUBLIC_URL:'https://resources-local.example.com',AI_AUTH_TRANSFER_INSTANCE_ID:'resource-instance',AI_AUTH_TRANSFER_CENTER_URL:centerUrl,AI_AUTH_TRANSFER_OPERATOR_TOKEN_FILE:dir+'/operator-token'}});assert(!out.stdout.includes(password));return out}
+ const runTransfer=async(...args)=>{const out=await promisify(execFile)(process.execPath,['scripts/authorization-transfer.mjs',...args],{cwd:root,windowsHide:true,env:{...process.env,NODE_ENV:'test',AI_AUTH_TRANSFER_DB_HOST:config.host,AI_AUTH_TRANSFER_DB_PORT:String(config.port),AI_AUTH_TRANSFER_DB_USER:config.user,AI_AUTH_TRANSFER_DB_PASSWORD:config.password,AI_AUTH_TRANSFER_DB_NAME:names[args[0].startsWith('official-')?1:0],AI_AUTHORIZATION_MIGRATION:'approved',AI_AUTH_TRANSFER_PUBLIC_KEYS_FILE:dir+'/public-keys.json',AI_AUTH_TRANSFER_MAINTENANCE:'1',AI_AUTH_TRANSFER_ACTOR:'fixture-migration-operator',AI_AUTH_TRANSFER_NO_FILE_MODELS:'1',AI_AUTH_TRANSFER_PUBLIC_URL:'https://resources-local.example.com',AI_AUTH_TRANSFER_INSTANCE_ID:'resource-instance',AI_AUTH_TRANSFER_CENTER_URL:centerUrl,AI_AUTH_TRANSFER_OPERATOR_TOKEN_FILE:dir+'/operator-token'}});assert(!out.stdout.includes(password));return out}
 
  await start('official','legacy',{AI_OFFICIAL_AUTHORIZATION_MODE:'center',AI_CENTER_SUPPLIER_MANAGEMENT:'1',AI_LICENSE_CENTER_URL:centerUrl})
  await start('local','legacy');await stop('local')
@@ -154,6 +155,29 @@ try{
  const officialResults=await Promise.all(['a','b'].map(async label=>JSON.parse(await fs.readFile(dir+`/official-result-${label}.json`,'utf8'))));assert.equal(officialResults.filter(item=>item.alreadyApplied).length,1)
  assert.equal((await previewOfficialLegacyScope(officialScopeInput)).changes.length,0)
 
+ const stageInput={modelPreviewDigest:modelReview.previewDigest,items:[{sourcePlanId:'legacy-plan',adapter:'openai.chat',contextWindow:100,maxOutputTokens:20}]}
+ await fs.writeFile(dir+'/model-bounds.json',JSON.stringify({...stageInput,items:[{...stageInput.items[0],contextWindow:101}]}),{mode:0o600})
+ await assert.rejects(runTransfer('model-stage',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/price-reviews.json',dir+'/model-bounds.json',dir+'/bad-stage.json'))
+ assert.equal(Number((await localPool.query("SELECT COUNT(*) AS n FROM accounting_settings WHERE book='commerce-v2' AND section='offers'"))[0][0].n),0)
+ assert.equal(JSON.stringify((await localPool.query("SELECT document FROM licensing_state WHERE id='commerce-v2-custom-definitions'"))[0]).includes('legacy-model'),false)
+ await fs.writeFile(dir+'/model-bounds.json',JSON.stringify(stageInput),{mode:0o600})
+ await localPool.query("CREATE TRIGGER stage_insert_denied BEFORE INSERT ON accounting_settings FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fictional stage storage failure'")
+ try{await assert.rejects(runTransfer('model-stage',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/price-reviews.json',dir+'/model-bounds.json',dir+'/storage-failed-stage.json'))}
+ finally{await localPool.query('DROP TRIGGER stage_insert_denied')}
+ assert.equal(JSON.stringify((await localPool.query("SELECT document FROM licensing_state WHERE id='commerce-v2-custom-definitions'"))[0]).includes('legacy-model'),false)
+ assert.equal(Number((await localPool.query("SELECT COUNT(*) AS n FROM accounting_settings WHERE book='commerce-v2' AND section='offers'"))[0][0].n),0)
+ await assert.rejects(fs.access(dir+'/storage-failed-stage.json'))
+ await Promise.all(['a','b'].map(label=>runTransfer('model-stage',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/price-reviews.json',dir+'/model-bounds.json',dir+`/model-stage-${label}.json`)))
+ const stagedResults=await Promise.all(['a','b'].map(async label=>JSON.parse(await fs.readFile(dir+`/model-stage-${label}.json`,'utf8'))))
+ assert.equal(stagedResults.filter(row=>row.alreadyApplied).length,1);assert.equal(stagedResults[0].staged.length,1);assert.equal(stagedResults[0].cutoverReady,false);assert(stagedResults[0].blockers.length>0)
+ const [[stagedSetting]]=await localPool.query("SELECT payload FROM accounting_settings WHERE book='commerce-v2' AND section='offers'")
+ const stagedOffer=typeof stagedSetting.payload==='string'?JSON.parse(stagedSetting.payload):stagedSetting.payload
+ assert.equal(stagedOffer.enabled,false);assert.equal(stagedOffer.pointsPerCny,'10.000000');assert.equal(stagedOffer.saleMarkup.find(row=>row.meter==='cached_tokens').amount,'1.000000')
+ assert.equal((await collectMigrationProofs(localPool)).modelPrices.hash,snapshot.proofs.modelPrices.hash)
+ await fs.writeFile(dir+'/model-bounds.json',JSON.stringify({...stageInput,modelPreviewDigest:'0'.repeat(64)}),{mode:0o600})
+ await assert.rejects(runTransfer('model-stage',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/price-reviews.json',dir+'/model-bounds.json',dir+'/conflicting-stage.json'))
+ await assert.rejects(fs.access(dir+'/conflicting-stage.json'))
+
  const grant={code:imported.activationCode}
 
  await start('local','center',envLocal);let rootCookie=await login('local');ok(await request('local','/api/authorization/activate',{code:grant.code},'POST',rootCookie));rootCookie=await login('local')
@@ -163,6 +187,8 @@ try{
  const childPwd=crypto.randomBytes(20).toString('hex');ok(await request('local','/api/authorization/invitation',{invitation,password:childPwd}));let childCookie=await login('local','resource_child',childPwd)
  const repeatedBinding=await applyLocalLegacyBinding({pool:localPool,...transferManifest,result:await center.legacyImportReceipt(transferManifest.batchId),publicKeys,maintenance:true,publicUrl:profile.domain,instanceId:profile.instanceId});assert.equal(repeatedBinding.alreadyApplied,true);assert.equal((await legacyRollbackStatus(localPool,snapshot)).databaseSnapshotRestoreAllowed,false)
  const [[childOwner]]=await localPool.query("SELECT legacy_owner_user_id FROM ai_organizations WHERE external_id='resources-child'");const [[rootOrg]]=await localPool.query("SELECT id,legacy_owner_user_id FROM ai_organizations WHERE external_id='resources-root'");assert(childOwner)
+ const stagedReview=ok(await request('local','/api/supply/custom-models',undefined,'GET',rootCookie)).records.find(row=>row.definition.id==='legacy-model')
+ assert.equal(stagedReview.revision,1);assert.equal(stagedReview.definition.status,'disabled');assert.equal(stagedReview.definition.clientId,'legacy-model-client')
  const oldBuilds=ok(await request('official','/api/center/builds/status',{buildIds:['legacy-remote']},'POST',`Bearer ${(await center.serviceToken(credential,'official-build')).token}`));assert.equal(oldBuilds.length,1)
  const hiddenBuilds=ok(await request('official','/api/center/builds/status',{buildIds:['legacy-remote']},'POST',`Bearer ${(await center.serviceToken(credential,'official-build','resources-child')).token}`));assert.equal(hiddenBuilds.length,0)
  // Configure existing model/key management and review its new supply definition
@@ -181,6 +207,13 @@ try{
  assert.deepEqual(await fs.readFile(modelMaster),originalMaster)
  assert.equal(Number((await localPool.query('SELECT COUNT(*) n FROM ai_model_provider_keys WHERE provider_id=?',[provider.id]))[0][0].n),1)
  assert.equal(ok(await request('local',`/api/model-providers/${provider.id}/keys`,{id:managedKey.id,apiKey:'fictional-review-rotated',providerModelId:localModel.id},'POST',rootCookie)).id,managedKey.id)
+ const stageRuntime=await verifyLegacyStageRuntime({pool:localPool,keyFile:modelMaster,proposal:oldText.proposal,rootId:'resources-root',organizationId:rootOrg.id,ownerId:rootOrg.legacy_owner_user_id,
+  api:async(path,body,method)=>ok(await request('local',path,body,method,rootCookie)),createUser:clientLogin})
+ assert.equal(stageRuntime.installedRuntimeSettlement,true)
+ await fs.writeFile(dir+'/model-bounds.json',JSON.stringify(stageInput),{mode:0o600})
+ await runTransfer('model-stage',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/price-reviews.json',dir+'/model-bounds.json',dir+'/model-stage-after-edits.json')
+ const stagedAfterEdits=ok(await request('local','/api/supply/custom-models',undefined,'GET',rootCookie)).records.find(row=>row.definition.id==='legacy-model')
+ assert.equal(stagedAfterEdits.revision,3);assert.equal(stagedAfterEdits.definition.status,'disabled')
  const review=ok(await request('local','/api/supply/custom-models',undefined,'GET',rootCookie)), candidate=review.candidates.find(item=>item.id===localModel.id)
  assert(candidate);assert.equal(JSON.stringify(review).includes('fictional-review-key'),false);assert.equal(JSON.stringify(review).includes('fictional-review-rotated'),false);assert.equal(JSON.stringify(review).includes('review-provider.example'),false)
  const reviewInput={providerModelId:localModel.id,expectedRevision:0,adapter:'openai.chat',status:'enabled',currency:'CNY',memo:'虚构报价审核',contextWindow:100,maxOutputTokens:5,clientId:'vendor-reviewed',costComponents:candidate.costComponents.map(item=>({...item,amount:'0.1'})),organizationId:'forged-child'}
@@ -262,7 +295,7 @@ try{
  await restartLocal()
  assert(ok(await request('local','/api/client/skill-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.skill))
  assert(ok(await request('local','/api/client/agent-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.agent))
- const report={actualOfficialAndLocalProcesses:true,legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,officialScopeBackfillCli:true,oldBuildReadableByRootOnly:true,legacyPriceReviewCli:true,legacyUsageShadowCli:true,cachedLegacyPricePreserved:true,sourcePriceMutationRejected:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,masterKeyReplacementDenied:true,restoredMasterAllowsRotation:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,inactiveTerminalRefundHttp:true,terminalRefundDoesNotCreditSupply:true,paidSupplierCalls:0,productionChanged:false}
+ const report={actualOfficialAndLocalProcesses:true,legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,officialScopeBackfillCli:true,oldBuildReadableByRootOnly:true,legacyPriceReviewCli:true,legacyUsageShadowCli:true,disabledModelStageCli:true,atomicModelStageRetry:true,installedModelRuntimeMock:true,cachedLegacyPricePreserved:true,sourcePriceMutationRejected:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,masterKeyReplacementDenied:true,restoredMasterAllowsRotation:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,inactiveTerminalRefundHttp:true,terminalRefundDoesNotCreditSupply:true,paidSupplierCalls:0,productionChanged:false}
  await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2),{mode:0o600});console.log('Resource HTTP regression: '+JSON.stringify(report));completed=true
 }finally{
  await stop('local');await stop('official');if(centerServer){centerServer.closeAllConnections();await new Promise(r=>centerServer.close(r))}

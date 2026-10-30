@@ -7,11 +7,12 @@ import { writeMigrationArtifact } from '../src/services/licensing/migration-arti
 import { previewOfficialLegacyScope, applyOfficialLegacyScope } from '../src/services/licensing/official-legacy-scope.mjs'
 import { reviewLegacyModels } from '../src/services/licensing/legacy-model-review.mjs'
 import { generateLegacyPriceShadowCases, shadowLegacyModelPrices } from '../src/services/licensing/legacy-price-shadow.mjs'
+import { stageLegacyModels } from '../src/services/licensing/legacy-model-stage.mjs'
 
 const [command, ...args] = process.argv.slice(2), env = process.env
 const read = async file => JSON.parse(await fs.readFile(file, 'utf8'))
-const commands = { export: 2, manifest: 3, preview: 2, receipt: 2, 'apply-center': 3, 'bind-local': 3, 'official-preview': 3, 'official-apply': 4, 'model-preview': 4, 'model-shadow-samples': 4, 'model-shadow': 5, shadow: 2, 'rollback-check': 2 }
-if (!Object.hasOwn(commands, command) || args.length !== commands[command]) throw new Error('Usage: authorization-transfer.mjs export profile.json snapshot.json | manifest snapshot.json mapping.json manifest.json | preview manifest.json preview.json | receipt manifest.json receipt.json | apply-center manifest.json preview.json receipt.json | bind-local manifest.json receipt.json report.json | official-preview manifest.json receipt.json preview.json | official-apply manifest.json receipt.json preview.json report.json | model-preview manifest.json receipt.json reviews.json report.json | model-shadow-samples manifest.json receipt.json reviews.json samples.json | model-shadow manifest.json receipt.json reviews.json samples.json report.json | shadow manifest.json report.json | rollback-check snapshot.json report.json')
+const commands = { export: 2, manifest: 3, preview: 2, receipt: 2, 'apply-center': 3, 'bind-local': 3, 'official-preview': 3, 'official-apply': 4, 'model-preview': 4, 'model-shadow-samples': 4, 'model-shadow': 5, 'model-stage': 5, shadow: 2, 'rollback-check': 2 }
+if (!Object.hasOwn(commands, command) || args.length !== commands[command]) throw new Error('Usage: authorization-transfer.mjs export profile.json snapshot.json | manifest snapshot.json mapping.json manifest.json | preview manifest.json preview.json | receipt manifest.json receipt.json | apply-center manifest.json preview.json receipt.json | bind-local manifest.json receipt.json report.json | official-preview manifest.json receipt.json preview.json | official-apply manifest.json receipt.json preview.json report.json | model-preview manifest.json receipt.json reviews.json report.json | model-shadow-samples manifest.json receipt.json reviews.json samples.json | model-shadow manifest.json receipt.json reviews.json samples.json report.json | model-stage manifest.json receipt.json reviews.json bounds.json report.json | shadow manifest.json report.json | rollback-check snapshot.json report.json')
 
 function database() {
   const fields = ['HOST', 'USER', 'PASSWORD', 'NAME']
@@ -78,6 +79,18 @@ try {
     const manifest = await read(args[0]), imported = await read(args[1]), reviews = await read(args[2]), cachedKeys = await publicKeys(); pool = database()
     result = await consistent(pool, connection => reviewLegacyModels(connection, { ...manifest, result: imported, publicKeys: cachedKeys, reviews })); output = args[3]
     if (result.blockers.length) process.exitCode = 2
+  }
+  if (command === 'model-stage') {
+    if (env.AI_AUTHORIZATION_MIGRATION !== 'approved') throw new Error('Explicit AI_AUTHORIZATION_MIGRATION=approved is required')
+    if (!env.AI_AUTH_TRANSFER_ACTOR) throw new Error('Explicit AI_AUTH_TRANSFER_ACTOR is required for the audit record')
+    const hasFile = Boolean(env.AI_AUTH_TRANSFER_CUSTOM_MODELS_FILE), noFile = env.AI_AUTH_TRANSFER_NO_FILE_MODELS === '1'
+    if (hasFile === noFile) throw new Error('Explicitly provide the deployment custom models file or declare AI_AUTH_TRANSFER_NO_FILE_MODELS=1')
+    const fileModels = hasFile ? await read(env.AI_AUTH_TRANSFER_CUSTOM_MODELS_FILE) : []
+    if (!Array.isArray(fileModels) || fileModels.some(model => !model || typeof model.id !== 'string')) throw new Error('Invalid controlled custom models file')
+    const manifest = await read(args[0]); pool = database()
+    result = await stageLegacyModels({ pool, ...manifest, result: await read(args[1]), reviews: await read(args[2]), input: await read(args[3]),
+      publicKeys: await publicKeys(), maintenance: env.AI_AUTH_TRANSFER_MAINTENANCE === '1', actor: env.AI_AUTH_TRANSFER_ACTOR,
+      fileIds: fileModels.map(model => model.id) }); output = args[4]
   }
   if (command === 'model-shadow') {
     const manifest = await read(args[0]), imported = await read(args[1]), reviews = await read(args[2]), samples = await read(args[3]), cachedKeys = await publicKeys(); pool = database()
