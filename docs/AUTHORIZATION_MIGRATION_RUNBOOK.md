@@ -113,3 +113,10 @@ bounds仅包含本轮model-preview的modelPreviewDigest和items数组；每项�
 
 
 停用暂存验收覆盖数据库存储失败回滚、同批并发/回复丢失、修改批次拒绝及后续界面修改不被旧回执覆盖。安装后的模拟调用使用原加密Key池、实际管理API开放定义/报价、实际运行时适配器和SQL积分账；仅fetch边界返回虚构供应商用量。分别验证双停用门槛、缓存拆分、0.8折扣、成本不随用户折扣减少、版本快照、重复与重启后不重复扣费。该测试不发送真实供应商请求，也不证明真实会员资格或正式历史价格已获批准。
+
+
+## 回退报告与实际启动保护
+
+rollback-check输出schemaVersion=2。preSettlementReviewCandidate只说明尚无新资金记录且权益摘要相同，是审核线索；oldModeCandidate还必须满足实际旧模式启动保护。两者都不是恢复许可，databaseSnapshotRestoreAllowed和authorizesRollback始终false，工具不执行数据库覆盖。不要沿用旧报告中“无流水即可恢复”的判断。
+
+报告复用服务启动检查：只要commerce-v2已初始化，即使请求/流水/预占均为零，legacyRuntimeAllowed仍为false，compatibleVersionRequired仍为true。必须保留现库运行兼容版本；本工具没有解除保护/退役新账务路径。若已有任一新请求、流水、有效预占或现金退款，newAccountingHistoryPresent为true，禁止以旧快照覆盖。正式结算前回退的受控退役工具、旧写入进程停止验证和真实回滚演练仍是独立缺口，不通过删除表或改标记绕过。

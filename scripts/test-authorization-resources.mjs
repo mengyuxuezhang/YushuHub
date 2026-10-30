@@ -115,7 +115,10 @@ try{
  const shadow=shadowLegacyAuthorization({...transferManifest,result:imported,publicKeys,proofs:await collectMigrationProofs(localPool),usage:(await center.preview('resources-root',{expectedVersion:1})).usage})
  assert.equal(shadow.authorizationAndRightsMatch,true,JSON.stringify(shadow));assert.equal(shadow.cutoverReady,false)
  await runTransfer('shadow',dir+'/transfer.json',dir+'/shadow.json');assert.equal(JSON.parse(await fs.readFile(dir+'/shadow.json','utf8')).authorizationAndRightsMatch,true)
- await runTransfer('rollback-check',dir+'/snapshot.json',dir+'/rollback.json');assert.equal(JSON.parse(await fs.readFile(dir+'/rollback.json','utf8')).databaseSnapshotRestoreAllowed,true)
+ await runTransfer('rollback-check',dir+'/snapshot.json',dir+'/rollback.json')
+ const emptyBookRollback=JSON.parse(await fs.readFile(dir+'/rollback.json','utf8'))
+ assert.equal(emptyBookRollback.schemaVersion,2);assert.equal(emptyBookRollback.databaseSnapshotRestoreAllowed,false);assert.equal(emptyBookRollback.preSettlementReviewCandidate,true)
+ assert.equal(emptyBookRollback.newAccountingHistoryPresent,false);assert.equal(emptyBookRollback.centralizedBookPresent,true);assert.equal(emptyBookRollback.legacyRuntimeAllowed,false);assert.equal(emptyBookRollback.oldModeCandidate,false);assert.equal(emptyBookRollback.compatibleVersionRequired,true)
  const officialScopeInput={pool:officialPool,...transferManifest,result:imported,publicKeys}
  await runTransfer('receipt',dir+'/transfer.json',dir+'/readonly-receipt.json');assert.equal(JSON.parse(await fs.readFile(dir+'/readonly-receipt.json','utf8')).activationCode,null)
  const priceReviews=[{sourcePlanId:'legacy-plan',pointsPerCny:'10',conversionReview:'虚构旧积分比例核定',costReview:'虚构独立人民币成本核定',costComponents:['request','input_tokens','cached_tokens','output_tokens'].map(meter=>({meter,phase:meter==='request'?'request':'usage',unitSize:meter==='request'?'1':'1000000',amount:'0.1',rounding:'none',minimumUnits:'0'}))}]
