@@ -185,6 +185,19 @@ export function mysqlAccountingStore(pool, book, kind) {
         return state
       })
     },
+    async commerceTotals(walletId, all = false) {
+      if (kind !== 'commerce') throw failure('INVALID_BOOK', '经营报表仅适用于本地账本')
+      await ready(pool)
+      const names = ['salesAmount', 'listSalesAmount', 'upstreamAmount', 'supplyAmount', 'firstMargin', 'secondMargin', 'marketingSubsidy', 'points']
+      const value = key => `NULLIF(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.${key}')),'null')`
+      const columns = names.map(key => {
+        const amount = key === 'listSalesAmount' ? `COALESCE(${value(key)},${value('salesAmount')},'0')` : `COALESCE(${value(key)},'0')`
+        return `COALESCE(SUM(CASE WHEN state='settled' THEN CAST(${amount} AS DECIMAL(32,6)) ELSE 0 END),0) AS ${key}`
+      })
+      const [[row]] = await pool.query(`SELECT COUNT(*) AS requestCount,SUM(state<>'settled') AS pendingCount,${columns.join(',')}
+        FROM accounting_requests WHERE book=?${all ? '' : ' AND wallet_id=?'}`, all ? [book] : [book, walletId])
+      return { requestCount: Number(row.requestCount), pendingCount: Number(row.pendingCount || 0), ...Object.fromEntries(names.map(key => [key, String(row[key])])) }
+    },
     async pending() {
       await ready(pool)
       const [rows] = await pool.query("SELECT payload FROM accounting_requests WHERE book=? AND state IN ('reserved','running','pending','unknown') AND source='official' AND next_recovery_at<=? ORDER BY next_recovery_at,updated_at,id LIMIT 50", [book, Date.now()])

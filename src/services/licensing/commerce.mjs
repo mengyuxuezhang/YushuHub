@@ -2,11 +2,11 @@ import crypto from 'node:crypto'
 import { decimal, digest, failure, identifier, micros } from './protocol.mjs'
 import { quoteSupply, withMarkup } from './pricing.mjs'
 import { emitChunk } from './streaming.mjs'
+import { benefitFactor, consumptionFactor } from './benefits.mjs'
 
-const numberString = value => typeof value === 'string' ? value : String(value)
-function userPoints(amount, pointsPerCny, discount) {
-  const numerator = micros(amount) * micros(pointsPerCny) * micros(discount)
-  return decimal((numerator + 999_999_999_999n) / 1_000_000_000_000n)
+function userPoints(amount, pointsPerCny, discount, multiplier = '1') {
+  const numerator = micros(amount) * micros(pointsPerCny) * micros(discount) * micros(multiplier)
+  return decimal((numerator + 999_999_999_999_999_999n) / 1_000_000_000_000_000_000n)
 }
 export function emptyCommerceState() {
   return { offers: {}, wallets: {}, requests: {}, entries: [], commands: {}, outbox: {} }
@@ -14,7 +14,7 @@ export function emptyCommerceState() {
 
 // The SQL user balance, child wallet, holds and local outbox commit together.
 // Official settlement is recovered by request ID rather than re-submitting inference.
-export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, userBank, now = Date.now }) {
+export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, userBank, benefits = async () => ({ discount: '1' }), now = Date.now }) {
   const transact = (scope, work) => store.scopeTransaction ? store.scopeTransaction(scope, work) : store.transaction(work)
   const configuration = () => store.readConfiguration ? store.readConfiguration() : store.read()
   const find = async id => store.readRequest ? store.readRequest(id) : (await store.read()).requests[id]
@@ -33,7 +33,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
     if (tenant.level === 2 && !second?.enabled) throw failure('MODEL_NOT_OFFERED', '二级尚未启用该模型', 403)
     const sale = tenant.level === 2 ? withMarkup(supply, second.saleMarkup) : firstSale
     return { model, sale, supply, pointsPerCny: second?.pointsPerCny || first.pointsPerCny, conversionVersion: second?.version || first.version,
-      offerVersion: first.version, secondOfferVersion: second?.version || null }
+      consumptionMultiplier: consumptionFactor((second || first).consumptionMultiplier ?? '1'), offerVersion: first.version, secondOfferVersion: second?.version || null }
   }
   async function complete(requestId, outcome) {
     return transact({ requestId }, async (state, connection) => {
@@ -47,8 +47,10 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
         return operation
       }
       const usage = outcome.usage || [], snapshot = operation.snapshot
-      const upstreamAmount = quoteSupply(snapshot.model.price, usage), supplyAmount = quoteSupply(snapshot.supply, usage), salesAmount = quoteSupply(snapshot.sale, usage)
-      const points = userPoints(salesAmount, snapshot.pointsPerCny, snapshot.discount)
+      const upstreamAmount = quoteSupply(snapshot.model.price, usage), supplyAmount = quoteSupply(snapshot.supply, usage), listSalesAmount = quoteSupply(snapshot.sale, usage)
+      const points = userPoints(listSalesAmount, snapshot.pointsPerCny, snapshot.discount, snapshot.consumptionMultiplier || '1')
+      const salesAmount = userPoints(listSalesAmount, '1', snapshot.discount, snapshot.consumptionMultiplier || '1')
+      const marketingSubsidy = decimal(micros(listSalesAmount) > micros(salesAmount) ? micros(listSalesAmount) - micros(salesAmount) : 0n)
       await userBank.settle(connection, operation.userId, operation.reservedPoints, points, requestId, snapshot.model.id)
       if (operation.level === 2) {
         const wallet = state.wallets[operation.organizationId]
@@ -56,7 +58,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
         wallet.balance = decimal(micros(wallet.balance) - micros(supplyAmount))
         state.entries.push({ id: crypto.randomUUID(), organizationId: operation.organizationId, requestId, kind: 'supply_debit', amount: decimal(-micros(supplyAmount)), at: now() })
       }
-      Object.assign(operation, { state: 'settled', usage, result: outcome.result, points, upstreamAmount, supplyAmount, salesAmount,
+      Object.assign(operation, { state: 'settled', usage, result: outcome.result, points, upstreamAmount, supplyAmount, listSalesAmount, salesAmount, marketingSubsidy,
         firstMargin: operation.level === 2 ? decimal(micros(supplyAmount) - micros(upstreamAmount)) : decimal(micros(salesAmount) - micros(upstreamAmount)),
         secondMargin: operation.level === 2 ? decimal(micros(salesAmount) - micros(supplyAmount)) : '0.000000', updatedAt: now() })
       state.outbox[requestId] = { requestId, source: snapshot.model.source, acknowledged: false, createdAt: now() }
@@ -69,12 +71,13 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       if (!model) throw failure('MODEL_UNAVAILABLE', '模型不在授权范围', 403)
       if (micros(input.pointsPerCny) <= 0n) throw failure('INVALID_CONVERSION', '积分兑换比例必须大于0')
       const saleMarkup = input.saleMarkup || [], supplyMarkup = tenant.level === 1 ? input.supplyMarkup || saleMarkup : []
+      const consumptionMultiplier = consumptionFactor(input.consumptionMultiplier ?? '1')
       withMarkup(model.price, saleMarkup); withMarkup(model.price, supplyMarkup)
       return store.transaction(state => {
         const key = `${tenant.id}:${modelId}`, previous = state.offers[key]
         if (input.expectedVersion !== (previous?.version || 0)) throw failure('VERSION_CONFLICT', '供货配置已变更', 409)
         if (tenant.level === 2 && !state.offers[`${rootId}:${modelId}`]?.enabled) throw failure('MODEL_NOT_OFFERED', '一级尚未供货', 403)
-        const value = { modelId, enabled: input.enabled === true, saleMarkup, supplyMarkup, pointsPerCny: decimal(micros(input.pointsPerCny)), version: (previous?.version || 0) + 1, actor, at: now() }
+        const value = { modelId, enabled: input.enabled === true, saleMarkup, supplyMarkup, consumptionMultiplier, pointsPerCny: decimal(micros(input.pointsPerCny)), version: (previous?.version || 0) + 1, actor, at: now() }
         state.offers[key] = value
         return value
       })
@@ -112,10 +115,13 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
     },
     async balance(tenant) {
       const state = store.history ? await store.history(tenant.id, tenant.level === 1) : await store.read(), operations = Object.values(state.requests).filter(op => tenant.level === 1 || op.organizationId === tenant.id)
+      const totals = store.commerceTotals ? await store.commerceTotals(tenant.id, tenant.level === 1) : null
+      if (totals && tenant.level !== 1) { delete totals.upstreamAmount; delete totals.firstMargin }
       return { wallet: state.wallets[tenant.id] || { balance: '0.000000', reserved: '0.000000' },
+        totals,
         entries: state.entries.filter(e => tenant.level === 1 || e.organizationId === tenant.id).slice(-200).reverse(),
         usage: operations.slice(-100).map(operation => ({ requestId: operation.requestId, state: operation.state,
-          salesAmount: operation.salesAmount, supplyAmount: operation.supplyAmount,
+          salesAmount: operation.salesAmount, listSalesAmount: operation.listSalesAmount || operation.salesAmount, marketingSubsidy: operation.marketingSubsidy || '0.000000', supplyAmount: operation.supplyAmount,
           ...(tenant.level === 1 ? { upstreamAmount: operation.upstreamAmount, firstMargin: operation.firstMargin, secondMargin: operation.secondMargin } : { secondMargin: operation.secondMargin }) })),
         unsettled: state.unsettledCount ?? operations.filter(op => op.state !== 'settled').length }
     },
@@ -128,15 +134,13 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
         return previous
       }
       const state = await configuration(), snapshot = await selected(state, tenant, modelId)
-      snapshot.discount = decimal(micros(numberString(tenant.discount ?? '1')))
-      if (micros(snapshot.discount) < 0n) throw failure('INVALID_DISCOUNT', '折扣无效')
       // Trusted model adapters calculate bounds; client estimatedUsage is ignored.
       const prepared = await snapshot.model.prepare(input.request), upperUsage = prepared.upperUsage
       if (snapshot.model.adapter === 'minimax.speech_async' && snapshot.model.source !== 'official') throw failure('ASYNC_SOURCE_UNSUPPORTED', '本阶段异步任务仅开放官方供货模型')
       if (snapshot.model.taskType === 'speech_synthesis') snapshot.speechVoiceId = prepared.request.voiceId
       if (prepared.request.stream === true && (snapshot.model.source !== 'official' || typeof onChunk !== 'function')) throw failure('STREAM_UNAVAILABLE', '实时流式供货需使用官方流式传输入口')
       if (!Array.isArray(upperUsage)) throw failure('UNBOUNDED_REQUEST', '缺少可执行计费上界')
-      const reservedPoints = userPoints(quoteSupply(snapshot.sale, upperUsage), snapshot.pointsPerCny, snapshot.discount), reservedSupply = quoteSupply(snapshot.supply, upperUsage)
+      const reservedSupply = quoteSupply(snapshot.supply, upperUsage)
       const reserved = await transact({ walletId: tenant.id, requestId, readConfiguration: true }, async (current, connection) => {
         const previous = current.requests[requestId]
         if (previous) {
@@ -145,6 +149,9 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
         }
         if (current.offers[`${rootId}:${modelId}`]?.version !== snapshot.offerVersion
           || (tenant.level === 2 && current.offers[`${tenant.id}:${modelId}`]?.version !== snapshot.secondOfferVersion)) throw failure('PRICE_CHANGED', '价格或供货状态已变更，请刷新后重试', 409)
+        snapshot.benefit = await benefits(connection, tenant, userId, snapshot.model, now())
+        snapshot.discount = benefitFactor(snapshot.benefit.discount)
+        const reservedPoints = userPoints(quoteSupply(snapshot.sale, upperUsage), snapshot.pointsPerCny, snapshot.discount, snapshot.consumptionMultiplier)
         if (tenant.level === 2) {
           const wallet = current.wallets[tenant.id]
           if (!wallet || micros(wallet.balance) < 0n || micros(wallet.balance) - micros(wallet.reserved) < micros(reservedSupply)) throw failure('INSUFFICIENT_FUNDS', '二级上游供货余额不足', 402)

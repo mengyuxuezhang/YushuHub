@@ -50,8 +50,8 @@ export function registerClientVoiceSupplyRoutes(app, { runtime, tenantForUser })
       }
       models.push({ id, name: row.model.name || id, task: 'speech_synthesis', privateVoiceSupported: false,
         parameters: { speed: { min: 0.5, max: 2 }, maxCharacters: 10000 },
-        prices: { preview: null, activation: null, previewPer1000Characters: null, per1000Characters: points('billable_characters'), pointsPerRequest: points('request') },
-        pricingV3: { components: row.sale.components, pointsPerCny: row.pointsPerCny } })
+        prices: { preview: null, activation: null, previewPer1000Characters: null, per1000Characters: points('billable_characters'), pointsPerRequest: points('request'), consumptionMultiplier: Number(row.consumptionMultiplier ?? '1') },
+        pricingV3: { components: row.sale.components, pointsPerCny: row.pointsPerCny, consumptionMultiplier: row.consumptionMultiplier || '1.000000' } })
       for (const upstreamId of row.model.allowedVoiceIds || []) {
         const display = row.model.publicVoices?.find(voice => voice.id === upstreamId)
         voices.push({ id: voiceId(row.model.id, upstreamId), modelId: id, name: String(display?.name || upstreamId).slice(0, 120), category: 'system', status: 'enabled', description: String(display?.description || '').slice(0, 512) })

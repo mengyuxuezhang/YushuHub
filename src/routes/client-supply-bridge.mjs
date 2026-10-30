@@ -30,10 +30,10 @@ export function projectSupplyCatalog(rows) {
     configured: true, isDefault: false, supportsStreaming: row.model.supportsStreaming === true, executor: row.model.executor || 'sync', pricing: {
         billingType: modelType === 'image' ? 'per_image_resolution' : modelType === 'text' ? 'per_token' : 'per_request',
         inputPointsPerMTokens: points('input_tokens', '1000000'), outputPointsPerMTokens: points('output_tokens', '1000000'),
-        pointsPerRequest: points('request', '1', 'request'), consumptionMultiplier: 1,
+        pointsPerRequest: points('request', '1', 'request'), consumptionMultiplier: Number(row.consumptionMultiplier ?? '1'),
         resolutionPoints: modelType === 'image' ? Object.fromEntries(['1K', '1.5K', '2K'].map(resolution => [resolution,
           row.sale.components.some(item => item.meter === 'image' && item.dimensions?.resolution === resolution) ? points('image', '1', 'usage', { resolution }) : 0])) : {},
-      }, pricingV3: { components: row.sale.components, pointsPerCny: row.pointsPerCny } }
+      }, pricingV3: { components: row.sale.components, pointsPerCny: row.pointsPerCny, consumptionMultiplier: row.consumptionMultiplier || '1.000000' } }
   })
   const chat = models.filter(model => model.modelType === 'text'), search = models.filter(model => model.modelType === 'search')
   return { models, searchModels: search, defaultModelId: chat[0]?.id || '', configured: chat.length > 0, searchConfigured: search.length > 0 }

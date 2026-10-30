@@ -6697,10 +6697,11 @@ const commerceRuntime = agentCommerceRuntime({ client: authorizationClient, data
 registerDeploymentAuthorizationRoutes(app, { client: authorizationClient, repository: organizationRepository, database: db, ensureAccountFreeMembership, monitor: commerceRuntime?.monitor })
 registerAgentSupplyRoutes(app, { runtime: commerceRuntime, client: authorizationClient,
   resolveUserContext: async user => {
-    const resolved = await organizationRepository.findOrganizationContextForUser(await keyOwnerUserIdForEndUser(user.id))
+    const billingOwnerUserId = await keyOwnerUserIdForEndUser(user.id)
+    const resolved = await organizationRepository.findOrganizationContextForUser(billingOwnerUserId)
     if (!resolved) throw new Error('终端用户没有有效的组织归属')
     const allowed = await allowedProviderModelIdSetForUser(user.id)
-    return { ...resolved.organization, organizationLevel: resolved.organization.agentLevel, organizationId: resolved.organization.id,
+    return { ...resolved.organization, billingOwnerUserId, organizationLevel: resolved.organization.agentLevel, organizationId: resolved.organization.id,
       ...(allowed ? { allowedModelIds: [...allowed] } : {}) }
   },
 })

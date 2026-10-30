@@ -8,8 +8,9 @@ import { createAgentCommerce, sqlUserBank } from './commerce.mjs'
 import { httpGatewayAdapters } from './http-adapters.mjs'
 import { digest, failure } from './protocol.mjs'
 import { chatStreamCollector, emitChunk, readSse } from './streaming.mjs'
+import { supplyMembershipBenefit } from './benefits.mjs'
 
-export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch }) {
+export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch, benefits = supplyMembershipBenefit }) {
   if (!client) return null
   const pool = { query: (...args) => database().query(...args), getConnection: () => database().getConnection() }
   const store = mysqlAccountingStore(pool, 'commerce-v2', 'commerce'), adapters = httpGatewayAdapters(fetchImpl)
@@ -68,11 +69,11 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     async tenant(context) {
       const grant = await client.claims(context.externalId || (context.organizationLevel === 2 ? context.organizationId : undefined))
       if (grant.level !== context.organizationLevel) throw failure('BINDING_MISMATCH', '本地组织与授权层级不符', 403)
-      return { ...grant, ...(context.allowedModelIds ? { modelIds: grant.modelIds.filter(id => context.allowedModelIds.includes(id)) } : {}) }
+      return { ...grant, billingOwnerUserId: context.billingOwnerUserId, ...(context.allowedModelIds ? { modelIds: grant.modelIds.filter(id => context.allowedModelIds.includes(id)) } : {}) }
     },
     async service({ recovery = false } = {}) {
       const root = recovery ? await client.recoveryIdentity() : await client.claims()
-      return createAgentCommerce({ store, rootId: root.id, userBank: sqlUserBank(), catalog,
+      return createAgentCommerce({ store, rootId: root.id, userBank: sqlUserBank(), catalog, benefits,
         invoke: async (tenant, model, input, options) => {
           if (model.source === 'official') return gateway(tenant, '/requests', { ...input, modelId: model.id, priceHash: digest(JSON.stringify(model.price)) }, undefined, options)
           const config = customModels.find(item => item.id === model.id)

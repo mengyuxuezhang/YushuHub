@@ -25,6 +25,7 @@ import { agentCommerceRuntime } from './commerce-runtime.mjs'
 import { httpGatewayAdapters } from './http-adapters.mjs'
 import { registerClientSupplyBridge } from '../../routes/client-supply-bridge.mjs'
 import { setAuthDependencies } from '../../middleware/auth.mjs'
+import { supplyMembershipBenefit } from './benefits.mjs'
 
 const configured = Boolean(process.env.LICENSING_TEST_DB)
 test('real MySQL: independent services, HTTP activation, concurrent accounting, restart and SQL user funds', { skip: !configured }, async () => {
@@ -274,7 +275,7 @@ test('real MySQL: independent services, HTTP activation, concurrent accounting, 
     const runtimeClient = { claims: async () => { if (expired) throw new Error('LICENSE_INACTIVE'); return { id: 'root', level: 1, modelMode: 'fixed' } },
       serviceToken: async () => { assert(!expired); return 'normal' }, recoveryIdentity: async () => ({ id: 'root' }),
       recoveryToken: async (org, id) => { assert.equal(org, 'root'); assert.equal(id, 'runtime-accepted'); return 'recovery' } }
-    const localRuntime = agentCommerceRuntime({ client: runtimeClient, database: () => gatewayPool, env: { AI_MODEL_GATEWAY_URL: 'https://gateway.example.com' },
+    const localRuntime = agentCommerceRuntime({ client: runtimeClient, database: () => gatewayPool, benefits: async () => ({ discount: '1' }), env: { AI_MODEL_GATEWAY_URL: 'https://gateway.example.com' },
       fetchImpl: async (url, options) => {
         let data
         if (url.endsWith('/catalog')) data = [{ id: 'test-chat', source: 'official', adapter: 'openai.chat', version: 1,
@@ -348,6 +349,8 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     await migrateAccounting({ pool, book: 'commerce-v2', kind: 'commerce', sourceId: 'runtime-source' })
     await pool.query('CREATE TABLE IF NOT EXISTS ai_end_users (id VARCHAR(64) PRIMARY KEY,status VARCHAR(16),credit_balance DECIMAL(18,6))')
     await pool.query('CREATE TABLE IF NOT EXISTS ai_credit_ledger (id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),model_name VARCHAR(120),note VARCHAR(255),request_id VARCHAR(80))')
+    await pool.query('CREATE TABLE ai_membership_cards (id VARCHAR(64) PRIMARY KEY,created_by VARCHAR(64),status VARCHAR(16),discount_percent DECIMAL(8,3),discount_modules JSON,updated_at DATETIME(3))')
+    await pool.query('CREATE TABLE ai_end_user_memberships (id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),card_id VARCHAR(64),status VARCHAR(16),started_at DATETIME(3),expires_at DATETIME(3),created_at DATETIME(3))')
     await pool.query('INSERT INTO ai_end_users VALUES (?,?,?)', ['stream-user', 'enabled', '100'])
     const keys = crypto.generateKeyPairSync('ed25519'), center = createLicenseCenter({ store: memoryStateStore(emptyCenterState()), privateKey: keys.privateKey,
       publicKeys: { test: keys.publicKey }, keyId: 'test', credentialKey: crypto.randomBytes(32) })
@@ -356,7 +359,7 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     const child = await center.issue({ id: 'stream-child', name: '测试二级', packageId: 'second', parentId: 'stream-root', expiresAt: null }, 'operator')
     await center.activate({ code: child.code, requestId: 'stream-child-activate', instanceId: 'stream-instance', domain: 'https://stream.example.com' }, activated.credential)
     const grant = id => center.list().then(list => list.grants.find(g => g.id === id))
-    const root = await grant('stream-root'), second = await grant('stream-child')
+    const root = await grant('stream-root'), second = { ...await grant('stream-child'), billingOwnerUserId: 'fixture-owner' }
     const price = { version: 1, components: [{ meter: 'request', phase: 'request', amount: '1', unitSize: '1' },
       ...['input_tokens', 'cached_tokens', 'output_tokens'].map(meter => ({ meter, amount: '0.1', unitSize: '1' }))] }
     const model = { id: 'stream-chat', name: '流式模型', model: 'stream-physical', adapter: 'newapi.chat', supportsStreaming: true, settlementProtocol: 'okpa-v1', status: 'enabled', version: 1,
@@ -445,7 +448,7 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     await service.configure(root, { modelId: speech.id, enabled: true, saleMarkup: [], supplyMarkup: [{ meter: 'request', phase: 'request', amount: '0.3' }], pointsPerCny: '1', expectedVersion: 0 }, 'operator')
     await service.configure(second, { modelId: speech.id, enabled: true, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.2' }], pointsPerCny: '1', expectedVersion: 0 }, 'child')
     await service.configure(root, { modelId: asyncModel.id, enabled: true, saleMarkup: [], supplyMarkup: [{ meter: 'request', phase: 'request', amount: '0.3' }], pointsPerCny: '1', expectedVersion: 0 }, 'operator')
-    await service.configure(second, { modelId: asyncModel.id, enabled: true, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.2' }], pointsPerCny: '1', expectedVersion: 0 }, 'child')
+    await service.configure(second, { modelId: asyncModel.id, enabled: true, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.2' }], consumptionMultiplier: '0.5', pointsPerCny: '1', expectedVersion: 0 }, 'child')
     await service.credit(root, second.id, '100', 'stream-child-funds', 'stream-child-receipt', 'operator')
     setAuthDependencies({ getEndUserByToken: async token => ['stream-client', 'other-client'].includes(token) ? { id: token === 'stream-client' ? 'stream-user' : 'other-user', status: 'enabled' } : null, getClientAuthorization: async () => true })
     const localApp = serviceApp(); registerClientSupplyBridge(localApp, { runtime, tenantForUser: async req => req.headers['x-test-other-org'] ? { ...second, id: 'another-child' } : second }); serviceErrors(localApp)
@@ -521,6 +524,8 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     assert.equal(speechCalls, 2, 'unknown speech must never be resent')
     assert.equal((await fetch(`${voiceUrl}/tasks/speech-unknown/audio`, { headers })).status, 409)
     const taskUrl = `http://127.0.0.1:${localServer.address().port}/api/client/model-tasks`
+    await pool.query('INSERT INTO ai_membership_cards VALUES (?,?,?,?,?,?)', ['benefit-card', 'fixture-owner', 'enabled', '25', JSON.stringify(['voice_synthesis']), new Date()])
+    await pool.query('INSERT INTO ai_end_user_memberships VALUES (?,?,?,?,?,?,?)', ['benefit-membership', 'stream-user', 'benefit-card', 'active', new Date(Date.now() - 1000), new Date(Date.now() + 3600000), new Date()])
     const taskInput = { model: asyncModel.clientId, idempotencyKey: 'async-client', request: { text: '你好。', voiceId: 'approved-public-voice' } }
     const createTask = () => fetch(taskUrl, { method: 'POST', headers, body: JSON.stringify(taskInput) })
     const accepted = (await (await createTask()).json()).data
@@ -532,16 +537,46 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     const savedJob = (await officialStore.readRequest(accepted.id)).job
     assert.equal(savedJob.taskId, '9876543210123456789'); assert(!JSON.stringify(savedJob).includes('fixture-secret-token'))
     runtime.stop(); runtime = makeRuntime()
+    await pool.query("UPDATE ai_membership_cards SET discount_percent=100,status='disabled' WHERE id='benefit-card'")
+    await pool.query("UPDATE ai_end_user_memberships SET expires_at=? WHERE id='benefit-membership'", [new Date(Date.now() - 1000)])
+    await service.configure(second, { modelId: asyncModel.id, enabled: true, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.2' }], consumptionMultiplier: '0', pointsPerCny: '1', expectedVersion: 1 }, 'child')
     asyncModel.price = { ...asyncModel.price, version: 2, components: asyncModel.price.components.map(c => ({ ...c, amount: '9' })) }
     await runtime.flush(); await runtime.flush(); await runtime.flush()
     const doneTask = (await (await fetch(`${taskUrl}/${accepted.id}`, { headers })).json()).data
-    assert.equal(doneTask.status, 'succeeded'); assert.equal(doneTask.settledPoints, 2)
+    assert.equal(doneTask.status, 'succeeded'); assert.equal(doneTask.settledPoints, 0.25)
     assert.equal(doneTask.result.sha256, crypto.createHash('sha256').update(archive).digest('hex')); assert(!JSON.stringify(doneTask).includes('archiveBase64'))
     const artifact = await fetch(`${taskUrl}/${accepted.id}/result`, { headers }); assert.equal(artifact.status, 200)
     assert.deepEqual(Buffer.from(await artifact.arrayBuffer()), archive)
     assert.equal((await fetch(`${taskUrl}/${accepted.id}/result`, { headers: { ...headers, Authorization: 'Bearer other-client' } })).status, 404)
     assert.equal((await fetch(`${taskUrl}/${accepted.id}/result`, { headers: { ...headers, 'x-test-other-org': 'true' } })).status, 404)
     await createTask(); assert.equal(asyncCreates, 1); assert.equal((await ledger.view(root.id)).balance, '92.700000')
+    const benefitOp = await runtime.store.readRequest(accepted.id)
+    assert.equal(benefitOp.snapshot.benefit.membershipId, 'benefit-membership'); assert.equal(benefitOp.snapshot.discount, '0.250000')
+    assert.equal(benefitOp.snapshot.consumptionMultiplier, '0.500000'); assert.equal(benefitOp.marketingSubsidy, '1.750000')
+    assert.equal(benefitOp.firstMargin, '0.300000'); assert.equal(benefitOp.secondMargin, '-1.550000')
+    await service.configure(second, { modelId: speech.id, enabled: true, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.2' }], consumptionMultiplier: '0', pointsPerCny: '1', expectedVersion: 1 }, 'child')
+    const [[beforeFree]] = await pool.query('SELECT credit_balance FROM ai_end_users WHERE id=?', ['stream-user'])
+    const freeSpeech = (await (await speak({ ...speechBody, idempotencyKey: 'speech-free-marketing' })).json()).data
+    assert.equal(freeSpeech.status, 'succeeded'); assert.equal(freeSpeech.settledPoints, 0)
+    const [[afterFree]] = await pool.query('SELECT credit_balance FROM ai_end_users WHERE id=?', ['stream-user'])
+    assert.equal(afterFree.credit_balance, beforeFree.credit_balance); assert.equal((await ledger.view(root.id)).balance, '91.100000')
+    const freeOp = await runtime.store.readRequest('speech-free-marketing')
+    assert.equal(freeOp.marketingSubsidy, '2.100000'); assert.equal(freeOp.supplyAmount, '1.900000'); assert.equal(freeOp.secondMargin, '-1.900000')
+    const totals = (await service.balance(second)).totals
+    assert.equal(totals.marketingSubsidy, '3.850000'); assert.equal(totals.salesAmount, '7.550000')
+    assert.equal(totals.listSalesAmount, '11.400000'); assert.equal(totals.pendingCount, 1)
+    assert.equal(totals.upstreamAmount, undefined); assert.equal(totals.firstMargin, undefined)
+    const memberConnection = await pool.getConnection()
+    try {
+      await memberConnection.beginTransaction()
+      await memberConnection.query("UPDATE ai_membership_cards SET discount_percent=0,status='enabled',created_by='other-owner' WHERE id='benefit-card'")
+      await memberConnection.query("UPDATE ai_end_user_memberships SET expires_at=NULL WHERE id='benefit-membership'")
+      assert.equal((await supplyMembershipBenefit(memberConnection, second, 'stream-user', speech)).discount, '1.000000')
+      await memberConnection.query("UPDATE ai_membership_cards SET created_by='fixture-owner' WHERE id='benefit-card'")
+      assert.equal((await supplyMembershipBenefit(memberConnection, second, 'stream-user', speech)).discount, '0.000000')
+      assert.equal((await supplyMembershipBenefit(memberConnection, second, 'stream-user', { taskType: 'chat' })).discount, '1.000000')
+      await memberConnection.rollback()
+    } finally { memberConnection.release() }
     const heldSpeech = (await ledger.view(root.id)).reserved
     const missing = await call('stream-missing'); await wait(() => releases.has('stream-missing'), 'missing-usage admission')
     releases.get('stream-missing')(); const missingText = await missing.text()

@@ -48,7 +48,7 @@ function normalizeCard(row) {
     name: row.name,
     level: Number(row.level || 1),
     backgroundUrl: row.background_url || '',
-    discountPercent: Number(row.discount_percent || 100),
+    discountPercent: Number(row.discount_percent ?? 100),
     discountModules: parseJson(row.discount_modules, []),
     redeemOnly: Boolean(row.redeem_only),
     status: row.status || 'enabled',
@@ -158,7 +158,8 @@ async function saveCard(input = {}, actor, scope = null) {
   if (existing && actor?.role === 'agent' && existing.createdBy !== actor.id) throw new Error('无权编辑该会员卡')
   const level = Math.max(1, Math.floor(Number(input.level || 1)))
   const backgroundUrl = String(input.backgroundUrl || input.background_url || '').trim()
-  const discountPercent = Math.max(0, Math.min(100, Number(input.discountPercent ?? input.discount_percent ?? 100) || 100))
+  const discountPercent = Number(input.discountPercent ?? input.discount_percent ?? 100)
+  if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) throw new Error('会员折扣须为0至100')
   const modules = (Array.isArray(input.discountModules) ? input.discountModules : []).map((item) => String(item || '').trim()).filter((item) => DISCOUNT_MODULES.includes(item))
   const redeemOnly = input.redeemOnly === true || input.redeem_only === true || input.redeemOnly === '1' || input.redeem_only === '1'
   const isBuiltin = Boolean(existing?.systemBuiltin)

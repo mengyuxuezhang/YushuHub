@@ -42,11 +42,14 @@ test('supply form edits reactive pricing rows and preserves decimal input as str
     ;[...host.querySelectorAll('button')].find(button => button.textContent === '设置加价')!.click()
     await nextTick()
     const form = host.querySelector('form')!, amounts = form.querySelectorAll('input[inputmode="decimal"]')
-    expect(amounts.length).toBe(3)
-    const input = amounts[1] as HTMLInputElement
+    expect(amounts.length).toBe(4)
+    const multiplier = amounts[1] as HTMLInputElement
+    multiplier.value = '0'; multiplier.dispatchEvent(new Event('input', { bubbles: true }))
+    const input = amounts[2] as HTMLInputElement
     input.value = '0.000001'; input.dispatchEvent(new Event('input', { bubbles: true }))
     await nextTick(); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(save).toHaveBeenCalled())
     expect((save.mock.calls[0]![0] as { saleMarkup: { amount: string }[] }).saleMarkup[0]!.amount).toBe('0.000001')
+    expect((save.mock.calls[0]![0] as { consumptionMultiplier: string }).consumptionMultiplier).toBe('0')
   } finally { app.unmount() }
 })
