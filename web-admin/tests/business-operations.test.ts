@@ -1,3 +1,7 @@
+import { createApp, nextTick } from 'vue'
+import { createPinia } from 'pinia'
+import { useAuthStore } from '@/stores/auth'
+import { useBusinessOperations } from '@/composables/business/useBusinessOperations'
 import {
   createEndUser,
   deleteMembershipCard,
@@ -57,5 +61,24 @@ describe('business operation API contracts', () => {
     await listRedeemCodes({ search: 'batch-a', searchField: 'batch', status: 'unused' })
     expect(String(request.mock.calls[0][0])).toBe('/api/end-users?search=device-a&searchField=source&status=enabled')
     expect(String(request.mock.calls[1][0])).toBe('/api/redeem-codes?search=batch-a&searchField=batch&status=unused')
+  })
+})
+
+
+describe('inactive licensed business records', () => {
+  it('loads historical orders without requesting merchant configuration and defaults to read only', async () => {
+    const request = vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok({ items: [{ id: 'historical-order' }], page: 1, pageSize: 20, total: 1, totalPages: 1 }))
+    const pinia = createPinia(), auth = useAuthStore(pinia)
+    auth.user = { id: 'finance', username: 'finance', permissionKeys: ['payments.manage'], organizationContext: { authorizationSource: 'license-center', centralLicenseActive: false, organizationStatus: 'enabled' } }
+    let state!: ReturnType<typeof useBusinessOperations>
+    const app = createApp({ setup() { state = useBusinessOperations('payments'); return () => null } })
+    const host = document.createElement('div'); app.use(pinia); app.mount(host)
+    try {
+      for (let i = 0; i < 15; i++) { await Promise.resolve(); await nextTick() }
+      expect(state.readOnly.value).toBe(true)
+      expect(state.activeTab.value).toBe('orders')
+      expect(state.secondaryRows.value[0].id).toBe('historical-order')
+      expect(request.mock.calls.every(call => String(call[0]).startsWith('/api/payment-orders'))).toBe(true)
+    } finally { app.unmount(); host.remove() }
   })
 })

@@ -27,6 +27,8 @@ import { registerClientSupplyBridge } from '../../routes/client-supply-bridge.mj
 import { setAuthDependencies } from '../../middleware/auth.mjs'
 import { supplyMembershipBenefit } from './benefits.mjs'
 import { createResourceCoordinator, emptyResourceIntents } from './resource-runtime.mjs'
+import { UserUsageReportRepository } from '../../repositories/user-usage-report.mjs'
+import { normalizeReportQuery } from '../user-usage-report.mjs'
 import { centerBuildScopes } from './build-scopes.mjs'
 
 const configured = Boolean(process.env.LICENSING_TEST_DB)
@@ -688,4 +690,38 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     for (const server of [localServer, upstreamServer]) if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
     await pool.end(); delete process.env.STREAM_FIXTURE_INFERENCE; delete process.env.STREAM_FIXTURE_SETTLEMENT
   }
+})
+
+
+test('real MySQL historical usage includes settled supply points and metering without double-counting reserves', { skip: !configured }, async () => {
+  const { gatewayDatabase = 'yushu_gateway_test', licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable test database required')
+  const pool = mysql.createPool({ ...config, database: gatewayDatabase })
+  try {
+    await pool.query(`ALTER TABLE ai_end_users ADD organization_id VARCHAR(64) DEFAULT '', ADD username VARCHAR(64), ADD display_name VARCHAR(64), ADD email VARCHAR(64), ADD source_agent_id VARCHAR(64) DEFAULT '', ADD source_project_id VARCHAR(64) DEFAULT ''`)
+    await pool.query(`ALTER TABLE ai_credit_ledger ADD deduct_status VARCHAR(32) DEFAULT 'succeeded',ADD prompt_tokens BIGINT DEFAULT 0,ADD completion_tokens BIGINT DEFAULT 0,ADD total_tokens BIGINT DEFAULT 0,ADD billing_type VARCHAR(32),ADD raw_usage_json JSON,ADD created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)`)
+    await pool.query("UPDATE ai_end_users SET organization_id='stream-child',username=id,display_name=id WHERE id='stream-user'")
+    for (const statement of [
+      'CREATE TABLE ai_projects(id VARCHAR(64),owner_user_id VARCHAR(64),app_name VARCHAR(64))',
+      'CREATE TABLE ai_organizations(id VARCHAR(64),name VARCHAR(64))',
+      'CREATE TABLE ai_model_operations(id VARCHAR(64),user_id VARCHAR(64),status VARCHAR(32),task_type VARCHAR(64),capability_id VARCHAR(64),usage_json JSON,operation_type VARCHAR(64))',
+      'CREATE TABLE ai_model_task_capabilities(id VARCHAR(64),provider_model_id VARCHAR(64))',
+      'CREATE TABLE ai_provider_models(id VARCHAR(64),model_id VARCHAR(120),organization_id VARCHAR(64),model_type VARCHAR(32))',
+      'CREATE TABLE ai_voice_operations(id VARCHAR(64),user_id VARCHAR(64),status VARCHAR(32),voice_id VARCHAR(64),result_json JSON,operation_type VARCHAR(64))',
+      'CREATE TABLE ai_private_voices(id VARCHAR(64),user_id VARCHAR(64),provider_model_id VARCHAR(64))',
+      'CREATE TABLE ai_system_voices(id VARCHAR(64),organization_id VARCHAR(64),provider_model_id VARCHAR(64))',
+    ]) await pool.query(statement)
+    const actor = { id: 'fixture-owner', organizationContext: { organizationId: 'stream-child', legacyOwnerUserId: 'fixture-owner', accessibleOrganizationIds: ['stream-child'], dataScope: 'self' } }
+    const q = normalizeReportQuery({ startDate: '2026-01-01', endDate: '2026-12-31' })
+    const repo = new UserUsageReportRepository(pool, { includeSupply: true })
+    const [[expected]] = await pool.query(`SELECT COUNT(*) n,SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.points')) AS DECIMAL(24,6))) points FROM accounting_requests WHERE book='commerce-v2' AND state='settled' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.userId'))='stream-user' AND JSON_EXTRACT(payload,'$.result.error') IS NULL`)
+    assert.ok(Number(expected.n) > 0)
+    const result = await repo.overview(actor, q)
+    assert.equal(result.requests, Number(expected.n)); assert.equal(result.points, Number(expected.points))
+    const audio = await repo.overview(actor, { ...q, type: 'audio' })
+    assert.ok(audio.requests > 0); assert.ok(audio.audioCharacters > 0)
+    assert.equal((await repo.overview({ ...actor, organizationContext: { ...actor.organizationContext, organizationId: 'sibling', accessibleOrganizationIds: ['sibling'] } }, q)).requests, 0)
+    assert.equal((await new UserUsageReportRepository(pool).overview(actor, q)).requests, 0)
+    const list = await repo.users(actor, q); assert.equal(list.items.length, 1)
+  } finally { await pool.end() }
 })

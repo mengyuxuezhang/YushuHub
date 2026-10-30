@@ -1,4 +1,5 @@
 import { REPORT_METRICS, reportError } from '../services/user-usage-report.mjs'
+import { supplyReportFacts } from './supply-report-facts.mjs'
 
 export function reportUserScope(actor, alias = 'u') {
   const context = actor?.organizationContext
@@ -17,7 +18,7 @@ export function reportUserScope(actor, alias = 'u') {
 const digits = Array.from({ length: 10 }, (_, n) => `SELECT ${n} AS n`).join(' UNION ALL ')
 function eventMeter(json, meter) {
   return `(CASE WHEN JSON_TYPE(${json})='ARRAY' AND JSON_LENGTH(${json})<=100 THEN
-    (SELECT CASE WHEN SUM(JSON_TYPE(JSON_EXTRACT(${json}, CONCAT('$[', n.n+t.n*10, '].quantity'))) NOT IN ('INTEGER','DOUBLE','DECIMAL') OR JSON_EXTRACT(${json}, CONCAT('$[', n.n+t.n*10, '].quantity')) IS NULL OR CAST(JSON_UNQUOTE(JSON_EXTRACT(${json}, CONCAT('$[', n.n+t.n*10, '].quantity'))) AS DECIMAL(24,6))<0)>0 THEN NULL
+    (SELECT CASE WHEN SUM(JSON_TYPE(JSON_EXTRACT(${json}, CONCAT('$[', n.n+t.n*10, '].quantity'))) NOT IN ('INTEGER','DOUBLE','DECIMAL','STRING') OR JSON_UNQUOTE(JSON_EXTRACT(${json}, CONCAT('$[', n.n+t.n*10, '].quantity'))) NOT REGEXP '^[0-9]{1,18}([.][0-9]{1,6})?$' OR JSON_EXTRACT(${json}, CONCAT('$[', n.n+t.n*10, '].quantity')) IS NULL OR CAST(JSON_UNQUOTE(JSON_EXTRACT(${json}, CONCAT('$[', n.n+t.n*10, '].quantity'))) AS DECIMAL(24,6))<0)>0 THEN NULL
      ELSE SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(${json}, CONCAT('$[', n.n + t.n*10, '].quantity'))) AS DECIMAL(24,6))) END
      FROM (${digits}) n CROSS JOIN (${digits}) t
      WHERE n.n+t.n*10 < JSON_LENGTH(${json}) AND JSON_UNQUOTE(JSON_EXTRACT(${json}, CONCAT('$[', n.n+t.n*10, '].meter')))='${meter}') ELSE NULL END)`
@@ -41,7 +42,7 @@ const userColumns = `u.id AS userId,u.username,u.display_name AS displayName,u.o
   COALESCE(o.name,'未归属组织') AS organizationName,u.source_project_id AS projectId,COALESCE(p.app_name,NULLIF(u.source_project_id,''),'直接创建') AS projectName`
 const joins = 'LEFT JOIN ai_projects p ON p.id=u.source_project_id LEFT JOIN ai_organizations o ON o.id=u.organization_id'
 
-export function buildReportFacts(actor, q, period = true) {
+export function buildReportFacts(actor, q, period = true, includeSupply = false) {
   const scope = reportUserScope(actor)
   const clauses = [scope.sql, "l.change_type='consume'", "l.deduct_status IN ('succeeded','missing_usage')",
     "(mo.id IS NULL OR mo.status='succeeded')", "(vo.id IS NULL OR (vo.status='succeeded' AND vo.operation_type<>'delete'))",
@@ -53,7 +54,7 @@ export function buildReportFacts(actor, q, period = true) {
   if (q.projectId) { clauses.push('u.source_project_id=?'); params.push(q.projectId) }
   if (q.search) { clauses.push('(u.username LIKE ? OR u.display_name LIKE ? OR u.email LIKE ?)'); params.push(...Array(3).fill(`%${q.search}%`)) }
   if (period) { clauses.push('l.created_at>=? AND l.created_at<?'); params.push(q.start, q.end) }
-  const raw = `SELECT l.id, l.user_id AS userId, l.request_id AS requestId,l.created_at AS usedAt,
+  let raw = `SELECT l.id, l.user_id AS userId, l.request_id AS requestId,l.created_at AS usedAt,
     ABS(l.points_delta) AS points, l.prompt_tokens,l.completion_tokens,l.total_tokens,l.deduct_status,
     COALESCE(mo.usage_json,l.raw_usage_json) AS raw_usage,vo.result_json AS voice_result,
     COALESCE(NULLIF(l.model_name,''),mm.model_id,vm.model_id,'未记录') AS model,
@@ -77,6 +78,7 @@ export function buildReportFacts(actor, q, period = true) {
     LEFT JOIN ai_provider_models vm ON vm.id=COALESCE(pv.provider_model_id,sv.provider_model_id)
     LEFT JOIN ai_provider_models lm ON lm.id=(SELECT id FROM ai_provider_models WHERE model_id=l.model_name AND organization_id=u.organization_id ORDER BY id LIMIT 1)
     WHERE ${clauses.join(' AND ')}`
+  if (includeSupply) { const supply = supplyReportFacts(scope, q, period); raw += ` UNION ALL ${supply.sql}`; params.push(...supply.params) }
   const metrics = REPORT_METRICS.map(key => {
     let expression = ledgerMetrics[key]
     // Raw object input totals include cache hits; compound event arrays contain uncached input plus cached events.
@@ -102,18 +104,19 @@ function numeric(row) {
 function pageResult(items, total, q) { return { items, total, page: q.page, pageSize: q.pageSize, totalPages: Math.ceil(total / q.pageSize) } }
 
 export class UserUsageReportRepository {
-  constructor(pool) { this.pool = pool }
+  constructor(pool, { includeSupply = false } = {}) { this.pool = pool; this.includeSupply = includeSupply }
+  facts(actor, q, period = true) { return buildReportFacts(actor, q, period, this.includeSupply) }
   async rows(sql, params = []) {
     const [rows] = await this.pool.query({ sql, values: params, timeout: 25000, dateStrings: true })
     return rows
   }
   async overview(actor, q) {
-    const facts = buildReportFacts(actor, q)
+    const facts = this.facts(actor, q)
     const [row] = await this.rows(`SELECT COUNT(DISTINCT userId) AS users,${selection},${aggregate},${completeness} FROM (${facts.sql}) f`, facts.params)
     return numeric(row)
   }
   async trend(actor, q) {
-    const facts = buildReportFacts(actor, q)
+    const facts = this.facts(actor, q)
     return (await this.rows(`SELECT DATE_FORMAT(usedAt,'%Y-%m-%d') AS date,COUNT(DISTINCT userId) AS users,${selection} FROM (${facts.sql}) f GROUP BY DATE_FORMAT(usedAt,'%Y-%m-%d') ORDER BY date`, facts.params)).map(numeric)
   }
   userFilter(actor, q) {
@@ -126,8 +129,8 @@ export class UserUsageReportRepository {
     return { sql: clauses.join(' AND '), params }
   }
   async users(actor, q, exportLimit = 0) {
-    const facts = buildReportFacts(actor, q)
-    const all = buildReportFacts(actor, { ...q, model: '', type: '' }, false)
+    const facts = this.facts(actor, q)
+    const all = this.facts(actor, { ...q, model: '', type: '' }, false)
     const scope = this.userFilter(actor, q)
     const base = `FROM ai_end_users u ${joins}
       LEFT JOIN (SELECT userId,${selection},COUNT(DISTINCT DATE(usedAt)) AS activeDays,${aggregate},${completeness} FROM (${facts.sql}) f GROUP BY userId) a ON a.userId=u.id
@@ -151,11 +154,11 @@ export class UserUsageReportRepository {
     return user || null
   }
   async models(actor, q) {
-    const facts = buildReportFacts(actor, q)
+    const facts = this.facts(actor, q)
     return (await this.rows(`SELECT model,type,${selection},${aggregate},${completeness} FROM (${facts.sql}) f GROUP BY model,type ORDER BY points DESC,model`, facts.params)).map(numeric)
   }
   async calls(actor, q) {
-    const facts = buildReportFacts(actor, q)
+    const facts = this.facts(actor, q)
     const [count] = await this.rows(`SELECT COUNT(*) AS total FROM (${facts.sql}) f`, facts.params)
     const rows = await this.rows(`${facts.sql} ORDER BY usedAt DESC,id LIMIT ? OFFSET ?`, [...facts.params,q.pageSize,(q.page-1)*q.pageSize])
     return pageResult(rows.map(numeric), Number(count.total), q)
@@ -163,7 +166,7 @@ export class UserUsageReportRepository {
   async options(actor) {
     const scope = reportUserScope(actor)
     const projects = await this.rows(`SELECT DISTINCT u.source_project_id AS id,COALESCE(p.app_name,u.source_project_id) AS name FROM ai_end_users u LEFT JOIN ai_projects p ON p.id=u.source_project_id WHERE ${scope.sql} AND u.source_project_id<>'' ORDER BY name`, scope.params)
-    const facts = buildReportFacts(actor, {}, false)
+    const facts = this.facts(actor, {}, false)
     const models = await this.rows(`SELECT DISTINCT model AS id,model AS name FROM (${facts.sql}) f ORDER BY model`, facts.params)
     return { projects, models }
   }

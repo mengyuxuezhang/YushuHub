@@ -6766,6 +6766,7 @@ registerClientApiRoutes(app, {
 registerClientNoticeRoutes(app)
 
 registerSystemRoutes(app, {
+  getEffectivePermissionKeys,
   getSourceVersionInfo: getVisibleSourceVersionInfo,
   getSelfUpdateStatus,
   saveSelfUpdateManifestUrl,
@@ -6918,7 +6919,7 @@ registerUserRoutes(app, {
   deleteUserGroup,
 })
 
-registerUserUsageReportRoutes(app)
+registerUserUsageReportRoutes(app, { includeSupply: Boolean(authorizationClient) })
 registerAdminBusinessRoutes(app, {
   listCenterSuppliers,
   findCenterSupplierById,

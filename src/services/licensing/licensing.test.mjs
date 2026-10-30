@@ -612,3 +612,12 @@ test('new instance adopts only an online verified credential for its binding and
   await store.transaction(state => { state.rootId = 'different-agent' })
   await assert.rejects(client.adoptCredential(moved.credential), { code: 'BINDING_MISMATCH' })
 })
+
+
+test('package publication rejects transferable, ambiguous and duplicated capabilities, including fixed-mode key access', async () => {
+  const { center } = setup(), pkg = (await center.list()).packages.find(p => p.id === 'first-fixed')
+  for (const capabilities of [
+    [{ ...pkg.capabilities[0], transferable: true }], [{ ...pkg.capabilities[0], enabled: 'false' }],
+    [pkg.capabilities[0], pkg.capabilities[0]], [{ key: 'model_keys.manage', enabled: true, transferable: false, limitValue: 0 }],
+  ]) await assert.rejects(center.publishPackage({ ...pkg, version: 2, capabilities }, 'operator'), { code: 'INVALID_CAPABILITY' })
+})

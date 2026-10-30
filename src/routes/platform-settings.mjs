@@ -6,6 +6,7 @@ import { flattenPermissionCatalog } from '../services/permission-catalog.mjs'
 import { scopedOrganizationLicense } from '../services/organization-expiry.mjs'
 import { readAgentReleaseHistory } from '../services/release-history.mjs'
 import { repoRoot } from '../config/paths.mjs'
+import { sanitizePublicPlatformSettings } from '../services/platform-secrets.mjs'
 
 export function registerSystemRoutes(app, deps) {
   const {
@@ -66,7 +67,12 @@ export function registerSystemRoutes(app, deps) {
 
   app.get('/api/platform-settings', requireAuth, async (_req, res, next) => {
     try {
-      res.json({ success: true, data: sanitizePlatformSettings(await getPlatformSettingsForDisplay('platform'), { includeBuildCenter: _req.user.role === 'admin' }) })
+      const settings = await getPlatformSettingsForDisplay('platform')
+      if (_req.organizationContext?.authorizationSource === 'license-center') {
+        const keys = await deps.getEffectivePermissionKeys?.(_req.user) || []
+        const serverManager = _req.organizationContext.organizationLevel === 1 && keys.includes('platform_settings.manage')
+        res.json({ success: true, data: serverManager ? sanitizePlatformSettings(settings, { includeBuildCenter: true }) : sanitizePublicPlatformSettings(settings) })
+      } else res.json({ success: true, data: sanitizePlatformSettings(settings, { includeBuildCenter: _req.user.role === 'admin' }) })
     } catch (err) {
       next(err)
     }

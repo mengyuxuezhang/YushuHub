@@ -42,7 +42,7 @@ function formatDate(value:any){
         <button class="secondary-button" @click="b.load">
           <RefreshCw :size="16" />刷新</button
         ><button
-          v-if="section === 'end-users' || section === 'memberships' || section === 'redeem-codes' || (section === 'payments' && b.activeTab.value === 'primary')"
+          v-if="!b.readOnly.value && (section === 'end-users' || section === 'memberships' || section === 'redeem-codes' || (section === 'payments' && b.activeTab.value === 'primary'))"
           class="primary-button"
           @click="
             section === 'payments'
@@ -60,8 +60,9 @@ function formatDate(value:any){
         </button>
       </div>
     </header>
+    <p v-if="b.readOnly.value" class="panel-card" role="status">授权或经营状态不可用，当前仅查看历史记录；新购买、充值和配置修改已关闭。</p>
     <nav v-if="section === 'payments'" class="page-tabs">
-      <button :class="{ active: b.activeTab.value === 'primary' }" @click="b.activeTab.value = 'primary'">支付配置</button>
+      <button v-if="!b.readOnly.value" :class="{ active: b.activeTab.value === 'primary' }" @click="b.activeTab.value = 'primary'">支付配置</button>
       <button :class="{ active: b.activeTab.value === 'orders' }" @click="b.activeTab.value = 'orders'">支付订单</button>
     </nav>
     <BusinessSearchToolbar :section="section" :title="meta[0]" :b="b" />
@@ -281,7 +282,7 @@ function formatDate(value:any){
                 </td>
                 <td><StatusBadge :status="order.status" /></td>
                 <td class="action-column">
-                  <div class="row-actions">
+                  <div v-if="!b.readOnly.value" class="row-actions">
                     <button
                       class="text-button"
                       @click="b.orderAction(order, 'query')"

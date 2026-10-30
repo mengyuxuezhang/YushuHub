@@ -31,3 +31,15 @@ test('Admin timeline selects full history without removing admin and update perm
   await route.at(-1)({ query: { history: 'all' } }, response())
   assert.deepEqual(calls, [{ fullHistory: false }, { fullHistory: true }])
 })
+
+
+test('central secondary admins and staff only receive public branding, never deployment settings or secret previews', async () => {
+  const settings = { systemName: 'Brand', buildCenterUrl: 'https://private-center.example.com', buildCenterToken: 'private', ossAccessKeySecretPreview: 'private', modelGatewayKey: 'private', smtpPassword: 'private' }
+  const route = routes({ getPlatformSettingsForDisplay: async () => settings, getEffectivePermissionKeys: async () => ['platform_settings.manage'], sanitizePlatformSettings: value => value }).get('get /api/platform-settings').at(-1)
+  const second = response()
+  await route({ user: { role: 'admin' }, organizationContext: { authorizationSource: 'license-center', organizationLevel: 2 } }, second)
+  assert.deepEqual(second.body.data, { systemName: 'Brand' })
+  const first = response()
+  await route({ user: { role: 'admin' }, organizationContext: { authorizationSource: 'license-center', organizationLevel: 1 } }, first)
+  assert.equal(first.body.data.buildCenterUrl, settings.buildCenterUrl)
+})

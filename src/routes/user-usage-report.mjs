@@ -3,8 +3,8 @@ import { db } from '../db/pool.mjs'
 import { UserUsageReportRepository } from '../repositories/user-usage-report.mjs'
 import { createUserUsageReportService } from '../services/user-usage-report.mjs'
 
-export function registerUserUsageReportRoutes(app, { service } = {}) {
-  const getService = () => service || createUserUsageReportService(new UserUsageReportRepository(db()))
+export function registerUserUsageReportRoutes(app, { service, includeSupply = false } = {}) {
+  const getService = () => service || createUserUsageReportService(new UserUsageReportRepository(db(), { includeSupply }))
   const view = requirePermission('user_usage.view', '用户使用报表')
   const handler = (fn) => async (req, res, next) => {
     try { await fn(req, res, getService()) } catch (error) {

@@ -7,6 +7,7 @@ import { safeCenterId } from '../utils/slug.mjs'
 import { hashSecretToken } from '../utils/crypto.mjs'
 import { supplierAuthorizationState } from '../services/supplier-license-contract.mjs'
 import { organizationAuthorizationExpired, expiredOrganizationRequestAllowed } from '../services/organization-expiry.mjs'
+import { expiredClientRequestAllowed } from '../services/licensing/remediation.mjs'
 
 const deps = {
   getUserBySession: null,
@@ -33,12 +34,12 @@ export async function requireAuth(req, res, next) {
     req.organizationContext = user.organizationContext || null
     if (req.organizationContext?.authorizationSource === 'license-center' && (!req.organizationContext.centralLicenseActive
       || req.organizationContext.organizationStatus !== 'enabled' || req.organizationContext.memberStatus !== 'enabled')
-      && !expiredOrganizationRequestAllowed(req.method, req.path)) {
+      && !expiredOrganizationRequestAllowed(req.method, req.path, req.organizationContext)) {
       res.status(403).json({ success: false, code: 'LICENSE_INACTIVE', error: '授权不可用，请联系授权中心' })
       return
     }
     if (user.organizationContext?.organizationLevel === 2 && organizationAuthorizationExpired(user.organizationContext)
-      && !expiredOrganizationRequestAllowed(req.method, req.path)) {
+      && !expiredOrganizationRequestAllowed(req.method, req.path, req.organizationContext)) {
       res.status(403).json({ success: false, code: 'ORGANIZATION_LICENSE_EXPIRED', error: '二级代理授权已到期，请联系一级代理续期' })
       return
     }
@@ -134,7 +135,7 @@ export async function requireClientAuth(req, res, next) {
       return
     }
     req.clientUser = user
-    if (deps.getClientAuthorization && !await deps.getClientAuthorization(user)) {
+    if (deps.getClientAuthorization && !await deps.getClientAuthorization(user) && !expiredClientRequestAllowed(req.method, req.path)) {
       res.status(403).json({ success: false, code: 'LICENSE_INACTIVE', error: '所属代理授权或业务状态不可用' })
       return
     }

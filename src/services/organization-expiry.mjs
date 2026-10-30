@@ -1,4 +1,5 @@
 import { parseSupplierExpiresAt, supplierAuthorizationState } from './supplier-license-contract.mjs'
+import { inactiveCentralPermissions, recordRequestAllowed } from './licensing/remediation.mjs'
 
 export function earliestExpiry(...values) {
   const dates = values.map(parseSupplierExpiresAt).filter(Boolean).sort()
@@ -27,7 +28,8 @@ export function organizationAuthorizationExpired(context, now = Date.now()) {
   return Boolean(context?.expiresAt && Date.parse(context.expiresAt) <= now)
 }
 
-export function expiredOrganizationRequestAllowed(method, path) {
+export function expiredOrganizationRequestAllowed(method, path, context) {
+  if (context?.authorizationSource === 'license-center' && context.memberStatus === 'enabled' && recordRequestAllowed(method, path)) return true
   if ((method === 'GET' && path === '/api/authorization/monitor') || (method === 'PUT' && path === '/api/authorization/monitor/config')
     || (method === 'POST' && path === '/api/authorization/monitor/test')) return true
   if (method === 'GET' && ['/api/authorization/state', '/api/me', '/api/me/permissions'].includes(path)) return true
@@ -45,9 +47,9 @@ export function scopedOrganizationLicense(license, context, now = Date.now()) {
 
 export function filterOrganizationPermissions(keys, context, now = Date.now()) {
   if (!context) return keys
-  if (context.authorizationSource === 'license-center' && !context.centralLicenseActive) {
-    const remediation = new Set(['organizations.view', 'platform_settings.manage', 'authorization.view', 'account_security.manage', 'diagnostics.view'])
-    return keys.filter(key => remediation.has(key))
+  if (context.authorizationSource === 'license-center' && (!context.centralLicenseActive || context.organizationStatus !== 'enabled'
+    || context.memberStatus !== 'enabled' || organizationAuthorizationExpired(context, now))) {
+    return inactiveCentralPermissions(keys, context)
   }
   const allowed = new Set(context.capabilityKeys || [])
   let effective = allowed.has('*') ? keys : keys.filter(key => allowed.has(key))

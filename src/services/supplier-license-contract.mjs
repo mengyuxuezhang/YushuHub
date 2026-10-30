@@ -1,3 +1,5 @@
+import { CENTRAL_REMEDIATION_PERMISSIONS } from './licensing/remediation.mjs'
+
 export function shouldApplyOrganizationAuthorization(license = {}) {
   return Number(license.authorizationVersion || 0) > 0
     || (Array.isArray(license.capabilities) && license.capabilities.length > 0)
@@ -43,7 +45,8 @@ export function supplierLicenseAllowsPermission(permission, license, officialCen
   if (!permission) return false
   if (permission.officialCenterOnly && !officialCenterEnabled) return false
   if (officialCenterEnabled) return true
-  const remediation = ['platform_settings.manage', 'authorization.view', 'account_security.manage', 'diagnostics.view'].includes(permission.key)
+  const remediation = license?.source === 'license-center' ? CENTRAL_REMEDIATION_PERMISSIONS.has(permission.key)
+    : ['platform_settings.manage', 'authorization.view', 'account_security.manage', 'diagnostics.view'].includes(permission.key)
   if (!license?.verified || license.status !== 'enabled' || license.expired) return remediation
   return !permission.supplierAbility || Boolean(license[permission.supplierAbility])
 }

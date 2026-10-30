@@ -2,11 +2,15 @@ import { computed, onMounted, reactive, ref } from "vue";
 import * as api from "@/api/business-operations";
 import { toUserMessage } from "@/api/client";
 import { useFeedbackStore } from "@/stores/feedback";
+import { useAuthStore } from "@/stores/auth";
 
 export type BusinessSection = "end-users" | "memberships" | "payments" | "credits" | "redeem-codes";
 
 export function useBusinessOperations(section: BusinessSection) {
   const feedback = useFeedbackStore();
+  const auth = useAuthStore();
+  const readOnly = computed(() => auth.user?.organizationContext?.authorizationSource === 'license-center'
+    && (auth.user.organizationContext.centralLicenseActive !== true || auth.user.organizationContext.organizationStatus !== 'enabled'));
   const rows = ref<any[]>([]),
     secondaryRows = ref<any[]>([]),
     options = ref<any[]>([]);
@@ -84,7 +88,8 @@ export function useBusinessOperations(section: BusinessSection) {
           api.listMembershipModels(),
         ]);
       if (section === "payments") {
-        const [configs, orders] = await Promise.all([api.listPaymentConfigs(), api.listPaymentOrders(query)]);
+        const [configs, orders] = await Promise.all([readOnly.value ? Promise.resolve([]) : api.listPaymentConfigs(), api.listPaymentOrders(query)]);
+        if (readOnly.value) activeTab.value = 'orders';
         rows.value = configs; applyPage(orders, "secondary");
       }
       if (section === "credits") applyPage(await api.listCreditLedger(query));
@@ -454,6 +459,7 @@ export function useBusinessOperations(section: BusinessSection) {
   }
   onMounted(load);
   return {
+    readOnly,
     rows,
     secondaryRows,
     options,

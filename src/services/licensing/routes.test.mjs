@@ -1,7 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import express from 'express'
-import { setAuthDependencies } from '../../middleware/auth.mjs'
+import { setAuthDependencies, requireAuth, requirePermission, requireClientAuth } from '../../middleware/auth.mjs'
+import { filterOrganizationPermissions } from '../organization-expiry.mjs'
+import { supplierLicenseAllowsPermission } from '../supplier-license-contract.mjs'
 import { registerOrganizationRoutes } from '../../routes/organizations.mjs'
 import { buildOrganizationContext } from '../organizations.mjs'
 import { publicSupplyOperation } from '../../routes/agent-supply.mjs'
@@ -90,4 +92,36 @@ test('catalog preserves legacy fields and client aliases without exposing upstre
   assert.equal(catalog.models[0].modelType, 'text')
   assert.equal(catalog.models[0].pricing.inputPointsPerMTokens, 200)
   assert.ok(!JSON.stringify(catalog).includes('secretCost'))
+})
+
+
+test('inactive central authorization retains assigned historical access while blocking writes and disabled staff', async () => {
+  let context = { organizationId: 'child', organizationLevel: 2, legacyOwnerUserId: 'child-owner', authorizationSource: 'license-center', centralLicenseActive: false, organizationStatus: 'enabled', memberStatus: 'enabled' }
+  let assigned = ['payments.manage', 'credits.manage', 'user_usage.view', 'user_usage.export', 'platform_settings.manage']
+  let writes = 0
+  setAuthDependencies({ getUserBySession: async () => ({ id: 'finance', organizationContext: context }),
+    getEffectivePermissionKeys: async () => filterOrganizationPermissions(assigned.filter(key => supplierLicenseAllowsPermission({ key }, { source: 'license-center', verified: false })), context),
+    getEndUserByToken: async () => ({ id: 'customer', status: 'enabled' }), getClientAuthorization: async () => false, permissionByKey: () => null })
+  const app = express()
+  for (const [path, permission] of [['/api/payment-orders', 'payments.manage'], ['/api/credits/ledger', 'credits.manage'], ['/api/reports/user-usage/export', 'user_usage.export'], ['/api/platform-settings', 'platform_settings.manage']]) {
+    app.get(path, requireAuth, requirePermission(permission), (req, res) => res.json({ organizationId: req.organizationContext.organizationId, owner: req.ownerUserId }))
+    app.post(path, requireAuth, requirePermission(permission), (_req, res) => { writes++; res.json({}) })
+  }
+  app.get('/api/client/credits/ledger', requireClientAuth, (req, res) => res.json({ id: req.clientUser.id }))
+  app.post('/api/client/payment-orders', requireClientAuth, (_req, res) => { writes++; res.json({}) })
+  const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)) })
+  const url = `http://127.0.0.1:${server.address().port}`
+  try {
+    const orders = await fetch(url + '/api/payment-orders?organizationId=other')
+    assert.equal(orders.status, 200); assert.deepEqual(await orders.json(), { organizationId: 'child', owner: 'child-owner' })
+    assert.equal((await fetch(url + '/api/credits/ledger')).status, 200)
+    assert.equal((await fetch(url + '/api/reports/user-usage/export')).status, 200)
+    assert.equal((await fetch(url + '/api/platform-settings')).status, 403)
+    for (const path of ['/api/payment-orders', '/api/credits/ledger']) assert.equal((await fetch(url + path, { method: 'POST' })).status, 403)
+    assigned = ['payments.manage']; assert.equal((await fetch(url + '/api/reports/user-usage/export')).status, 403)
+    context = { ...context, memberStatus: 'disabled' }; assert.equal((await fetch(url + '/api/payment-orders')).status, 403)
+    assert.equal((await fetch(url + '/api/client/credits/ledger', { headers: { Authorization: 'Bearer customer-token' } })).status, 200)
+    assert.equal((await fetch(url + '/api/client/payment-orders', { method: 'POST', headers: { Authorization: 'Bearer customer-token' } })).status, 403)
+    assert.equal(writes, 0)
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
 })
