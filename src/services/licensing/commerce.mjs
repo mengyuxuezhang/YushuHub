@@ -4,6 +4,7 @@ import { quoteSupply, withMarkup } from './pricing.mjs'
 import { emitChunk } from './streaming.mjs'
 import { benefitFactor, consumptionFactor } from './benefits.mjs'
 import { assertSafeTaskRequest } from '../model-task-service.mjs'
+import { activeOffer, offerFor, offerKey, offerPriceNotices, reviseOffer } from './offer-pricing.mjs'
 
 function userPoints(amount, pointsPerCny, discount, multiplier = '1') {
   const numerator = micros(amount) * micros(pointsPerCny) * micros(discount) * micros(multiplier)
@@ -33,14 +34,15 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
   async function selected(state, tenant, modelId) {
       const models = await catalog(tenant), model = models.find(item => item.id === modelId)
     if (!model) throw failure('MODEL_UNAVAILABLE', '模型不在可供货目录', 403)
-    const first = state.offers[`${rootId}:${modelId}`]
+    const first = activeOffer(offerFor(state, rootId, modelId), now())
     if (!first?.enabled) throw failure('MODEL_NOT_OFFERED', '一级未开放该模型供货', 403)
     const firstSale = withMarkup(model.price, first.saleMarkup), supply = withMarkup(model.price, first.supplyMarkup)
-    const second = tenant.level === 2 ? state.offers[`${tenant.id}:${modelId}`] : null
+    const second = tenant.level === 2 ? activeOffer(offerFor(state, tenant.id, modelId), now()) : null
     if (tenant.level === 2 && !second?.enabled) throw failure('MODEL_NOT_OFFERED', '二级尚未启用该模型', 403)
     const sale = tenant.level === 2 ? withMarkup(supply, second.saleMarkup) : firstSale
     return { model, sale, supply, pointsPerCny: second?.pointsPerCny || first.pointsPerCny, conversionVersion: second?.version || first.version,
-      consumptionMultiplier: consumptionFactor((second || first).consumptionMultiplier ?? '1'), offerVersion: first.version, secondOfferVersion: second?.version || null }
+      consumptionMultiplier: consumptionFactor((second || first).consumptionMultiplier ?? '1'), offerVersion: first.version, secondOfferVersion: second?.version || null,
+      offerConfigVersion: offerFor(state, rootId, modelId).version, secondOfferConfigVersion: tenant.level === 2 ? offerFor(state, tenant.id, modelId).version : null }
   }
   async function complete(requestId, outcome) {
     return transact({ requestId }, async (state, connection) => {
@@ -81,10 +83,11 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       const consumptionMultiplier = consumptionFactor(input.consumptionMultiplier ?? '1')
       withMarkup(model.price, saleMarkup); withMarkup(model.price, supplyMarkup)
       return store.transaction(state => {
-        const key = `${tenant.id}:${modelId}`, previous = state.offers[key]
+        const key = offerKey(state, tenant.id, modelId), previous = state.offers[key]
         if (input.expectedVersion !== (previous?.version || 0)) throw failure('VERSION_CONFLICT', '供货配置已变更', 409)
-        if (tenant.level === 2 && !state.offers[`${rootId}:${modelId}`]?.enabled) throw failure('MODEL_NOT_OFFERED', '一级尚未供货', 403)
-        const value = { modelId, enabled: input.enabled === true, saleMarkup, supplyMarkup, consumptionMultiplier, pointsPerCny: decimal(micros(input.pointsPerCny)), version: (previous?.version || 0) + 1, actor, at: now() }
+        if (tenant.level === 2 && !offerFor(state, rootId, modelId)?.enabled) throw failure('MODEL_NOT_OFFERED', '一级尚未供货', 403)
+        const value = reviseOffer(previous, { modelId, organizationId: tenant.id, enabled: input.enabled === true, saleMarkup, supplyMarkup, consumptionMultiplier,
+          pointsPerCny: decimal(micros(input.pointsPerCny)), effectiveAt: input.effectiveAt }, actor, now())
         state.offers[key] = value
         return value
       })
@@ -92,12 +95,13 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
     async list(tenant) {
       const state = await configuration(), models = await catalog(tenant), result = []
       for (const model of models) {
-        if (tenant.level === 2 && !state.offers[`${rootId}:${model.id}`]?.enabled) continue
-        try { result.push({ ...await selected(state, tenant, model.id), offer: state.offers[`${tenant.id}:${model.id}`] }) }
+        if (tenant.level === 2 && !offerFor(state, rootId, model.id)?.enabled) continue
+        try { result.push({ ...await selected(state, tenant, model.id), offer: offerFor(state, tenant.id, model.id), priceNotices: offerPriceNotices(state, rootId, tenant, model, now()) }) }
         catch (error) {
           if (error.code !== 'MODEL_NOT_OFFERED') throw error
-          const inherited = tenant.level === 2 ? withMarkup(model.price, state.offers[`${rootId}:${model.id}`].supplyMarkup) : null
-          result.push({ model: inherited ? { ...model, price: inherited } : model, supply: inherited, offer: state.offers[`${tenant.id}:${model.id}`] || null, enabled: false })
+          const inherited = tenant.level === 2 ? withMarkup(model.price, activeOffer(offerFor(state, rootId, model.id), now()).supplyMarkup) : null
+          result.push({ model: inherited ? { ...model, price: inherited } : model, supply: inherited, offer: offerFor(state, tenant.id, model.id) || null, enabled: false,
+            priceNotices: offerPriceNotices(state, rootId, tenant, model, now()) })
         }
       }
       return result
@@ -180,8 +184,9 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
           if (previous.fingerprint !== fingerprint) throw failure('IDEMPOTENCY_CONFLICT', '请求ID冲突', 409)
           return { created: false, operation: previous }
         }
-        if (current.offers[`${rootId}:${modelId}`]?.version !== snapshot.offerVersion
-          || (tenant.level === 2 && current.offers[`${tenant.id}:${modelId}`]?.version !== snapshot.secondOfferVersion)) throw failure('PRICE_CHANGED', '价格或供货状态已变更，请刷新后重试', 409)
+        const first = activeOffer(offerFor(current, rootId, modelId), now()), second = activeOffer(offerFor(current, tenant.id, modelId), now())
+        if (!first?.enabled || first.version !== snapshot.offerVersion || offerFor(current, rootId, modelId)?.version !== snapshot.offerConfigVersion
+          || (tenant.level === 2 && (!second?.enabled || second.version !== snapshot.secondOfferVersion || offerFor(current, tenant.id, modelId)?.version !== snapshot.secondOfferConfigVersion))) throw failure('PRICE_CHANGED', '价格或供货状态已变更，请刷新后重试', 409)
         snapshot.benefit = await benefits(connection, tenant, userId, snapshot.model, now())
         snapshot.discount = benefitFactor(snapshot.benefit.discount)
         const reservedPoints = userPoints(quoteSupply(snapshot.sale, upperUsage), snapshot.pointsPerCny, snapshot.discount, snapshot.consumptionMultiplier)
@@ -192,7 +197,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
         }
         await userBank.reserve(connection, userId, reservedPoints, requestId, modelId)
         // Remove executable adapter functions before persisting the price snapshot.
-        const { prepare, ...model } = snapshot.model
+        const { prepare, nextPrices, ...model } = snapshot.model
         const operation = { requestId, userId, organizationId: tenant.id, level: tenant.level, fingerprint, reservedPoints, reservedSupply,
           state: 'running', snapshot: { ...snapshot, model, authorization: { grantId: tenant.id, version: tenant.version ?? null,
             parentVersion: tenant.parentVersion ?? null, instanceId: tenant.instanceId ?? null } }, createdAt: now(), updatedAt: now() }

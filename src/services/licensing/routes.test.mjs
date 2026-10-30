@@ -128,11 +128,13 @@ test('inactive central authorization retains assigned historical access while bl
 
 
 test('secondary catalog hides self-supplied vendor cost and shows only inherited supply price', () => {
-  const row = { model: { id: 'self', price: { components: [] }, supplierCost: { privateCost: 'hidden' } }, supply: { inheritedPrice: 'visible' } }
+  const row = { model: { id: 'self', price: { components: [] }, supplierCost: { version: 1, components: [], privateCost: 'hidden' }, nextPrices: [{ rawSupplierForecast: 'hidden' }] }, supply: { version: 1, components: [{ meter: 'request', phase: 'request', amount: '2', unitSize: '1' }], requestHash: 'private-hash' } }
   const result = publicSupplyCatalogRow(row, 2)
   assert.equal(JSON.stringify(result).includes('privateCost'), false)
-  assert.deepEqual(result.model.price, row.supply)
-  assert.equal(publicSupplyCatalogRow(row, 1), row)
+  assert.equal(result.model.price.components[0].amount, '2')
+  assert.equal(JSON.stringify(result).includes('rawSupplierForecast'), false)
+  assert.equal(JSON.stringify(result).includes('private-hash'), false)
+  assert.equal(publicSupplyCatalogRow(row, 1).model.supplierCost.version, 1)
 })
 
 

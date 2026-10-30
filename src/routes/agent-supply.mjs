@@ -2,12 +2,14 @@ import { requireAuth, requireClientAuth, requirePermission, requireAnyPermission
 import { endpoint } from './license-center.mjs'
 import { failure } from '../services/licensing/protocol.mjs'
 import { registerClientSupplyBridge } from './client-supply-bridge.mjs'
+import { publicSupplyPlan } from '../services/licensing/pricing.mjs'
 
 export const publicSupplyOperation = operation => ({ requestId: operation.requestId, state: operation.state, points: operation.points || null, result: operation.result || null })
 export function publicSupplyCatalogRow(row, level) {
-  if (level !== 2) return row
-  const { supplierCost, ...model } = row.model
-  return { ...row, model: { ...model, price: row.supply || model.price } }
+  if (level !== 2) return { ...row, model: { ...row.model, supplierCost: publicSupplyPlan(row.model.supplierCost) }, sale: publicSupplyPlan(row.sale), supply: publicSupplyPlan(row.supply) }
+  const { supplierCost, nextPrices, ...model } = row.model
+  return { ...row, model: { ...model, price: publicSupplyPlan(row.supply || model.price) }, sale: publicSupplyPlan(row.sale), supply: publicSupplyPlan(row.supply),
+    priceNotices: (row.priceNotices || []).map(({ effectiveAt, sale, pointsPerCny, consumptionMultiplier }) => ({ effectiveAt, sale: publicSupplyPlan(sale), pointsPerCny, consumptionMultiplier })) }
 }
 
 export function registerAgentSupplyRoutes(app, { runtime, resolveUserContext, client, repository }) {
@@ -39,7 +41,8 @@ export function registerAgentSupplyRoutes(app, { runtime, resolveUserContext, cl
   registerClientSupplyBridge(app, { runtime, tenantForUser })
   app.get('/api/client/supply/catalog', requireClientAuth, endpoint(async req => {
     const rows = await (await runtime.service()).list(await tenantForUser(req))
-    return rows.filter(row => row.sale).map(row => ({ id: row.model.id, name: row.model.name, taskType: row.model.taskType, price: row.sale, pointsPerCny: row.pointsPerCny }))
+    return rows.filter(row => row.sale).map(row => ({ id: row.model.id, name: row.model.name, taskType: row.model.taskType, price: publicSupplyPlan(row.sale), pointsPerCny: row.pointsPerCny,
+      priceNotices: (row.priceNotices || []).map(({ effectiveAt, sale, pointsPerCny, consumptionMultiplier }) => ({ effectiveAt, price: publicSupplyPlan(sale), pointsPerCny, consumptionMultiplier })) }))
   }))
   app.post('/api/client/supply/requests', requireClientAuth, endpoint(async req => {
     if (String(req.body.requestId || '').length > 80) throw failure('INVALID_ID', '请求ID不能超过80字符')

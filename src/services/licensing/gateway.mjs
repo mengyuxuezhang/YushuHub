@@ -1,5 +1,5 @@
 import { digest, failure, identifier } from './protocol.mjs'
-import { quoteSupply, validateSupplyPrice } from './pricing.mjs'
+import { priceStructure, publicSupplyPlan, quoteSupply, scheduleSupplyPrice, validateSupplyPrice } from './pricing.mjs'
 import { assertSafeTaskRequest } from '../model-task-service.mjs'
 import { emitChunk } from './streaming.mjs'
 
@@ -19,7 +19,7 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
   }
   const currentPrice = async model => {
     const state = ledger.store.readConfiguration ? await ledger.store.readConfiguration() : await ledger.store.read(), versions = state.prices[model.id] || []
-    return validateSupplyPrice(versions.filter(p => p.effectiveAt <= now()).at(-1) || model.price)
+    return publicSupplyPlan(validateSupplyPrice(versions.filter(p => p.effectiveAt <= now()).sort((a, b) => a.effectiveAt - b.effectiveAt || a.version - b.version).at(-1) || model.price))
   }
   async function finish(claims, operation, outcome) {
     if (outcome.receipt) await ledger.confirmReceipt(operation.requestId, outcome.receipt)
@@ -43,8 +43,16 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
     await adapter.acknowledge(model, operation)
   }
   return {
+    async schedulePrice(modelId, input, actor) {
+      const model = catalog.get(identifier(modelId))
+      if (!model) throw failure('MODEL_UNAVAILABLE', '调价模型不存在', 404)
+      if (!input.requestId) throw failure('INVALID_ID', '调价必须提供幂等请求ID')
+      if (priceStructure(input) !== priceStructure(model.price)) throw failure('PRICE_STRUCTURE_CHANGED', '普通调价只能改变金额，计量项/单位/舍入规则变更须作为新模型发布')
+      return scheduleSupplyPrice(ledger.store, modelId, { ...input, baseVersion: model.price.version || 1 }, actor, now())
+    },
     async catalog(token) {
       const claims = await check(token)
+      const state = ledger.store.readConfiguration ? await ledger.store.readConfiguration() : await ledger.store.read()
       const result = []
       for (const model of models) if (model.status === 'enabled' && claims.grant.modelIds.includes(model.id) && claims.root.modelIds.includes(model.id)) {
         result.push({ id: model.id, clientId: model.clientId || model.id, name: model.name, taskType: model.taskType, version: model.version, adapter: model.adapter,
@@ -53,6 +61,7 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
           executor: model.adapter === 'minimax.speech_async' ? 'async_job' : 'sync',
           allowedVoiceIds: model.allowedVoiceIds,
           publicVoices: (model.publicVoices || []).filter(voice => model.allowedVoiceIds?.includes(voice.id)).map(voice => ({ id: voice.id, name: String(voice.name || voice.id).slice(0, 120), description: String(voice.description || '').slice(0, 512) })),
+          nextPrices: (state.prices[model.id] || []).filter(plan => plan.effectiveAt > now()).sort((a, b) => a.effectiveAt - b.effectiveAt).map(({ version, effectiveAt, currency, components, publishedAt }) => ({ version, effectiveAt, currency, components, announcedAt: publishedAt })),
           price: await currentPrice(model) })
       }
       return result

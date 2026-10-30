@@ -1,5 +1,4 @@
 import { bearer, endpoint } from './license-center.mjs'
-import { scheduleSupplyPrice } from '../services/licensing/pricing.mjs'
 import { failure } from '../services/licensing/protocol.mjs'
 import { sseWriter } from '../services/licensing/streaming.mjs'
 
@@ -20,7 +19,7 @@ export function registerModelGatewayRoutes(app, { gateway, ledger, operators, mo
     app.post(`${base}/operator/monitor/test`, endpoint(req => monitor.test(req.body.requestId, req.operator)))
   }
   app.post(`${base}/operator/requests/:id/resolve`, endpoint(req => gateway.reconcile(req.params.id, req.body, req.operator)))
-  app.post(`${base}/operator/prices/:id`, endpoint(req => scheduleSupplyPrice(ledger.store, req.params.id, req.body, req.operator)))
+  app.post(`${base}/operator/prices/:id`, endpoint(req => gateway.schedulePrice(req.params.id, req.body, req.operator)))
   app.get(`${base}/catalog`, endpoint(req => gateway.catalog(bearer(req))))
   app.get(`${base}/balance`, endpoint(req => gateway.balance(bearer(req))))
   app.post(`${base}/requests`, endpoint(req => gateway.submit(bearer(req), req.body)))

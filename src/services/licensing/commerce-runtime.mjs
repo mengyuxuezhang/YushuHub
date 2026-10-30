@@ -11,7 +11,7 @@ import { chatStreamCollector, emitChunk, readSse } from './streaming.mjs'
 import { supplyMembershipBenefit } from './benefits.mjs'
 import { validateSupplyPrice } from './pricing.mjs'
 
-export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch, benefits = supplyMembershipBenefit }) {
+export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch, benefits = supplyMembershipBenefit, now = Date.now }) {
   if (!client) return null
   const pool = { query: (...args) => database().query(...args), getConnection: () => database().getConnection() }
   const store = mysqlAccountingStore(pool, 'commerce-v2', 'commerce'), adapters = httpGatewayAdapters(fetchImpl)
@@ -83,7 +83,7 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     },
     async service({ recovery = false } = {}) {
       const root = recovery ? await client.recoveryIdentity() : await client.claims()
-      return createAgentCommerce({ store, rootId: root.id, userBank: sqlUserBank(), catalog, benefits,
+      return createAgentCommerce({ store, rootId: root.id, userBank: sqlUserBank(), catalog, benefits, now,
         invoke: async (tenant, model, input, options) => {
           if (model.source === 'official') return gateway(tenant, '/requests', { ...input, modelId: model.id, priceHash: digest(JSON.stringify(model.price)) }, undefined, options)
           const config = customModels.find(item => item.id === model.id)

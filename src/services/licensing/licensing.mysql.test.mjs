@@ -28,6 +28,8 @@ import { setAuthDependencies } from '../../middleware/auth.mjs'
 import { supplyMembershipBenefit } from './benefits.mjs'
 import { createResourceCoordinator, emptyResourceIntents } from './resource-runtime.mjs'
 import { UserUsageReportRepository } from '../../repositories/user-usage-report.mjs'
+import { offerFor } from './offer-pricing.mjs'
+import { HOUR } from './protocol.mjs'
 import { normalizeReportQuery } from '../user-usage-report.mjs'
 import { centerBuildScopes } from './build-scopes.mjs'
 
@@ -401,7 +403,7 @@ test('real MySQL: independent services, HTTP activation, concurrent accounting, 
       assert.equal(balance.credit_balance, '9.000000')
     } finally { localRuntime.stop() }
     await fs.writeFile(path.join(runtimeFiles, 'operators.json'), JSON.stringify(operators), { mode: 0o600 })
-    await fs.writeFile(path.join(runtimeFiles, 'models.json'), '[]')
+    await fs.writeFile(path.join(runtimeFiles, 'models.json'), JSON.stringify([{ id: 'test-chat', model: 'fictional-no-inference', taskType: 'chat', adapter: 'openai.chat', status: 'enabled', version: 1, contextWindow: 100, maxOutputTokens: 10, price }]))
     const runtimeEnv = { ...process.env, NODE_ENV: 'test', AI_GATEWAY_DB_HOST: config.host, AI_GATEWAY_DB_PORT: String(config.port),
       AI_GATEWAY_DB_USER: config.user, AI_GATEWAY_DB_PASSWORD: config.password, AI_GATEWAY_DB_NAME: gatewayDatabase,
       AI_GATEWAY_MONITOR_KEY_FILE: path.join(runtimeFiles, 'gateway-monitor.key'), AI_GATEWAY_PORT: '0', AI_LICENSE_CENTER_URL: centerUrl, AI_GATEWAY_OPERATORS_FILE: path.join(runtimeFiles, 'operators.json'), AI_GATEWAY_MODELS_FILE: path.join(runtimeFiles, 'models.json') }
@@ -425,6 +427,14 @@ test('real MySQL: independent services, HTTP activation, concurrent accounting, 
     await request(runtimeUrl, '/api/model-gateway/v1/operator/wallets/mysql-first/credit', { amount: '1', requestId: 'runtime-credit', receipt: 'runtime-receipt' }, runtimeLogin.token)
     const freshToken = await request(centerUrl, '/api/license-center/v1/service-token', { audience: 'official-models' }, activated.credential)
     assert.equal((await request(runtimeUrl, '/api/model-gateway/v1/balance', undefined, freshToken.token, 'GET')).balance, '1.000000')
+    const publication = { ...price, requestId: 'runtime-price-publication', effectiveAt: Date.now() + 24 * HOUR + 60000, components: [{ ...price.components[0], amount: '2' }] }
+    const scheduled = await request(runtimeUrl, '/api/model-gateway/v1/operator/prices/test-chat', publication, runtimeLogin.token)
+    assert.equal(scheduled.version, 2)
+    assert.equal((await request(runtimeUrl, '/api/model-gateway/v1/operator/prices/test-chat', publication, runtimeLogin.token)).version, scheduled.version)
+    const announced = (await request(runtimeUrl, '/api/model-gateway/v1/catalog', undefined, freshToken.token, 'GET'))[0]
+    assert.equal(announced.price.components[0].amount, '1.000000'); assert.equal(announced.nextPrices[0].components[0].amount, '2.000000')
+    assert.equal(JSON.stringify(announced).includes('requestHash'), false)
+
   } finally {
     if (runtimeProcess && runtimeProcess.exitCode === null) {
       const exited = new Promise(resolve => runtimeProcess.once('exit', resolve))
@@ -525,7 +535,8 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     const client = { claims: async id => grant(id || root.id), recoveryIdentity: async () => ({ id: root.id }),
       serviceToken: async (audience, id) => (await center.serviceToken(activated.credential, audience, id)).token,
       recoveryToken: async (id, requestId) => (await center.recoveryToken(activated.credential, id, requestId)).token }
-    const makeRuntime = () => agentCommerceRuntime({ client, database: () => pool, env: { AI_MODEL_GATEWAY_URL: 'https://stream-gateway.example.com' },
+    let priceClockOffset = 0
+    const makeRuntime = () => agentCommerceRuntime({ client, database: () => pool, now: () => Date.now() + priceClockOffset, env: { AI_MODEL_GATEWAY_URL: 'https://stream-gateway.example.com' },
       fetchImpl: async (url, options) => {
         const endpoint = new URL(url); assert.equal(endpoint.hostname, 'stream-gateway.example.com')
         const response = await fetch(`${upstreamUrl}${endpoint.pathname}`, options)
@@ -654,6 +665,7 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     assert.equal(benefitOp.snapshot.consumptionMultiplier, '0.500000'); assert.equal(benefitOp.marketingSubsidy, '1.750000')
     assert.equal(benefitOp.firstMargin, '0.300000'); assert.equal(benefitOp.secondMargin, '-1.550000')
     await service.configure(second, { modelId: speech.id, enabled: true, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.2' }], consumptionMultiplier: '0', pointsPerCny: '1', expectedVersion: 1 }, 'child')
+    priceClockOffset += 24 * HOUR + 1
     const [[beforeFree]] = await pool.query('SELECT credit_balance FROM ai_end_users WHERE id=?', ['stream-user'])
     const freeSpeech = (await (await speak({ ...speechBody, idempotencyKey: 'speech-free-marketing' })).json()).data
     assert.equal(freeSpeech.status, 'succeeded'); assert.equal(freeSpeech.settledPoints, 0)
@@ -819,5 +831,42 @@ test('real MySQL child supply reversals serialize, preserve original entries and
     state = await store.read(); assert.deepEqual(state.entries.find(e => e.id === credit.id), credit)
     assert.equal(state.entries.filter(e => e.kind === 'reversal').length, 2)
     assert.equal(auditAccounting(state, 'commerce').wallets[childId].balance, '10.000000')
+  } finally { await pool.end() }
+})
+
+
+test('real MySQL scheduled supply prices survive restart and preserve before/after acceptance snapshots', { skip: !configured }, async () => {
+  const { gatewayDatabase = 'yushu_gateway_test', licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable test database required')
+  const pool = mysql.createPool({ ...config, database: gatewayDatabase, connectionLimit: 12 })
+  let clock = Date.now(), calls = 0
+  const root = { id: 'price-sql-root', level: 1, version: 1 }, child = { id: 'price-sql-child', level: 2, version: 1 }
+  const price = { version: 1, components: [{ meter: 'request', phase: 'request', amount: '1', unitSize: '1' }] }, usage = [{ meter: 'request', phase: 'request', quantity: '1' }]
+  const model = { id: 'price-sql-model', source: 'official', price, prepare: async request => ({ request, upperUsage: usage }) }
+  try {
+    await migrateAccounting({ pool, book: 'scheduled-commerce', kind: 'commerce', sourceId: 'scheduled-empty' })
+    await pool.query('INSERT INTO ai_end_users(id,status,credit_balance,organization_id,username) VALUES (?,?,?,?,?)', ['price-user', 'enabled', '10', child.id, 'price-user'])
+    const store = mysqlAccountingStore(pool, 'scheduled-commerce', 'commerce')
+    const make = () => createAgentCommerce({ store, rootId: root.id, now: () => clock, userBank: sqlUserBank(), catalog: async () => [model],
+      invoke: async () => { calls++; return { state: 'pending' } }, lookup: async () => ({ state: 'done', usage, result: { text: 'ok' } }) })
+    const service = make(), markup = amount => [{ meter: 'request', phase: 'request', amount }]
+    const initial = { modelId: model.id, enabled: true, saleMarkup: [], supplyMarkup: markup('0.3'), pointsPerCny: '1', expectedVersion: 0 }
+    await service.configure(root, initial, 'owner'); await service.configure(child, { ...initial, saleMarkup: markup('0.2') }, 'child')
+    await service.credit(root, child.id, '10', 'scheduled-fund', 'scheduled-receipt', 'owner')
+    await service.configure(root, { ...initial, expectedVersion: 1, supplyMarkup: markup('0.5') }, 'owner')
+    const request = { modelId: model.id, requestId: 'accepted-before-price', request: { messages: ['test'] } }
+    await service.submit(child, 'price-user', request)
+    const peer = make(); await peer.submit(child, 'price-user', request); assert.equal(calls, 1)
+    assert.equal((await peer.list(child))[0].priceNotices[0].sale.components[0].amount, '1.700000')
+    clock += 24 * HOUR + 1
+    await peer.submit(child, 'price-user', { ...request, requestId: 'accepted-after-price' }); assert.equal(calls, 2)
+    assert.equal((await peer.recover(child, 'price-user', request.requestId)).points, '1.500000')
+    assert.equal((await peer.recover(child, 'price-user', 'accepted-after-price')).points, '1.700000')
+    const [[user]] = await pool.query('SELECT credit_balance FROM ai_end_users WHERE id=?', ['price-user']); assert.equal(String(user.credit_balance), '6.800000')
+    const state = await store.read()
+    assert.equal(state.wallets[child.id].balance, '7.200000'); assert.equal(state.wallets[child.id].reserved, '0.000000')
+    assert.equal(offerFor(state, root.id, model.id).history.length, 2)
+    assert.equal((await peer.balance(root)).totals.firstMargin, '0.800000')
+    auditAccounting(state, 'commerce')
   } finally { await pool.end() }
 })

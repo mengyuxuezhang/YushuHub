@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import { memoryStateStore } from '../../repositories/licensing-state.mjs'
 import { createLicenseCenter, emptyCenterState } from './center.mjs'
+import { createAgentCommerce, emptyCommerceState } from './commerce.mjs'
+import { modelPriceAt, offerFor, offerKey } from './offer-pricing.mjs'
 import { createSupplyLedger, emptyLedgerState } from './ledger.mjs'
 import { createModelGateway } from './gateway.mjs'
 import { createDeploymentLicenseClient, emptyDeploymentState } from './deployment-client.mjs'
@@ -620,4 +622,87 @@ test('package publication rejects transferable, ambiguous and duplicated capabil
     [{ ...pkg.capabilities[0], transferable: true }], [{ ...pkg.capabilities[0], enabled: 'false' }],
     [pkg.capabilities[0], pkg.capabilities[0]], [{ key: 'model_keys.manage', enabled: true, transferable: false, limitValue: 0 }],
   ]) await assert.rejects(center.publishPackage({ ...pkg, version: 2, capabilities }, 'operator'), { code: 'INVALID_CAPABILITY' })
+})
+
+
+test('local prices publish 24 hours ahead, compose downstream notices and retain accepted snapshots', async () => {
+  let stamp = 1000000
+  const now = () => stamp, root = { id: 'price-root', level: 1 }, child = { id: 'price-child', level: 2 }
+  const base = { version: 1, components: [{ meter: 'request', phase: 'request', unitSize: '1', amount: '1' }] }
+  const usage = [{ meter: 'request', phase: 'request', quantity: '1' }]
+  const model = { id: 'price-model', source: 'official', taskType: 'chat', price: base,
+    nextPrices: [{ ...base, version: 2, effectiveAt: now() + 48 * HOUR, components: [{ ...base.components[0], amount: '2' }] }],
+    prepare: async request => ({ request, upperUsage: usage }) }
+  const store = memoryStateStore(emptyCommerceState()), bank = { reserve: async () => {}, settle: async () => {} }
+  const service = createAgentCommerce({ store, rootId: root.id, now, userBank: bank, catalog: async () => [{ ...model, price: modelPriceAt(model, now()) }],
+    invoke: async () => ({ state: 'pending' }), lookup: async () => ({ state: 'done', usage, result: { text: 'complete' } }) })
+  const markup = amount => [{ meter: 'request', phase: 'request', amount }]
+  const initial = { modelId: model.id, enabled: true, saleMarkup: [], supplyMarkup: markup('0.3'), pointsPerCny: '1', expectedVersion: 0 }
+  await service.configure(root, initial, 'owner')
+  await service.configure(child, { ...initial, saleMarkup: markup('0.2') }, 'child')
+  await service.credit(root, child.id, '10', 'price-funds', 'price-virtual-receipt', 'owner')
+  const accepted = await service.submit(child, 'user', { requestId: 'old-price-task', modelId: model.id, request: { message: 'old' } })
+  const change = { ...initial, expectedVersion: 1, saleMarkup: markup('0.1'), supplyMarkup: markup('0.5') }
+  await assert.rejects(service.configure(root, { ...change, effectiveAt: now() + 23 * HOUR }, 'owner'), { code: 'PRICE_NOTICE_REQUIRED' })
+  const scheduled = await service.configure(root, change, 'owner')
+  await service.configure(child, { ...initial, expectedVersion: 1, saleMarkup: markup('0.4'), effectiveAt: now() + 36 * HOUR }, 'child')
+  assert.equal(scheduled.priceEffectiveAt, now() + 24 * HOUR)
+  let row = (await service.list(child))[0]
+  assert.equal(row.sale.components[0].amount, '1.500000')
+  assert.equal(row.priceNotices[0].sale.components[0].amount, '1.700000')
+  assert.equal(row.priceNotices[1].sale.components[0].amount, '1.900000')
+  assert.equal(row.priceNotices[2].sale.components[0].amount, '2.900000')
+  assert.equal(row.priceNotices[0].supply, undefined)
+  await assert.rejects(service.configure(root, { ...change, expectedVersion: 2, supplyMarkup: markup('0.6') }, 'owner'), { code: 'PRICE_CHANGE_PENDING' })
+  await service.configure(root, { ...change, expectedVersion: 2, enabled: false }, 'owner')
+  assert.equal((await service.list(child)).length, 0)
+  await service.configure(root, { ...change, expectedVersion: 3, enabled: true }, 'owner')
+  const duringNotice = await service.submit(child, 'user', { requestId: 'during-notice-task', modelId: model.id, request: { message: 'during notice' } })
+  stamp += 24 * HOUR
+  row = (await service.list(child))[0]; assert.equal(row.sale.components[0].amount, '1.700000')
+  const settled = await service.recover(child, 'user', accepted.requestId)
+  assert.equal(settled.points, '1.500000'); assert.equal(settled.supplyAmount, '1.300000')
+  assert.equal((await service.recover(child, 'user', duringNotice.requestId)).points, '1.500000')
+  assert.equal(settled.snapshot.model.nextPrices, undefined)
+  stamp += 24 * HOUR
+  assert.equal((await service.list(child))[0].sale.components[0].amount, '2.900000')
+  assert.equal(offerFor(await store.read(), root.id, model.id).history.length, 4)
+  assert.throws(() => validateSupplyPrice({ ...base, currency: 'USD' }), { code: 'INVALID_CURRENCY' })
+})
+
+test('official price schedules are monotonic, versioned and idempotent even after their effective time', async () => {
+  const store = memoryStateStore(emptyLedgerState()), initial = price(), input = { ...initial, effectiveAt: 24 * HOUR, requestId: 'official-change' }
+  const first = await scheduleSupplyPrice(store, 'chat', input, 'operator', 0)
+  assert.equal(first.version, 2)
+  assert.deepEqual(await scheduleSupplyPrice(store, 'chat', input, 'operator', 48 * HOUR), first)
+  await assert.rejects(scheduleSupplyPrice(store, 'chat', { ...input, components: [{ ...initial.components[0], amount: '2' }] }, 'operator', 0), { code: 'IDEMPOTENCY_CONFLICT' })
+  await assert.rejects(scheduleSupplyPrice(store, 'chat', { ...input, requestId: 'another' }, 'operator', 0), { code: 'PRICE_SCHEDULE_ORDER' })
+})
+
+
+test('offer identities with colon-containing organization and model IDs cannot alias, retaining verified legacy keys', () => {
+  const state = { offers: { 'a:b:c': { modelId: 'c', version: 1 } } }
+  assert.equal(offerKey(state, 'a:b', 'c'), 'a:b:c')
+  const key = offerKey(state, 'a', 'b:c')
+  assert.notEqual(key, 'a:b:c'); state.offers[key] = { organizationId: 'a', modelId: 'b:c', version: 2 }
+  assert.equal(offerFor(state, 'a:b', 'c').version, 1)
+  assert.equal(offerFor(state, 'a', 'b:c').version, 2)
+})
+
+
+test('official price announcements expose future prices and preserve metering rules', async () => {
+  const { center, now, advance } = setup(), first = await root(center), ledger = createSupplyLedger({ store: memoryStateStore(emptyLedgerState()), now })
+  const model = { id: 'chat', adapter: 'test', status: 'enabled', version: 1, price: price() }
+  const gateway = createModelGateway({ ledger, models: [model], now, authorize: (token, audience) => center.introspect(token, audience), adapters: {} })
+  const input = { ...model.price, components: [{ ...model.price.components[0], amount: '2' }], effectiveAt: now() + 24 * HOUR, requestId: 'official-publication' }
+  await assert.rejects(gateway.schedulePrice('chat', { ...input, components: [{ ...input.components[0], unitSize: '2' }] }, 'operator'), { code: 'PRICE_STRUCTURE_CHANGED' })
+  await assert.rejects(gateway.schedulePrice('missing', input, 'operator'), { code: 'MODEL_UNAVAILABLE' })
+  const scheduled = await gateway.schedulePrice('chat', input, 'operator')
+  let token = (await center.serviceToken(first.credential, 'official-models')).token
+  const published = (await gateway.catalog(token))[0]
+  assert.equal(published.price.components[0].amount, '1.000001'); assert.equal(published.nextPrices[0].components[0].amount, '2.000000')
+  assert.equal(JSON.stringify(published.nextPrices).includes('operator'), false)
+  advance(24 * HOUR); token = (await center.serviceToken(first.credential, 'official-models')).token
+  const effective = (await gateway.catalog(token))[0]
+  assert.equal(effective.price.version, scheduled.version); assert.equal(effective.price.components[0].amount, '2.000000'); assert.equal(effective.nextPrices.length, 0)
 })

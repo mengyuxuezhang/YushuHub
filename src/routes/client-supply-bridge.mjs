@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 import { requireClientAuth } from '../middleware/auth.mjs'
 import { decimal, failure, identifier, micros } from '../services/licensing/protocol.mjs'
 import { sseWriter } from '../services/licensing/streaming.mjs'
-import { quoteSupply } from '../services/licensing/pricing.mjs'
+import { publicSupplyPlan, quoteSupply } from '../services/licensing/pricing.mjs'
 import { normalizeImageGenerationRequest, normalizeImageGenerationResponse } from '../services/image-generation.mjs'
 import { registerClientVoiceSupplyRoutes } from './client-voice-supply.mjs'
 
@@ -33,7 +33,8 @@ export function projectSupplyCatalog(rows) {
         pointsPerRequest: points('request', '1', 'request'), consumptionMultiplier: Number(row.consumptionMultiplier ?? '1'),
         resolutionPoints: modelType === 'image' ? Object.fromEntries(['1K', '1.5K', '2K'].map(resolution => [resolution,
           row.sale.components.some(item => item.meter === 'image' && item.dimensions?.resolution === resolution) ? points('image', '1', 'usage', { resolution }) : 0])) : {},
-      }, pricingV3: { components: row.sale.components, pointsPerCny: row.pointsPerCny, consumptionMultiplier: row.consumptionMultiplier || '1.000000' } }
+      }, pricingV3: { components: row.sale.components, pointsPerCny: row.pointsPerCny, consumptionMultiplier: row.consumptionMultiplier || '1.000000' },
+      priceNotices: (row.priceNotices || []).map(({ effectiveAt, sale, pointsPerCny, consumptionMultiplier }) => ({ effectiveAt, price: publicSupplyPlan(sale), pointsPerCny, consumptionMultiplier })) }
   })
   const chat = models.filter(model => model.modelType === 'text'), search = models.filter(model => model.modelType === 'search')
   return { models, searchModels: search, defaultModelId: chat[0]?.id || '', configured: chat.length > 0, searchConfigured: search.length > 0 }

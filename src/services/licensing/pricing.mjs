@@ -1,7 +1,16 @@
-import { decimal, failure, HOUR, micros } from './protocol.mjs'
+import { decimal, digest, failure, HOUR, identifier, micros } from './protocol.mjs'
 
 const canonicalDimensions = value => JSON.stringify(Object.fromEntries(Object.entries(value || {}).sort(([a], [b]) => a.localeCompare(b))))
 export const componentKey = item => `${item.meter}:${item.phase || 'usage'}:${canonicalDimensions(item.dimensions)}`
+export function publicSupplyPlan(plan) {
+  if (!plan) return plan
+  const fields = ['meter', 'phase', 'dimensions', 'unitSize', 'amount', 'rounding', 'minimumUnits']
+  return { version: plan.version, currency: 'CNY', components: plan.components.map(item => Object.fromEntries(fields.filter(key => item[key] !== undefined).map(key => [key, structuredClone(item[key])]))),
+    ...(Number.isSafeInteger(plan.effectiveAt) ? { effectiveAt: plan.effectiveAt } : {}) }
+}
+export function priceStructure(plan) {
+  return JSON.stringify(validateSupplyPrice(plan).components.map(item => [componentKey(item), decimal(micros(item.unitSize)), item.rounding, decimal(micros(item.minimumUnits))]).sort(([a], [b]) => a.localeCompare(b)))
+}
 
 export function validateSupplyPrice(input) {
   if (input?.currency && input.currency !== 'CNY') throw failure('INVALID_CURRENCY', '供货及成本价格必须显式换算为人民币后配置')
@@ -59,11 +68,22 @@ export function quoteSupply(plan, events) {
 
 export async function scheduleSupplyPrice(store, modelId, input, actor, now = Date.now()) {
   const plan = validateSupplyPrice(input)
-  if (!Number.isFinite(plan.effectiveAt) || plan.effectiveAt < now + 24 * HOUR) throw failure('PRICE_NOTICE_REQUIRED', '价格须至少提前24小时发布')
+  identifier(modelId)
+  if (input.requestId !== undefined) { identifier(input.requestId); if (input.requestId.length > 80) throw failure('INVALID_ID', '调价请求ID不能超过80字符') }
+  const requestHash = digest(JSON.stringify(plan))
   return store.transaction(state => {
     const versions = state.prices[modelId] ||= []
-    const version = versions.length + 1
-    const published = { ...plan, version, actor, publishedAt: now }
+    const previous = input.requestId && versions.find(price => price.requestId === input.requestId)
+    if (previous) {
+      if (previous.requestHash !== requestHash) throw failure('IDEMPOTENCY_CONFLICT', '调价请求ID冲突', 409)
+      return previous
+    }
+    if (!Number.isSafeInteger(plan.effectiveAt) || plan.effectiveAt < now + 24 * HOUR) throw failure('PRICE_NOTICE_REQUIRED', '价格须至少提前24小时发布')
+    if (versions.some(price => price.effectiveAt >= plan.effectiveAt)) throw failure('PRICE_SCHEDULE_ORDER', '新价格必须在已发布价格之后生效，不能覆盖既有通知', 409)
+    const baseVersion = input.baseVersion ?? input.version ?? 1
+    if (!Number.isSafeInteger(baseVersion) || baseVersion < 1) throw failure('INVALID_VERSION', '供货基准价格版本无效')
+    const version = Math.max(baseVersion, ...versions.map(price => price.version)) + 1
+    const published = { ...plan, version, actor, publishedAt: now, requestHash }
     versions.push(published)
     return published
   })

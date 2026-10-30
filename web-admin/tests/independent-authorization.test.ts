@@ -15,6 +15,7 @@ test('center requires MFA login and reveals a newly issued code only until dismi
     expect({ ...input }).toEqual({ username: 'operator', password: 'password', code: '123456' })
   })
   vi.spyOn(centerApi, 'centerState').mockResolvedValue({ packages: [packageValue], grants: [], audit: [] })
+  vi.spyOn(centerApi, 'centerRequest').mockResolvedValue({ config: { version: 0, enabled: false, configured: false }, deliveries: [], lastScanAt: null, lastScanError: null })
   vi.spyOn(centerApi, 'issueLicense').mockResolvedValue({ code: 'fictional-one-use-code', grant: {} as never })
   const host = document.createElement('div'), app = createApp(LicenseCenterApp); app.mount(host)
   try {
@@ -35,7 +36,7 @@ test('supply form edits reactive pricing rows and preserves decimal input as str
   useAuthStore().user = { organizationContext: { organizationLevel: 1 }, permissionKeys: ['pricing_rules.manage'] } as unknown as AdminUser
   vi.spyOn(supplyApi, 'supplyCatalog').mockResolvedValue([{ model: { id: 'chat', name: '演示模型', taskType: 'chat', price: { version: 1, components: [{ meter: 'request', phase: 'request', unitSize: '1', amount: '1' }] } }, offer: null }])
   vi.spyOn(supplyApi, 'supplyBalance').mockResolvedValue({ wallet: { balance: '0', reserved: '0' }, entries: [], usage: [], unsettled: 0 })
-  const save = vi.spyOn(supplyApi, 'saveOffer').mockResolvedValue({})
+  const save = vi.spyOn(supplyApi, 'saveOffer').mockResolvedValue({ version: 1, enabled: true, saleMarkup: [], supplyMarkup: [], pointsPerCny: '1' })
   const host = document.createElement('div'), app = createApp(SupplyView); app.use(pinia); app.mount(host)
   try {
     await vi.waitFor(() => expect(host.textContent).toContain('演示模型'))
@@ -51,5 +52,29 @@ test('supply form edits reactive pricing rows and preserves decimal input as str
     await vi.waitFor(() => expect(save).toHaveBeenCalled())
     expect((save.mock.calls[0]![0] as { saleMarkup: { amount: string }[] }).saleMarkup[0]!.amount).toBe('0.000001')
     expect((save.mock.calls[0]![0] as { consumptionMultiplier: string }).consumptionMultiplier).toBe('0')
+  } finally { app.unmount() }
+})
+
+
+test('supply pricing shows an upcoming notice and submits an explicit effective time', async () => {
+  const pinia = createPinia(); setActivePinia(pinia)
+  useAuthStore().user = { organizationContext: { organizationLevel: 1 }, permissionKeys: ['pricing_rules.manage'] } as unknown as AdminUser
+  const plan = { version: 1, components: [{ meter: 'request', phase: 'request', unitSize: '1', amount: '1' }] }
+  const offer = { version: 1, enabled: true, saleMarkup: [], supplyMarkup: [], pointsPerCny: '1' }
+  const effectiveAt = new Date('2030-01-01T12:00').getTime()
+  vi.spyOn(supplyApi, 'supplyCatalog').mockResolvedValue([{ model: { id: 'chat', name: '测试调价', taskType: 'chat', price: plan }, sale: plan, offer,
+    priceNotices: [{ effectiveAt, sale: { ...plan, components: [{ ...plan.components[0]!, amount: '2' }] }, pointsPerCny: '1', consumptionMultiplier: '1' }] }])
+  vi.spyOn(supplyApi, 'supplyBalance').mockResolvedValue({ wallet: { balance: '0', reserved: '0' }, entries: [], usage: [], unsettled: 0 })
+  const save = vi.spyOn(supplyApi, 'saveOffer').mockResolvedValue({ ...offer, version: 2, priceEffectiveAt: effectiveAt })
+  const host = document.createElement('div'), app = createApp(SupplyView); app.use(pinia); app.mount(host)
+  try {
+    await vi.waitFor(() => expect(host.textContent).toContain('2030'))
+    expect(host.textContent).toContain('¥2/1')
+    ;[...host.querySelectorAll('button')].find(button => button.textContent === '设置加价')!.click(); await nextTick()
+    const time = host.querySelector('input[type="datetime-local"]') as HTMLInputElement
+    time.value = '2030-01-01T12:00'; time.dispatchEvent(new Event('input', { bubbles: true }))
+    host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(host.textContent).toContain('调价已发布'))
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ effectiveAt, expectedVersion: 1 }))
   } finally { app.unmount() }
 })
