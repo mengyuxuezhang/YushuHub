@@ -138,6 +138,7 @@ export function privateVoiceAdapter({ voices, artifacts, book, speech, fetcher =
         if (!sent || error.outcomeUnknown === false) {
           const rejected = { state: 'done', usage: [], result: { error: 'PROVIDER_REJECTED' } }
           await voices.finish(identity, resource.id, context.requestId, rejected)
+          if (!sent && saved?.paidDispatch === false && !saved.upstreamFileId && error.outcomeUnknown === false) await voices.checkpoint(identity, resource.id, context.requestId, { stage: 'clean', cleanupPending: false })
           await cleanup(model, identity, resource.id, context.requestId).catch(() => {})
           return rejected
         }
@@ -153,7 +154,18 @@ export function privateVoiceAdapter({ voices, artifacts, book, speech, fetcher =
     },
     poll: (model, job, context) => recover(model, { requestId: job.taskId }, context),
     async remove(model, resourceId, context) {
-      const identity = scope(model, context), config = connection(model)
+      const identity = scope(model, context), resource = await voices.get(identity, resourceId)
+      if (resource.status === 'deleted') {
+        const previous = await voices.job(identity, context.requestId)
+        if (previous.action !== 'delete' || previous.resourceId !== resourceId || previous.state !== 'done') throw failure('IDEMPOTENCY_CONFLICT', '删除编号与原资源不匹配', 409)
+        await voices.releaseSource(identity, resourceId); await artifacts.purgeResource(identity, resourceId)
+        return previous.outcome
+      }
+      if (resource.status === 'failed') {
+        try { return await voices.discardUpload(identity, resourceId, context.requestId) }
+        catch (error) { if (error.code !== 'VOICE_NOT_READY') throw error }
+      }
+      const config = connection(model)
       const claimed = await voices.claim(identity, resourceId, { requestId: context.requestId, action: 'delete', inputHash: digest(JSON.stringify({ resourceId })), bindingHash: config.hash, credentialId: model.credentialId })
       if (!claimed.created && claimed.job.state === 'done') { await artifacts.purgeResource(identity, resourceId); return claimed.job.outcome }
       try {

@@ -161,9 +161,16 @@ export function supplyVoiceRepository({ pool, book, directory, inspectAudio = in
         const resource = await find(connection, scope, id, true)
         const [[previous]] = await connection.query('SELECT * FROM supply_voice_jobs WHERE book=? AND id=? FOR UPDATE', [book, requestId])
         if (previous) { if (previous.fingerprint !== fingerprint) throw failure('IDEMPOTENCY_CONFLICT', '删除编号已用于其他操作', 409); return }
-        if (resource.bindingHash || !['uploaded', 'expired'].includes(resource.status)) throw failure('VOICE_NOT_READY', '已有供应商操作的音色不能作为未受理录音清理', 409)
-        const [[pending]] = await connection.query('SELECT COUNT(*) AS n FROM supply_voice_jobs WHERE book=? AND resource_id=?', [book, id])
-        if (Number(pending.n)) throw failure('VOICE_BUSY', '原录音已有受理记录', 409)
+        let uncreatedClone = false
+        if (resource.bindingHash || !['uploaded', 'expired'].includes(resource.status)) {
+          const [[clone]] = await connection.query("SELECT * FROM supply_voice_jobs WHERE book=? AND id=? AND resource_id=? AND action='clone' FOR UPDATE", [book, resource.cloneRequestId || '', id])
+          const job = clone && parse(clone.payload)
+          uncreatedClone = resource.status === 'failed' && clone?.state === 'done' && job.paidDispatch === false && job.outcome?.state === 'done' && job.outcome.result?.error && Array.isArray(job.outcome.usage) && job.outcome.usage.length === 0
+          if (!uncreatedClone) throw failure('VOICE_NOT_READY', '不能证明音色从未提交供应商，保留原账号核对', 409)
+        }
+        const [[pending]] = await connection.query("SELECT COUNT(*) AS n,SUM(state<>'done') AS pending,SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(payload,'$.cleanupPending'))='true' THEN 1 ELSE 0 END) AS files FROM supply_voice_jobs WHERE book=? AND resource_id=?", [book, id])
+        if (Number(pending.pending) || (!uncreatedClone && Number(pending.n))) throw failure('VOICE_BUSY', '原录音已有受理记录', 409)
+        if (Number(pending.files)) throw failure('VOICE_CLEANUP_PENDING', '原供应商录音仍待清理，暂不能释放绑定', 409)
         await update(connection, resource, 'deleted', 0)
         await connection.query('INSERT INTO supply_voice_jobs(book,id,resource_id,organization_id,subject_hash,action,state,fingerprint,updated_at,payload) VALUES (?,?,?,?,?,?,?,?,?,?)',
           [book, requestId, id, scope.organizationId, scope.subjectHash, 'delete', 'done', fingerprint, now(), JSON.stringify({ resourceId: id, stage: 'clean', outcome })])
@@ -220,7 +227,7 @@ export function supplyVoiceRepository({ pool, book, directory, inspectAudio = in
         if (credentialId) resource.credentialId ||= credentialId
         if (action === 'clone') { resource.name = name.trim(); resource.cloneRequestId = requestId; resource.providerVoiceId = `Agent${crypto.randomUUID().replaceAll('-', '')}` }
         const claimed = await update(connection, resource, ({ clone: 'cloning', activate: 'activating', synthesize: 'active', delete: 'deleting' })[action])
-        const job = { stage: 'dispatch-ready', resourceId: id, previousStatus: resource.status, bindingHash, ...(credentialId ? { credentialId } : {}) }
+        const job = { stage: 'dispatch-ready', paidDispatch: false, resourceId: id, previousStatus: resource.status, bindingHash, ...(credentialId ? { credentialId } : {}) }
         await connection.query('INSERT INTO supply_voice_jobs(book,id,resource_id,organization_id,subject_hash,action,state,fingerprint,updated_at,payload) VALUES (?,?,?,?,?,?,?,?,?,?)',
           [book, requestId, id, scope.organizationId, scope.subjectHash, action, 'dispatch', fingerprint, now(), JSON.stringify(job)])
         return { created: true, resource: claimed, job: { ...job, requestId, action, state: 'dispatch' } }
@@ -280,7 +287,7 @@ export function supplyVoiceRepository({ pool, book, directory, inspectAudio = in
           || (patch.previewSource !== undefined && previous.previewSource && patch.previewSource !== previous.previewSource)
           || (patch.uploadName !== undefined && previous.uploadName && patch.uploadName !== previous.uploadName)
           || (patch.upstreamFileId !== undefined && ((previous.upstreamFileId && patch.upstreamFileId !== previous.upstreamFileId) || (row.state === 'done' && !previous.upstreamFileId)))) throw failure('VOICE_CHECKPOINT_IMMUTABLE', '原上游文件和已受理阶段不能替换或倒退', 409)
-        const next = { ...previous, ...patch }
+        const next = { ...previous, ...patch, ...(patch.stage === 'submitted' ? { paidDispatch: true } : {}) }
         await connection.query('UPDATE supply_voice_jobs SET updated_at=?,payload=? WHERE book=? AND id=?', [now(), JSON.stringify(next), book, requestId])
         return { ...next, requestId, action: row.action, state: row.state }
       })

@@ -50,13 +50,15 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
         await pool.query("INSERT INTO ai_model_provider_keys VALUES (?,'custom-provider',?,'custom-local-root','custom-owner',?,'enabled',?,NULL,NULL,0,?)", [`key-${letter}`, model.id, `account-${letter}`, await vault.seal(secrets[index], `account-${letter}`), `2026-01-0${index + 1} 00:00:00`])
       }
     }
-    const counts = { uploads: 0, clones: 0, syntheses: 0, deletes: 0, fileDeletes: 0, fileLists: 0 }, accounts = new Map(secrets.map(secret => [secret, new Set()])), files = new Map(secrets.map(secret => [secret, new Map()]))
-    let missingUsage = false, clock = Date.now(), failFileDelete = true, loseFileDeleteReply = true, loseFileUploadReply = false, failFileList = false
+    const counts = { uploads: 0, clones: 0, syntheses: 0, deletes: 0, fileDeletes: 0, fileLists: 0, vendorRequests: 0 }, accounts = new Map(secrets.map(secret => [secret, new Set()])), files = new Map(secrets.map(secret => [secret, new Map()]))
+    let missingUsage = false, clock = Date.now(), failFileDelete = true, loseFileDeleteReply = true, loseFileUploadReply = false, failFileList = false, rejectVendor = false
     const ok = value => Response.json({ base_resp: { status_code: 0 }, ...value })
     const fetchImpl = async (url, options = {}) => {
       const parsed = new URL(url)
       if (parsed.hostname === 'minimax-algeng-chat-tts.oss-accelerate.aliyuncs.com') return new Response('fictional custom preview')
       assert.equal(parsed.hostname, 'custom-voice.example.com')
+      counts.vendorRequests++
+      if (rejectVendor) return new Response('simulated invalid vendor credential', { status: 401 })
       const secret = options.headers.authorization?.replace(/^Bearer /, ''), voices = accounts.get(secret)
       assert(voices, 'Only the original simulated account may access its voice')
       const accountFiles = files.get(secret)
@@ -155,6 +157,19 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
     assert.equal(recoveredFileJob.cleanupPending, false); assert.equal(recoveredFileJob.fileRecovery.source, 'minimax-files-list')
     assert.equal(counts.clones, callsBeforeUploadLoss); assert.equal((await service.balance(child)).wallet.balance, '47.000000')
     assert.equal(String((await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='custom-voice-user'"))[0][0].credit_balance), '31.000000')
+    rejectVendor = true
+    const rejectedUpload = await request('/train', recording('custom-rejected-upload')); assert.equal(rejectedUpload.status, 200)
+    const rejectedVoice = (await rejectedUpload.json()).data; assert.equal(rejectedVoice.status, 'failed'); assert.equal(rejectedVoice.settledPoints, 0)
+    const [[rejectedRecord]] = await pool.query("SELECT payload FROM supply_voice_jobs WHERE book='commerce-v2' AND id='custom-rejected-upload'")
+    const rejectedJob = typeof rejectedRecord.payload === 'string' ? JSON.parse(rejectedRecord.payload) : rejectedRecord.payload
+    assert.equal(rejectedJob.paidDispatch, false); assert.equal(rejectedJob.cleanupPending, false)
+    const beforeLocalDeletion = counts.vendorRequests
+    for (let repeat = 0; repeat < 2; repeat++) {
+      const deleted = await request('/delete', { voiceId: rejectedVoice.voiceId, idempotencyKey: 'delete-rejected-upload' }); assert.equal(deleted.status, 200)
+      assert.equal((await deleted.json()).data.status, 'succeeded')
+    }
+    assert.equal(counts.vendorRequests, beforeLocalDeletion); assert.equal((await service.balance(child)).wallet.balance, '47.000000')
+    rejectVendor = false
     missingUsage = true
     const unknown = await request('/train', recording('custom-voice-unknown')); assert.equal(unknown.status, 200); assert.equal((await unknown.json()).data.status, 'outcome_unknown')
     const calls = counts.clones; await service.recover(child, 'custom-voice-user', 'custom-voice-unknown'); assert.equal(counts.clones, calls)

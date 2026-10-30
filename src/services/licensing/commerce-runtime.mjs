@@ -234,6 +234,16 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
       const adapter = adapters[model.adapter]
       if (action === 'preview') return adapter.preview(model, input.resourceId, context)
       if (!resource.bindingHash) { const result = await voices.discardUpload(context, input.resourceId, input.requestId); await voiceSlots.release(context, input.resourceId); return result }
+      if (resource.status === 'deleted') {
+        const previous = await voices.deletion(context, input.requestId)
+        if (previous.resourceId !== input.resourceId || !previous.deleted) throw failure('IDEMPOTENCY_CONFLICT', '删除编号与原资源不匹配', 409)
+        await voiceSlots.release(context, input.resourceId)
+        return { state: 'done', usage: [], result: { voiceId: input.resourceId, deleted: true } }
+      }
+      if (resource.status === 'failed') {
+        try { const result = await voices.discardUpload(context, input.resourceId, input.requestId); await voiceSlots.release(context, input.resourceId); return result }
+        catch (error) { if (error.code !== 'VOICE_NOT_READY') throw error }
+      }
       const config = await customExecution(await definitionFor(root.id, model, true), root, { credentials: true, credentialId: resource.credentialId, recovery: true })
       const result = await adapter.remove(config, input.resourceId, { ...context, requestId: input.requestId })
       if (result.state === 'done' && result.result?.deleted === true) await voiceSlots.release(context, input.resourceId)
