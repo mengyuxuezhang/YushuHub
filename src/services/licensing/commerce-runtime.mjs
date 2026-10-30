@@ -1,13 +1,13 @@
 import fs from 'node:fs'
-import { mysqlStateStore } from '../../repositories/licensing-state.mjs'
-import { createAgentCommerce, emptyCommerceState, sqlUserBank } from './commerce.mjs'
+import { mysqlAccountingStore } from '../../repositories/accounting.mjs'
+import { createAgentCommerce, sqlUserBank } from './commerce.mjs'
 import { httpGatewayAdapters } from './http-adapters.mjs'
 import { digest, failure } from './protocol.mjs'
 
 export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch }) {
   if (!client) return null
   const pool = { query: (...args) => database().query(...args), getConnection: () => database().getConnection() }
-  const store = mysqlStateStore(pool, 'commerce-v1', emptyCommerceState()), adapters = httpGatewayAdapters(fetchImpl)
+  const store = mysqlAccountingStore(pool, 'commerce-v2', 'commerce'), adapters = httpGatewayAdapters(fetchImpl)
   const customModels = env.AI_AGENT_CUSTOM_MODELS_FILE ? JSON.parse(fs.readFileSync(env.AI_AGENT_CUSTOM_MODELS_FILE, 'utf8')) : []
   const gatewayUrl = env.AI_MODEL_GATEWAY_URL ? new URL(env.AI_MODEL_GATEWAY_URL) : null
   if (gatewayUrl && gatewayUrl.protocol !== 'https:') throw new Error('Official gateway requires HTTPS')
@@ -69,19 +69,20 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     if (reconciling) return
     reconciling = true
     try {
-      const state = await store.read(), service = await runtime.service()
-      for (const operation of Object.values(state.requests).filter(op => op.state !== 'settled' && op.snapshot.model.source === 'official').slice(0, 50)) {
-        try { await service.recover(await client.claims(operation.organizationId), operation.userId, operation.requestId) } catch { /* Retain hold; operator reconciliation remains available. */ }
+      const service = await runtime.service()
+      for (const operation of (await store.pending()).filter(op => op.snapshot.model.source === 'official')) {
+        try { await service.recover(await client.claims(operation.organizationId), operation.userId, operation.requestId) }
+        catch { await store.deferRequest(operation.requestId) }
       }
-      for (const event of Object.values((await store.read()).outbox).filter(item => !item.acknowledged).slice(0, 50)) {
+      for (const event of await store.events()) {
         try {
           if (event.source === 'official') {
-            const operation = state.requests[event.requestId]
+            const operation = await store.readRequest(event.requestId)
             if (!operation) continue
             await runtime.acknowledge(await client.claims(operation.organizationId), event.requestId)
           }
-          await store.transaction(current => { current.outbox[event.requestId].acknowledged = true })
-        } catch { /* Retry the persisted event in the next sweep. */ }
+          await store.scopeTransaction({ requestId: event.requestId }, current => { current.outbox[event.requestId].acknowledged = true })
+        } catch { await store.deferEvent(event.requestId) }
       }
     } finally { reconciling = false }
   }

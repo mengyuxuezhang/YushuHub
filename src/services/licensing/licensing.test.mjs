@@ -11,6 +11,7 @@ import { quoteSupply, scheduleSupplyPrice, validateSupplyPrice, withMarkup } fro
 import { createOperatorAuth, passwordHash, totp } from './operator-auth.mjs'
 import { auditLegacyAuthorization, compareMigration } from './migration.mjs'
 import { httpGatewayAdapters } from './http-adapters.mjs'
+import { auditAccounting } from './accounting-migration.mjs'
 
 function setup() {
   let timestamp = Date.parse('2026-10-29T00:00:00Z')
@@ -239,4 +240,18 @@ test('New API rejects management credentials and missing receipt without asserti
   await assert.rejects(adapter.submit(model, {}), { code: 'INVALID_INFERENCE_KEY', noCharge: true })
   process.env.UNCONFIGURED_NEWAPI_TEST_KEY = 'sk-test-only'
   await assert.rejects(adapter.submit(model, {}), error => error.code === 'MISSING_UPSTREAM_RECEIPT' && error.noCharge !== true)
+})
+
+test('accounting import compares values at six decimals and rejects broken request identities', () => {
+  const state = emptyLedgerState()
+  state.wallets.first = { id: 'first', ownerId: 'first', balance: '1', reserved: '0', status: 'enabled' }
+  state.entries.push({ id: 'opening-entry', walletId: 'first', type: 'credit', amount: '1.000000', at: 1 })
+  const canonical = structuredClone(state)
+  canonical.wallets.first.balance = '1.000000'; canonical.wallets.first.reserved = '0.000000'
+  assert.equal(auditAccounting(state, 'ledger').hash, auditAccounting(canonical, 'ledger').hash)
+  const malformed = structuredClone(state)
+  malformed.operations.outer = { requestId: 'different-id', walletId: 'first', state: 'settled', fingerprint: 'x', snapshot: {} }
+  assert.throws(() => auditAccounting(malformed, 'ledger'), { code: 'INVALID_ACCOUNTING_HISTORY' })
+  canonical.wallets.first.reserved = '0.1'
+  assert.throws(() => auditAccounting(canonical, 'ledger'), { code: 'ACCOUNTING_MISMATCH' })
 })

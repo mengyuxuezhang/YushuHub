@@ -14,6 +14,9 @@ export function emptyCommerceState() {
 // The SQL user balance, child wallet, holds and local outbox commit together.
 // Official settlement is recovered by request ID rather than re-submitting inference.
 export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, userBank, now = Date.now }) {
+  const transact = (scope, work) => store.scopeTransaction ? store.scopeTransaction(scope, work) : store.transaction(work)
+  const configuration = () => store.readConfiguration ? store.readConfiguration() : store.read()
+  const find = async id => store.readRequest ? store.readRequest(id) : (await store.read()).requests[id]
   async function selected(state, tenant, modelId) {
       const models = await catalog(tenant), model = models.find(item => item.id === modelId)
     if (!model) throw failure('MODEL_UNAVAILABLE', '模型不在可供货目录', 403)
@@ -27,7 +30,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       offerVersion: first.version, secondOfferVersion: second?.version || null }
   }
   async function complete(requestId, outcome) {
-    return store.transaction(async (state, connection) => {
+    return transact({ requestId }, async (state, connection) => {
       const operation = state.requests[requestId]
       if (!operation) throw failure('NOT_FOUND', '本地请求不存在', 404)
       if (operation.state === 'settled') return operation
@@ -69,7 +72,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       })
     },
     async list(tenant) {
-      const state = await store.read(), models = await catalog(tenant), result = []
+      const state = await configuration(), models = await catalog(tenant), result = []
       for (const model of models) {
         if (tenant.level === 2 && !state.offers[`${rootId}:${model.id}`]?.enabled) continue
         try { result.push({ ...await selected(state, tenant, model.id), offer: state.offers[`${tenant.id}:${model.id}`] }) }
@@ -85,7 +88,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       if (tenant.level !== 1) throw failure('LEVEL_REQUIRED', '只有一级可以审核直属二级充值', 403)
       identifier(childId); identifier(requestId)
       if (micros(amount) <= 0n || typeof receipt !== 'string' || receipt.trim().length < 3) throw failure('INVALID_CREDIT', '充值金额或凭证无效')
-      return store.transaction(state => {
+      return transact({ walletId: childId, commandId: requestId, receipt }, state => {
         const fingerprint = digest(JSON.stringify({ childId, amount, receipt })), previous = state.commands[requestId]
         if (previous) {
           if (previous.fingerprint !== fingerprint) throw failure('IDEMPOTENCY_CONFLICT', '充值请求ID冲突', 409)
@@ -100,30 +103,37 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       })
     },
     async balance(tenant) {
-      const state = await store.read(), operations = Object.values(state.requests).filter(op => tenant.level === 1 || op.organizationId === tenant.id)
+      const state = store.history ? await store.history(tenant.id, tenant.level === 1) : await store.read(), operations = Object.values(state.requests).filter(op => tenant.level === 1 || op.organizationId === tenant.id)
       return { wallet: state.wallets[tenant.id] || { balance: '0.000000', reserved: '0.000000' },
         entries: state.entries.filter(e => tenant.level === 1 || e.organizationId === tenant.id).slice(-200).reverse(),
         usage: operations.slice(-100).map(operation => ({ requestId: operation.requestId, state: operation.state,
           salesAmount: operation.salesAmount, supplyAmount: operation.supplyAmount,
           ...(tenant.level === 1 ? { upstreamAmount: operation.upstreamAmount, firstMargin: operation.firstMargin, secondMargin: operation.secondMargin } : { secondMargin: operation.secondMargin }) })),
-        unsettled: operations.filter(op => op.state !== 'settled').length }
+        unsettled: state.unsettledCount ?? operations.filter(op => op.state !== 'settled').length }
     },
     async submit(tenant, userId, input) {
       const requestId = identifier(input.requestId), modelId = identifier(input.modelId)
-      const state = await store.read(), snapshot = await selected(state, tenant, modelId)
+      const fingerprint = digest(JSON.stringify({ organizationId: tenant.id, userId, modelId, request: input.request }))
+      const previous = await find(requestId)
+      if (previous) {
+        if (previous.fingerprint !== fingerprint) throw failure('IDEMPOTENCY_CONFLICT', '请求ID冲突', 409)
+        return previous
+      }
+      const state = await configuration(), snapshot = await selected(state, tenant, modelId)
       snapshot.discount = decimal(micros(numberString(tenant.discount ?? '1')))
       if (micros(snapshot.discount) < 0n) throw failure('INVALID_DISCOUNT', '折扣无效')
       // Trusted model adapters calculate bounds; client estimatedUsage is ignored.
       const prepared = await snapshot.model.prepare(input.request), upperUsage = prepared.upperUsage
       if (!Array.isArray(upperUsage)) throw failure('UNBOUNDED_REQUEST', '缺少可执行计费上界')
-      const fingerprint = digest(JSON.stringify({ organizationId: tenant.id, userId, modelId, request: input.request }))
       const reservedPoints = userPoints(quoteSupply(snapshot.sale, upperUsage), snapshot.pointsPerCny, snapshot.discount), reservedSupply = quoteSupply(snapshot.supply, upperUsage)
-      const reserved = await store.transaction(async (current, connection) => {
+      const reserved = await transact({ walletId: tenant.id, requestId, readConfiguration: true }, async (current, connection) => {
         const previous = current.requests[requestId]
         if (previous) {
           if (previous.fingerprint !== fingerprint) throw failure('IDEMPOTENCY_CONFLICT', '请求ID冲突', 409)
           return { created: false, operation: previous }
         }
+        if (current.offers[`${rootId}:${modelId}`]?.version !== snapshot.offerVersion
+          || (tenant.level === 2 && current.offers[`${tenant.id}:${modelId}`]?.version !== snapshot.secondOfferVersion)) throw failure('PRICE_CHANGED', '价格或供货状态已变更，请刷新后重试', 409)
         if (tenant.level === 2) {
           const wallet = current.wallets[tenant.id]
           if (!wallet || micros(wallet.balance) < 0n || micros(wallet.balance) - micros(wallet.reserved) < micros(reservedSupply)) throw failure('INSUFFICIENT_FUNDS', '二级上游供货余额不足', 402)
@@ -141,11 +151,14 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       try { return await complete(requestId, await invoke(tenant, snapshot.model, { requestId, request: prepared.request })) }
       catch (error) {
         if (error.noCharge === true) return complete(requestId, { state: 'done', usage: [], result: { error: 'REQUEST_NOT_ACCEPTED' } })
-        return store.transaction(current => { current.requests[requestId].state = 'unknown'; return current.requests[requestId] })
+        return transact({ requestId }, current => {
+          if (current.requests[requestId].state !== 'settled') current.requests[requestId].state = 'unknown'
+          return current.requests[requestId]
+        })
       }
     },
     async recover(tenant, userId, requestId) {
-      const operation = (await store.read()).requests[identifier(requestId)]
+      const operation = await find(identifier(requestId))
       if (!operation || operation.userId !== userId || operation.organizationId !== tenant.id) throw failure('NOT_FOUND', '请求不存在', 404)
       if (operation.state === 'settled') return operation
       return complete(requestId, await lookup(tenant, operation))

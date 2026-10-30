@@ -2,6 +2,7 @@
 
 - [授权中心、代理供货与分级计费总规划](AUTHORIZATION_SUPPLY_MASTER_PLAN.md)
 - [授权与供货重构进度及接手清单](AUTHORIZATION_SUPPLY_STATUS.md)
+- [分级供货账务存储、迁入与恢复](ACCOUNTING_STORAGE.md)
 
 - [部署指南](DEPLOYMENT.md)
 - [开发指南](DEVELOPMENT.md)

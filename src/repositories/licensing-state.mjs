@@ -10,7 +10,9 @@ export function mysqlStateStore(pool, id, initialState) {
     async read() {
       const [rows] = await pool.query('SELECT document FROM licensing_state WHERE id=?', [id])
       if (!rows[0]) throw new Error('Service database not migrated')
-      return typeof rows[0].document === 'string' ? JSON.parse(rows[0].document) : rows[0].document
+      const state = typeof rows[0].document === 'string' ? JSON.parse(rows[0].document) : rows[0].document
+      if (state.accountingCutover) throw Object.assign(new Error('旧账本已迁入独立表，禁止回退读写'), { code: 'ACCOUNTING_STORE_MIGRATED' })
+      return state
     },
     async transaction(operation) {
       const connection = await pool.getConnection()
@@ -19,6 +21,7 @@ export function mysqlStateStore(pool, id, initialState) {
         const [rows] = await connection.query('SELECT document FROM licensing_state WHERE id=? FOR UPDATE', [id])
         if (!rows[0]) throw new Error('Service database not migrated')
         const state = typeof rows[0].document === 'string' ? JSON.parse(rows[0].document) : rows[0].document
+        if (state.accountingCutover) throw Object.assign(new Error('旧账本已迁入独立表，禁止回退读写'), { code: 'ACCOUNTING_STORE_MIGRATED' })
         const result = await operation(state, connection)
         await connection.query('UPDATE licensing_state SET document=?, revision=revision+1 WHERE id=?', [JSON.stringify(state), id])
         await connection.commit()

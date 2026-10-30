@@ -17,7 +17,7 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
     return { model, adapter }
   }
   const currentPrice = async model => {
-    const state = await ledger.store.read(), versions = state.prices[model.id] || []
+    const state = ledger.store.readConfiguration ? await ledger.store.readConfiguration() : await ledger.store.read(), versions = state.prices[model.id] || []
     return validateSupplyPrice(versions.filter(p => p.effectiveAt <= now()).at(-1) || model.price)
   }
   async function finish(claims, operation, outcome) {
@@ -84,7 +84,7 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
     },
     async reconcile(requestId, input, actor) {
       if (typeof input.evidence !== 'string' || input.evidence.trim().length < 5) throw failure('EVIDENCE_REQUIRED', '人工对账须填写供应商核对凭证')
-      const operation = (await ledger.store.read()).operations[identifier(requestId)]
+      const operation = ledger.store.readRequest ? await ledger.store.readRequest(identifier(requestId)) : (await ledger.store.read()).operations[identifier(requestId)]
       if (!operation) throw failure('NOT_FOUND', '请求不存在', 404)
       if (!Array.isArray(input.usage)) throw failure('INVALID_USAGE', '须提交核对后的实际用量')
       return ledger.settle(requestId, quoteSupply(operation.snapshot.price, input.usage), input.usage, operation.result,

@@ -113,6 +113,7 @@ import { createSupplierLicenseService } from '../../src/services/supplier-licens
 import { deploymentRuntime, officialAuthorization } from '../../src/services/licensing/admin-runtime.mjs'
 import { registerDeploymentAuthorizationRoutes } from '../../src/routes/deployment-authorization.mjs'
 import { agentCommerceRuntime } from '../../src/services/licensing/commerce-runtime.mjs'
+import { assertAccountingRuntime } from '../../src/services/licensing/accounting-mode.mjs'
 import { registerAgentSupplyRoutes } from '../../src/routes/agent-supply.mjs'
 import { supplierLicenseAllowsPermission } from '../../src/services/supplier-license-contract.mjs'
 import { createCenterSupplierAuthorizationService, normalizeCenterSupplier } from '../../src/services/center-supplier-authorization.mjs'
@@ -6982,6 +6983,7 @@ pool = await initDatabase({
   supplierId: BUILD_CENTER_SUPPLIER_ID,
   permissionKeys: permissionCatalogItems().map((item) => item.key),
 })
+await assertAccountingRuntime(pool, Boolean(authorizationClient))
 const updateDatabaseMigration = await migrateOfficialUpdateDatabaseSettings(pool)
 if (updateDatabaseMigration.changedRows > 0) console.log(`[ai-admin] migrated ${updateDatabaseMigration.changedRows} saved official update source setting(s)`)
 await reconcileCenterSupplierOrganizations()
