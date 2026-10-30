@@ -3,6 +3,7 @@ import { SYSTEM_AUDIO_PROVIDER_ID } from './image-generation.mjs'
 import { MiniMaxAdapter } from './minimax-adapter.mjs'
 import { isManagedVoiceProvider, ensureAutomaticUpstreamAccount } from './model-management-defaults.mjs'
 import { assertManagedVoiceKeyWriteAllowed } from './voice-key-policy.mjs'
+import { assertSupplyVoiceMutationAllowed } from './licensing/private-voice-binding.mjs'
 import { validateKeyModelScope } from './model-key-scope.mjs'
 
 export function normalizeModelProviderKey(row) {
@@ -80,6 +81,7 @@ export async function saveModelProviderKey(deps, providerId, input = {}, actor =
     }
     if (existing && (existing.provider_id !== provider.id || String(existing.organization_id || '') !== organizationId)) throw Object.assign(new Error('Key 不属于当前服务商或组织'), { statusCode: 403 })
     const providerModelId = await validateKeyModelScope(keyConnection, input, existing, provider)
+    if (existing && (existing.provider_model_id || '') !== (providerModelId || '')) await assertSupplyVoiceMutationAllowed(keyConnection, { keyId: id })
     if (!rawKey && !existing) throw new Error('请输入模型服务 Key')
     const accountId = await ensureAutomaticUpstreamAccount(keyConnection, {
       providerId: provider.id,

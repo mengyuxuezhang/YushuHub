@@ -12,6 +12,8 @@ import { startAccountingRecovery } from '../../src/services/licensing/accounting
 import { createAccountingMonitor } from '../../src/services/licensing/accounting-monitor.mjs'
 import { ModelCredentialVault } from '../../src/services/model-credentials.mjs'
 import path from 'node:path'
+import { privateVoiceStorage } from '../../src/services/licensing/private-voice-runtime.mjs'
+import { registerPrivateVoiceGatewayRoutes } from '../../src/routes/private-voice-gateway.mjs'
 
 const { pool } = await serviceDatabase('AI_GATEWAY', emptyLedgerState())
 const store = mysqlAccountingStore(pool, 'official-v2', 'ledger')
@@ -39,12 +41,17 @@ if (process.argv.includes('--migrate')) {
       return payload.data
     } catch (error) { monitor.reject(); throw error }
   }
-  const ledger = createSupplyLedger({ store }), gateway = createModelGateway({ ledger, authorize, models: await jsonFile(process.env.AI_GATEWAY_MODELS_FILE), adapters: httpGatewayAdapters() })
+  const privateVoiceStore = privateVoiceStorage({ pool, book: 'official-v2', directory: process.env.AI_GATEWAY_PRIVATE_VOICE_DIRECTORY, retentionDays: process.env.AI_GATEWAY_PRIVATE_VOICE_RETENTION_DAYS || 30 })
+  if (privateVoiceStore) await privateVoiceStore.assertReady()
+  const ledger = createSupplyLedger({ store }), gateway = createModelGateway({ ledger, authorize, models: await jsonFile(process.env.AI_GATEWAY_MODELS_FILE), adapters: httpGatewayAdapters(fetch, { privateVoiceStore }), privateVoiceStore })
+  const voiceCleanup = privateVoiceStore && setInterval(() => privateVoiceStore.clean().catch(() => monitor.recoveryError()), 60_000)
+  voiceCleanup?.unref()
   const stopRecovery = startAccountingRecovery(ledger, () => monitor.recoveryError())
   monitor.start()
   const app = serviceApp()
   registerModelGatewayRoutes(app, { gateway, ledger, monitor, operators: await operatorRuntime(operators, 'AI_GATEWAY') })
+  registerPrivateVoiceGatewayRoutes(app, { gateway })
   serviceErrors(app)
   const server = app.listen(Number(process.env.AI_GATEWAY_PORT || 7082), process.env.AI_GATEWAY_HOST || '127.0.0.1', () => console.log(`Model gateway listening:${server.address().port}`))
-  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { stopRecovery(); monitor.stop(); server.close(async () => { await pool.end(); process.exit(0) }) })
+  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { clearInterval(voiceCleanup); stopRecovery(); monitor.stop(); server.close(async () => { await pool.end(); process.exit(0) }) })
 }

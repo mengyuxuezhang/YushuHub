@@ -9,6 +9,11 @@ const costs = ref<SupplyComponent[]>([])
 const record = computed(() => state.value?.records.find(row => row.definition.id === selected.value))
 const candidate = computed(() => state.value?.candidates.find(row => row.id === selected.value))
 const labels: Record<string, string> = { request: '每次请求', input_tokens: '输入Token', cached_tokens: '缓存命中Token', output_tokens: '输出Token', image: '图片', billable_characters: '计费字符' }
+const phaseLabels: Record<string, string> = { preview: '试听', activation: '首次启用', usage: '日常用量', request: '请求' }
+function changeAdapter() {
+  if (record.value || !candidate.value) return
+  costs.value = (candidate.value.adapterCostComponents?.[form.adapter] || candidate.value.costComponents).map(item => ({ ...item, dimensions: item.dimensions ? { ...item.dimensions } : undefined }))
+}
 async function perform(work: () => Promise<unknown>) { busy.value = true; error.value = ''; try { await work() } catch (e) { error.value = e instanceof Error ? e.message : '审核操作失败' } finally { busy.value = false } }
 async function load() { state.value = await customSupplyReview() }
 async function refresh() { selected.value = ''; await load() }
@@ -45,7 +50,7 @@ onMounted(() => perform(load))
     </template>
     <form v-if="selected" @submit.prevent="save">
       <h3>{{ candidate?.name || selected }} · 审核版本 {{ record?.revision || 0 }}</h3>
-      <label>调用方式<select v-model="form.adapter" :disabled="!!record"><option v-for="adapter in candidate?.adapters || [form.adapter]" :key="adapter" :value="adapter">{{ adapter === 'minimax.speech_async' ? 'MiniMax异步语音' : adapter === 'minimax.speech' ? 'MiniMax同步语音' : adapter === 'openai.chat' ? '兼容文本' : adapter === 'openai.images' ? '兼容图片' : '博查搜索' }}</option></select></label>
+      <label>调用方式<select v-model="form.adapter" :disabled="!!record" @change="changeAdapter"><option v-for="adapter in candidate?.adapters || [form.adapter]" :key="adapter" :value="adapter">{{ adapter === 'minimax.private_voice' ? 'MiniMax私有音色' : adapter === 'minimax.speech_async' ? 'MiniMax异步语音' : adapter === 'minimax.speech' ? 'MiniMax同步语音' : adapter === 'openai.chat' ? '兼容文本' : adapter === 'openai.images' ? '兼容图片' : '博查搜索' }}</option></select></label>
       <label>客户端模型标识<input v-model="form.clientId" required maxlength="160" /><small>默认沿用原模型标识；同目录内须唯一。</small></label>
       <label><input v-model="form.enabled" type="checkbox" />启用此供货定义</label>
       <template v-if="form.adapter === 'openai.chat'">
@@ -56,7 +61,7 @@ onMounted(() => perform(load))
       <label v-if="form.adapter === 'openai.images'">单次图片上限<input v-model.number="form.maxImages" type="number" min="1" max="10" required /></label>
       <fieldset v-if="form.adapter.startsWith('minimax.')"><legend>批准的公共音色</legend><label v-for="voice in candidate?.voices || []" :key="voice.id"><input v-model="form.allowedVoiceIds" type="checkbox" :value="voice.id" />{{ voice.name }}<small>{{ voice.id }}</small></label><p v-if="!candidate?.voices.length">尚无已登记的启用公共音色，请先同步公共音色目录。</p></fieldset>
       <h3>供应商成本（人民币）</h3><p>全部计量项都须明确填写，免费项填0。已审核的计量单位与结构固定；后续成本变化保留原任务快照。</p>
-      <div class="cost-grid"><label v-for="(item, index) in costs" :key="index">{{ labels[item.meter] || item.meter }} {{ item.dimensions?.resolution || '' }}<span>每 <input v-model="item.unitSize" type="text" inputmode="decimal" :readonly="!!record" required /> 单位</span><span>¥ <input v-model="item.amount" type="text" inputmode="decimal" required /></span></label></div>
+      <div class="cost-grid"><label v-for="(item, index) in costs" :key="index">{{ labels[item.meter] || (item.meter === 'resource_activation' ? '音色启用次数' : item.meter) }} · {{ phaseLabels[item.phase || 'usage'] || item.phase }} {{ item.dimensions?.resolution || '' }}<span>每 <input v-model="item.unitSize" type="text" inputmode="decimal" :readonly="!!record" required /> 单位</span><span>¥ <input v-model="item.amount" type="text" inputmode="decimal" required /></span></label></div>
       <label>核定依据<input v-model="form.memo" minlength="3" maxlength="500" required placeholder="报价或账单依据及核定说明" /></label>
       <button class="primary-button" :disabled="busy">确认审核并保存</button><button type="button" class="secondary-button" :disabled="busy" @click="selected = ''">取消</button>
     </form>

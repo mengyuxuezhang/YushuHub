@@ -2,8 +2,9 @@ import { selectEligibleModelKeys } from '../model-key-scope.mjs'
 import { digest, failure, identifier, micros } from './protocol.mjs'
 import { validateSupplyPrice } from './pricing.mjs'
 import { IMAGE_RESOLUTION_TIERS } from '../image-generation.mjs'
+import { privateVoiceCostTemplate } from './private-voice-pricing.mjs'
 
-const types = { 'openai.chat': 'text', 'openai.images': 'image', 'bocha.search': 'search', 'minimax.speech': 'audio', 'minimax.speech_async': 'audio' }
+const types = { 'openai.chat': 'text', 'openai.images': 'image', 'bocha.search': 'search', 'minimax.speech': 'audio', 'minimax.speech_async': 'audio', 'minimax.private_voice': 'audio' }
 const tasks = { text: 'chat', image: 'image_generation', search: 'web_search', audio: 'speech_synthesis' }
 function costTemplate(type) {
   const item = (meter, unitSize = '1', dimensions) => ({ meter, phase: meter === 'request' ? 'request' : 'usage', unitSize, amount: '', ...(dimensions ? { dimensions } : {}) })
@@ -35,7 +36,7 @@ export function managedCustomModels({ pool, materializeKey }) {
       WHERE m.id=? AND m.organization_id=? AND p.organization_id=?${recovery ? '' : " AND m.archived_at IS NULL AND m.status='enabled' AND p.status='enabled'"}`,
     [definition.providerModelId, organization.id, organization.id])
     if (!row || (row.model_type || 'text') !== types[definition.adapter]) throw failure('MODEL_UNAVAILABLE', '本地模型已停用、删除或不属于当前一级', 403)
-    const expectedEndpoint = { 'openai.chat': '/chat/completions', 'openai.images': '/images/generations', 'bocha.search': '/web-search', 'minimax.speech': '/v1/t2a_v2', 'minimax.speech_async': '/v1/t2a_async_v2' }[definition.adapter]
+    const expectedEndpoint = { 'openai.chat': '/chat/completions', 'openai.images': '/images/generations', 'bocha.search': '/web-search', 'minimax.speech': '/v1/t2a_v2', 'minimax.speech_async': '/v1/t2a_async_v2', 'minimax.private_voice': '/v1/t2a_v2' }[definition.adapter]
     if (row.endpoint_path && row.endpoint_path !== expectedEndpoint && !(definition.adapter === 'minimax.speech_async' && row.endpoint_path === '/v1/t2a_v2')) throw failure('UNSUPPORTED_MODEL_ENDPOINT', '此模型接口需适配后才能进入供货链路', 409)
     let origin
     try { origin = new URL(row.base_url) } catch { throw failure('INVALID_UPSTREAM', '供货模型连接地址无效') }
@@ -72,6 +73,7 @@ export function managedCustomModels({ pool, materializeKey }) {
         AND a.organization_id=v.organization_id AND a.status='enabled' ORDER BY v.id`, [organization.id]) : [[]]
       return rows.filter(row => Object.values(types).includes(row.model_type || 'text')).map(row => ({ id: row.id, clientId: row.model_id, name: row.display_name, modelType: row.model_type || 'text', contextWindow: Number(row.context_window), providerId: row.provider_id, costComponents: costTemplate(row.model_type || 'text'),
         adapters: Object.keys(types).filter(adapter => types[adapter] === (row.model_type || 'text')),
+        ...(row.model_type === 'audio' ? { adapterCostComponents: { 'minimax.private_voice': privateVoiceCostTemplate() } } : {}),
         voices: [...new Map(voices.filter(voice => voice.provider_model_id === row.id).map(voice => [voice.provider_voice_id, { id: voice.provider_voice_id, name: voice.display_name }])).values()],
       }))
     },

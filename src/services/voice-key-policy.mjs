@@ -1,6 +1,8 @@
 import { SYSTEM_AUDIO_PROVIDER_ID } from './image-generation.mjs'
+import { assertSupplyVoiceMutationAllowed } from './licensing/private-voice-binding.mjs'
 
 export async function assertManagedVoiceKeyWriteAllowed(connection, providerId, keyId, rawKey, ownerId = 'admin', confirmed = false, organizationId = '') {
+  if (keyId && rawKey) await assertSupplyVoiceMutationAllowed(connection, { keyId })
   const [[capability]] = await connection.query(`SELECT c.id FROM ai_model_task_capabilities c
     JOIN ai_provider_models m ON m.id=c.provider_model_id
     WHERE m.provider_id=? AND c.organization_id=? AND c.protocol_adapter='minimax.t2a' LIMIT 1`, [providerId, organizationId])
@@ -24,6 +26,7 @@ export async function assertManagedVoiceKeyWriteAllowed(connection, providerId, 
 }
 
 export async function assertManagedVoiceKeyDeletionAllowed(connection, keyId, ownerId) {
+  await assertSupplyVoiceMutationAllowed(connection, { keyId })
   const [[voice]] = await connection.query(`SELECT v.id FROM ai_private_voices v
     JOIN ai_model_provider_keys k ON k.upstream_account_id=v.upstream_account_id
     WHERE k.id=? AND k.owner_user_id=? AND v.status<>'deleted' LIMIT 1`, [keyId, ownerId])

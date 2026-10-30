@@ -6,6 +6,7 @@ import { createLicenseCenter, emptyCenterState } from './center.mjs'
 import { createAgentCommerce, emptyCommerceState } from './commerce.mjs'
 import { createPriceNotifications, emptyPriceNotificationState } from './price-notifications.mjs'
 import { managedCustomModels } from './managed-custom-models.mjs'
+import { privateVoiceCostTemplate } from './private-voice-pricing.mjs'
 import { customDefinitionService, emptyCustomDefinitions } from './custom-definitions.mjs'
 import { legacySnapshotFixture } from './fixtures/legacy-snapshot.mjs'
 import { migrationHash } from './legacy-import.mjs'
@@ -836,6 +837,9 @@ test('reviewed custom definitions preserve immutable history, decimal costs and 
   const saved = await review.save(root, { ...voice, allowedVoiceIds: ['public-voice'] }, 'owner')
   assert.deepEqual(saved.definition.publicVoices, [{ id: 'public-voice', name: '公共音色' }])
   assert.equal((await review.list(root)).records.length, 2)
+  const privateInput = { ...voice, providerModelId: 'private-voice-model', clientId: 'private-client', adapter: 'minimax.private_voice', allowedVoiceIds: [], costComponents: privateVoiceCostTemplate().map(item => ({ ...item, amount: '0.01' })) }
+  await assert.rejects(review.save(root, { ...privateInput, costComponents: privateInput.costComponents.filter(item => item.phase !== 'activation') }, 'owner'), { code: 'UNPRICED_USAGE' })
+  assert.equal((await review.save(root, privateInput, 'owner')).definition.supplierCost.components.length, 5)
 })
 
 

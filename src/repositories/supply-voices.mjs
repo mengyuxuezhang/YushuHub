@@ -37,7 +37,7 @@ const publicResource = row => ({ id: row.id, modelId: row.modelId, name: row.nam
 
 // Explicit SQL migration; no runtime DDL or monetary writes. This repository
 // is an internal supplier-execution primitive, not an unauthenticated API.
-export function supplyVoiceRepository({ pool, book, directory, inspectAudio = inspectVoiceAudio, now = Date.now }) {
+export function supplyVoiceRepository({ pool, book, directory, inspectAudio = inspectVoiceAudio, bindingGuard, now = Date.now }) {
   identifier(book)
   if (book.length > 80 || !path.isAbsolute(directory)) throw new Error('Explicit private voice book and absolute controlled directory required')
   async function transaction(work) {
@@ -132,6 +132,7 @@ export function supplyVoiceRepository({ pool, book, directory, inspectAudio = in
       if (credentialId !== undefined) identifier(credentialId)
       const fingerprint = digest(JSON.stringify({ ...scope, id, action, inputHash, bindingHash, credentialId, name }))
       return transaction(async connection => {
+        if (bindingGuard) await bindingGuard(connection, scope, credentialId, { action })
         const resource = await find(connection, scope, id, true)
         const [[previous]] = await connection.query('SELECT * FROM supply_voice_jobs WHERE book=? AND id=? FOR UPDATE', [book, requestId])
         if (previous) {

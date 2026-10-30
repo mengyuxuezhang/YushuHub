@@ -3,6 +3,7 @@ import { MiniMaxAdapter } from '../minimax-adapter.mjs'
 import { withNewApiSettlement } from './newapi-settlement.mjs'
 import { readChatStream } from './streaming.mjs'
 import { asyncSpeechAdapter } from './async-speech.mjs'
+import { privateVoiceAdapter, preparePrivateVoice } from './private-voice-adapter.mjs'
 import { normalizeImageGenerationRequest, buildUpstreamImagePayload, resolveResolutionTier } from '../image-generation.mjs'
 
 const event = (meter, quantity, extra = {}) => ({ meter, quantity: String(quantity), ...extra })
@@ -43,7 +44,7 @@ async function upstream(model, endpoint, body, fetcher, context) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
 
-export function httpGatewayAdapters(fetcher = fetch) {
+export function httpGatewayAdapters(fetcher = fetch, { privateVoiceStore } = {}) {
   const adapters = {
     'openai.chat': {
       prepare(model, request) {
@@ -106,5 +107,7 @@ export function httpGatewayAdapters(fetcher = fetch) {
   }
   adapters['newapi.chat'] = withNewApiSettlement(adapters['openai.chat'], fetcher)
   adapters['minimax.speech_async'] = asyncSpeechAdapter(adapters['minimax.speech'], fetcher)
+  adapters['minimax.private_voice'] = privateVoiceStore ? privateVoiceAdapter({ ...privateVoiceStore, speech: adapters['minimax.speech'], fetcher })
+    : { prepare: (model, input, context) => preparePrivateVoice(model, input, context, { speech: adapters['minimax.speech'] }) }
   return adapters
 }

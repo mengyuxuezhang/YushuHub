@@ -2,8 +2,9 @@ import { digest, failure, identifier } from './protocol.mjs'
 import { priceStructure, publicSupplyPlan, quoteSupply, scheduleSupplyPrice, validateSupplyPrice } from './pricing.mjs'
 import { assertSafeTaskRequest } from '../model-task-service.mjs'
 import { emitChunk } from './streaming.mjs'
+import { validatePrivateVoiceMeters } from './private-voice-pricing.mjs'
 
-export function createModelGateway({ ledger, authorize, models, adapters, now = Date.now }) {
+export function createModelGateway({ ledger, authorize, models, adapters, privateVoiceStore, now = Date.now }) {
   const catalog = new Map(models.map(model => [identifier(model.id), model]))
   const ownsSubject = (claims, operation) => !operation.snapshot.subjectHash || operation.snapshot.subjectHash === claims.subjectHash
   const check = async token => {
@@ -16,11 +17,19 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
     if (!model || model.status !== 'enabled' || !claims.grant.modelIds.includes(model.id) || !claims.root.modelIds.includes(model.id)) throw failure('MODEL_UNAVAILABLE', '模型不可用或不在授权目录', 403)
     const adapter = adapters[model.adapter]
     if (!adapter?.prepare || !adapter?.submit) throw failure('ADAPTER_UNAVAILABLE', '模型适配器尚未完成计费上界接入', 503)
+    if (model.adapter === 'minimax.private_voice') validatePrivateVoiceMeters(model.price)
     return { model, adapter }
   }
   const currentPrice = async model => {
     const state = ledger.store.readConfiguration ? await ledger.store.readConfiguration() : await ledger.store.read(), versions = state.prices[model.id] || []
     return publicSupplyPlan(validateSupplyPrice(versions.filter(p => p.effectiveAt <= now()).sort((a, b) => a.effectiveAt - b.effectiveAt || a.version - b.version).at(-1) || model.price))
+  }
+  async function privateAccess(token, modelId) {
+    const claims = await check(token), { model, adapter } = select(claims, modelId)
+    if (!privateVoiceStore || model.adapter !== 'minimax.private_voice') throw failure('VOICE_PRIVATE_SUPPLY_UNAVAILABLE', '该模型未开放私有音色', 503)
+    if (!/^[a-f0-9]{64}$/.test(claims.subjectHash || '')) throw failure('VOICE_SUBJECT_REQUIRED', '私有音色须绑定已认证终端主体', 403)
+    const identity = { rootId: claims.rootId, organizationId: claims.sub, subjectHash: claims.subjectHash, modelId: model.id }
+    return { model, adapter, identity }
   }
   async function finish(claims, operation, outcome) {
     if (outcome.receipt) await ledger.confirmReceipt(operation.requestId, outcome.receipt)
@@ -44,6 +53,30 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
     await adapter.acknowledge(model, operation)
   }
   return {
+    async privateAccess(token, modelId) { await privateAccess(token, modelId); return true },
+    async privateUpload(token, modelId, input) {
+      const { identity } = await privateAccess(token, modelId)
+      if (input.consent !== true) throw failure('VOICE_CONSENT_REQUIRED', '须确认录音复刻授权')
+      return privateVoiceStore.voices.upload(identity, { requestId: input.requestId, format: input.format, bytes: input.bytes })
+    },
+    async privateList(token, modelId) {
+      const { identity } = await privateAccess(token, modelId)
+      return privateVoiceStore.voices.list(identity)
+    },
+    async privatePreview(token, modelId, resourceId) {
+      const { model, adapter, identity } = await privateAccess(token, modelId)
+      return adapter.preview(model, identifier(resourceId), identity)
+    },
+    async privateDelete(token, modelId, resourceId, requestId) {
+      const { model, adapter, identity } = await privateAccess(token, modelId)
+      return adapter.remove(model, identifier(resourceId), { ...identity, requestId: identifier(requestId) })
+    },
+    async privateAudio(token, modelId, requestId) {
+      const { identity } = await privateAccess(token, modelId), operation = await ledger.find(identifier(requestId), identity.rootId)
+      if (operation.snapshot.organizationId !== identity.organizationId || operation.snapshot.subjectHash !== identity.subjectHash || operation.snapshot.modelId !== identity.modelId) throw failure('NOT_FOUND', '任务不存在', 404)
+      if (operation.state !== 'settled' || operation.result?.error || !operation.result?.audioArtifactId) throw failure('VOICE_AUDIO_PENDING', '原音频尚未确认', 409)
+      return privateVoiceStore.artifacts.read(identity, operation.result.audioArtifactId)
+    },
     async schedulePrice(modelId, input, actor) {
       const model = catalog.get(identifier(modelId))
       if (!model) throw failure('MODEL_UNAVAILABLE', '调价模型不存在', 404)
@@ -61,6 +94,7 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
           supportsStreaming: model.supportsStreaming === true && model.adapter === 'newapi.chat' && model.settlementProtocol === 'okpa-v1',
           executor: model.adapter === 'minimax.speech_async' ? 'async_job' : 'sync',
           allowedVoiceIds: model.allowedVoiceIds,
+          privateVoiceSupported: model.adapter === 'minimax.private_voice' && Boolean(privateVoiceStore),
           publicVoices: (model.publicVoices || []).filter(voice => model.allowedVoiceIds?.includes(voice.id)).map(voice => ({ id: voice.id, name: String(voice.name || voice.id).slice(0, 120), description: String(voice.description || '').slice(0, 512) })),
           nextPrices: (state.prices[model.id] || []).filter(plan => plan.effectiveAt > now()).sort((a, b) => a.effectiveAt - b.effectiveAt).map(({ version, effectiveAt, currency, components, publishedAt }) => ({ version, effectiveAt, currency, components, announcedAt: publishedAt })),
           price: await currentPrice(model) })

@@ -1,8 +1,9 @@
 import { identifier, failure } from './protocol.mjs'
 import { priceStructure, publicSupplyPlan, validateSupplyPrice } from './pricing.mjs'
+import { validatePrivateVoiceMeters } from './private-voice-pricing.mjs'
 
 export const emptyCustomDefinitions = () => ({ roots: {} })
-const tasks = { 'openai.chat': 'chat', 'openai.images': 'image_generation', 'bocha.search': 'web_search', 'minimax.speech': 'speech_synthesis', 'minimax.speech_async': 'speech_synthesis' }
+const tasks = { 'openai.chat': 'chat', 'openai.images': 'image_generation', 'bocha.search': 'web_search', 'minimax.speech': 'speech_synthesis', 'minimax.speech_async': 'speech_synthesis', 'minimax.private_voice': 'speech_synthesis' }
 const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max
 
 // Low-frequency reviewed definitions have immutable history. Connection data
@@ -35,7 +36,8 @@ export function customDefinitionService({ store, managed, fileIds = [], now = Da
         definition.clientId = input.clientId
       }
       const required = { chat: ['request', 'input_tokens', 'cached_tokens', 'output_tokens'], image_generation: ['request', 'image'], web_search: ['request'], speech_synthesis: ['request', 'billable_characters'] }[definition.taskType]
-      if (required.some(meter => !cost.components.some(item => item.meter === meter && (item.phase || 'usage') === (meter === 'request' ? 'request' : 'usage')))
+      if (input.adapter === 'minimax.private_voice') validatePrivateVoiceMeters(cost)
+      else if (required.some(meter => !cost.components.some(item => item.meter === meter && (item.phase || 'usage') === (meter === 'request' ? 'request' : 'usage')))
         || cost.components.some(item => !required.includes(item.meter))) throw failure('UNPRICED_USAGE', '须明确填写此适配器的全部计量项')
       if (input.adapter === 'openai.chat') {
         if (!integer(input.contextWindow, 1, 10_000_000) || !integer(input.maxOutputTokens, 1, input.contextWindow)) throw failure('INVALID_BOUND', '文本须填写有效上下文和输出上限')
@@ -48,7 +50,7 @@ export function customDefinitionService({ store, managed, fileIds = [], now = Da
       if (definition.taskType === 'speech_synthesis') {
         const candidate = (await managed.candidates(root)).find(item => item.id === id)
         if (!Array.isArray(input.allowedVoiceIds) || input.allowedVoiceIds.length > 200 || new Set(input.allowedVoiceIds).size !== input.allowedVoiceIds.length
-          || (input.status === 'enabled' && (!input.allowedVoiceIds.length || input.allowedVoiceIds.some(voice => !candidate?.voices.some(item => item.id === voice))))) throw failure('VOICE_NOT_AUTHORIZED', '只能批准本模型已登记的启用公共音色', 403)
+          || (input.status === 'enabled' && ((!input.allowedVoiceIds.length && input.adapter !== 'minimax.private_voice') || input.allowedVoiceIds.some(voice => !candidate?.voices.some(item => item.id === voice))))) throw failure('VOICE_NOT_AUTHORIZED', '只能批准本模型已登记的启用公共音色', 403)
         definition.allowedVoiceIds = input.allowedVoiceIds
         definition.publicVoices = (candidate?.voices || []).filter(voice => input.allowedVoiceIds.includes(voice.id))
       }

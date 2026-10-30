@@ -24,6 +24,29 @@ function connection(model) {
 }
 const noCharge = error => Object.assign(error, { noCharge: true })
 
+export async function preparePrivateVoice(model, input, context, { speech, voices, now = Date.now } = {}) {
+      if (!input || typeof input !== 'object' || Array.isArray(input)) throw failure('VOICE_INPUT_INVALID', '音色请求参数无效')
+      const identity = context ? scope(model, context) : null
+      if (input.stream === true) throw failure('STREAM_UNAVAILABLE', '私有音色暂不支持流式供货')
+      if (input.action === 'public-synthesize') { const prepared = await speech.prepare(model, input); return { ...prepared, request: { ...prepared.request, action: 'public-synthesize' } } }
+      if (!['clone', 'activate', 'synthesize'].includes(input.action)) throw failure('VOICE_ACTION_INVALID', '请选择明确的音色操作')
+      const resourceId = identifier(input.resourceId)
+      if (input.action === 'clone' && (input.consent !== true || typeof input.name !== 'string' || !input.name.trim() || input.name.length > 120)) throw failure('VOICE_CONSENT_REQUIRED', '请填写名称并确认录音复刻授权')
+      const text = input.action === 'activate' ? activationText : input.text
+      const maximum = input.action === 'clone' ? 1000 : 10000
+      if (typeof text !== 'string' || !text.trim() || [...text].length > maximum) throw failure('VOICE_INPUT_INVALID', '文字长度超出该音色操作限制')
+      if (!Number.isFinite(input.speed ?? 1) || (input.speed ?? 1) < 0.5 || (input.speed ?? 1) > 2 || (input.includeTimings !== undefined && typeof input.includeTimings !== 'boolean')
+        || (input.timingGranularity !== undefined && (!['sentence', 'word'].includes(input.timingGranularity) || (input.timingGranularity === 'word' && input.includeTimings !== true)))) throw failure('VOICE_INPUT_INVALID', '语速或字幕选项无效')
+      if (identity && model.baseUrl && voices) {
+        const resource = await voices.get(identity, resourceId), expected = { clone: 'uploaded', activate: 'preview_ready', synthesize: 'active' }[input.action]
+        if (resource.status !== expected || (input.action !== 'synthesize' && resource.expiresAt <= now())) throw failure('VOICE_NOT_READY', '音色状态或有效期不允许此操作', 409)
+      }
+      const phase = input.action === 'clone' ? 'preview' : input.action === 'activate' ? 'activation' : 'usage'
+      return { request: { action: input.action, resourceId, text: text.trim(), ...(input.action === 'clone' ? { name: input.name.trim(), consent: true } : {}),
+        speed: input.speed ?? 1, includeTimings: input.includeTimings ?? false, timingGranularity: input.timingGranularity ?? 'sentence' },
+        upperUsage: [requestEvent(), ...(input.action === 'activate' ? [event('resource_activation', 'activation', 1)] : []), event('billable_characters', phase, [...text.trim()].length * 2)] }
+}
+
 // Internal adapter. HTTP uploads, catalog projection and credential deletion
 // protection must be wired before exposing it to downstream clients.
 export function privateVoiceAdapter({ voices, artifacts, book, speech, fetcher = fetch, now = Date.now }) {
@@ -53,28 +76,7 @@ export function privateVoiceAdapter({ voices, artifacts, book, speech, fetcher =
     return { state: 'unknown' }
   }
   return {
-    async prepare(model, input, context) {
-      if (!input || typeof input !== 'object' || Array.isArray(input)) throw failure('VOICE_INPUT_INVALID', '音色请求参数无效')
-      const identity = context ? scope(model, context) : null
-      if (input.stream === true) throw failure('STREAM_UNAVAILABLE', '私有音色暂不支持流式供货')
-      if (input.action === 'public-synthesize') { const prepared = await speech.prepare(model, input); return { ...prepared, request: { ...prepared.request, action: 'public-synthesize' } } }
-      if (!['clone', 'activate', 'synthesize'].includes(input.action)) throw failure('VOICE_ACTION_INVALID', '请选择明确的音色操作')
-      const resourceId = identifier(input.resourceId)
-      if (input.action === 'clone' && (input.consent !== true || typeof input.name !== 'string' || !input.name.trim() || input.name.length > 120)) throw failure('VOICE_CONSENT_REQUIRED', '请填写名称并确认录音复刻授权')
-      const text = input.action === 'activate' ? activationText : input.text
-      const maximum = input.action === 'clone' ? 1000 : 10000
-      if (typeof text !== 'string' || !text.trim() || [...text].length > maximum) throw failure('VOICE_INPUT_INVALID', '文字长度超出该音色操作限制')
-      if (!Number.isFinite(input.speed ?? 1) || (input.speed ?? 1) < 0.5 || (input.speed ?? 1) > 2 || (input.includeTimings !== undefined && typeof input.includeTimings !== 'boolean')
-        || (input.timingGranularity !== undefined && (!['sentence', 'word'].includes(input.timingGranularity) || (input.timingGranularity === 'word' && input.includeTimings !== true)))) throw failure('VOICE_INPUT_INVALID', '语速或字幕选项无效')
-      if (identity && model.baseUrl) {
-        const resource = await voices.get(identity, resourceId), expected = { clone: 'uploaded', activate: 'preview_ready', synthesize: 'active' }[input.action]
-        if (resource.status !== expected || (input.action !== 'synthesize' && resource.expiresAt <= now())) throw failure('VOICE_NOT_READY', '音色状态或有效期不允许此操作', 409)
-      }
-      const phase = input.action === 'clone' ? 'preview' : input.action === 'activate' ? 'activation' : 'usage'
-      return { request: { action: input.action, resourceId, text: text.trim(), ...(input.action === 'clone' ? { name: input.name.trim(), consent: true } : {}),
-        speed: input.speed ?? 1, includeTimings: input.includeTimings ?? false, timingGranularity: input.timingGranularity ?? 'sentence' },
-        upperUsage: [requestEvent(), ...(input.action === 'activate' ? [event('resource_activation', 'activation', 1)] : []), event('billable_characters', phase, [...text.trim()].length * 2)] }
-    },
+    prepare: (model, input, context) => preparePrivateVoice(model, input, context, { speech, voices, now }),
     async submit(model, input, context = {}) {
       let identity, config, claimed
       try { identity = scope(model, context); config = connection(model); identifier(context.requestId) } catch (error) { throw noCharge(error) }

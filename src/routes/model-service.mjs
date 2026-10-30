@@ -15,6 +15,7 @@ import {
 } from '../services/model-service-scope.mjs'
 import { assertNotSystemImageRecord } from '../services/image-generation.mjs'
 import { assertManagedVoiceKeyDeletionAllowed } from '../services/voice-key-policy.mjs'
+import { guardSupplyProviderDeletion } from '../services/licensing/private-voice-binding.mjs'
 
 export function registerModelServiceRoutes(app, deps) {
   const {
@@ -108,6 +109,7 @@ export function registerModelServiceRoutes(app, deps) {
       assertNotSystemImageRecord(provider.id, '该服务商')
       assertModelServiceRecordInScope(provider, scopeOf(req), '服务商')
       await conn.beginTransaction()
+      await guardSupplyProviderDeletion(conn, providerId)
       const [modelRows] = await conn.query('SELECT id FROM ai_provider_models WHERE provider_id = ?', [providerId])
       const modelIds = modelRows.map((row) => row.id).filter(Boolean)
       if (modelIds.length) {

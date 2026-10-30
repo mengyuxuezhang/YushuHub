@@ -40,6 +40,9 @@ import { publicSupplyCatalogRow } from '../../routes/agent-supply.mjs'
 import { supplyVoiceRepository } from '../../repositories/supply-voices.mjs'
 import { supplyVoiceArtifacts } from '../../repositories/supply-voice-artifacts.mjs'
 import { privateVoiceAdapter } from './private-voice-adapter.mjs'
+import { privateVoiceStorage } from './private-voice-runtime.mjs'
+import { registerPrivateVoiceGatewayRoutes } from '../../routes/private-voice-gateway.mjs'
+import { assertSupplyVoiceMutationAllowed, guardCustomVoiceBinding, guardSupplyProviderDeletion } from './private-voice-binding.mjs'
 
 const configured = Boolean(process.env.LICENSING_TEST_DB)
 
@@ -1345,7 +1348,7 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
   if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(licenseDatabase)) throw new Error('Disposable databases required')
   const suffix = crypto.randomBytes(5).toString('hex'), names = ['official', 'local'].map(kind => `yushu_private_${kind}_${suffix}`), created = []
   const admin = await mysql.createConnection(config), centerPool = mysql.createPool({ ...config, database: licenseDatabase }), dir = await fs.mkdtemp(path.join(os.tmpdir(), 'private-voice-core-'))
-  let officialPool, localPool
+  let officialPool, localPool, privateServer
   try {
     for (const name of names) { await admin.query('CREATE DATABASE ??', [name]); created.push(name) }
     officialPool = mysql.createPool({ ...config, database: names[0], connectionLimit: 12 }); localPool = mysql.createPool({ ...config, database: names[1], connectionLimit: 12 })
@@ -1362,8 +1365,8 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     await center.activate({ code: childCode.code, instanceId: 'private-core-instance', domain: 'https://private-core.example.com', requestId: 'private-child-activate' }, rootActivation.credential)
     const root = { id: 'private-core-root', level: 1 }, child = { id: 'private-core-child', level: 2 }, hash = value => crypto.createHash('sha256').update(value).digest('hex')
     const identity = { rootId: root.id, organizationId: child.id, subjectHash: hash(JSON.stringify([child.id, 'private-core-user'])), modelId: 'private-core-model' }
-    const voices = supplyVoiceRepository({ pool: officialPool, book: 'official-v2', directory: dir, inspectAudio: async () => ({ duration: 10 }) }); await voices.migrate()
-    const artifacts = supplyVoiceArtifacts({ pool: officialPool, voices, book: 'official-v2', directory: dir })
+    const privateVoiceStore = privateVoiceStorage({ pool: officialPool, book: 'official-v2', directory: dir, inspectAudio: async () => ({ duration: 10 }) })
+    const { voices, artifacts } = privateVoiceStore; await voices.migrate(); await privateVoiceStore.assertReady()
     const counts = { uploads: 0, clones: 0, syntheses: 0, deletes: 0 }, voiceIds = new Set(), fileIds = new Set()
     let missingUsage = false, loseDeleteReply = true
     const response = value => Response.json({ base_resp: { status_code: 0 }, ...value })
@@ -1383,9 +1386,16 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     const price = { version: 1, currency: 'CNY', components: [{ meter: 'request', phase: 'request', amount: '0', unitSize: '1' },
       ...['preview', 'activation', 'usage'].map(phase => ({ meter: 'billable_characters', phase, amount: '1', unitSize: '1' })), { meter: 'resource_activation', phase: 'activation', amount: '5', unitSize: '1' }] }
     const model = { id: identity.modelId, version: 1, status: 'enabled', adapter: 'minimax.private_voice', taskType: 'speech_synthesis', model: 'configured-speech-model', baseUrl: 'https://private-vendor.example.com', apiKey: 'fictional-private-key', price, allowedVoiceIds: [] }
-    const core = privateVoiceAdapter({ voices, artifacts, book: 'official-v2', speech: httpGatewayAdapters(fetcher)['minimax.speech'], fetcher })
+    const core = httpGatewayAdapters(fetcher, { privateVoiceStore })['minimax.private_voice']
     const officialStore = mysqlAccountingStore(officialPool, 'official-v2', 'ledger'), ledger = createSupplyLedger({ store: officialStore }); await ledger.open(root.id, root.id); await ledger.credit(root.id, '100', 'private-official-credit', 'fixture', 'fictional-private-official-receipt')
-    const gateway = createModelGateway({ ledger, authorize: (token, audience) => center.introspect(token, audience), models: [model], adapters: { 'minimax.private_voice': core } })
+    const gateway = createModelGateway({ ledger, authorize: (token, audience) => center.introspect(token, audience), models: [model], adapters: { 'minimax.private_voice': core }, privateVoiceStore })
+    const privateApp = serviceApp(); registerPrivateVoiceGatewayRoutes(privateApp, { gateway }); serviceErrors(privateApp)
+    privateServer = await new Promise(resolve => { const server = privateApp.listen(0, '127.0.0.1', () => resolve(server)) })
+    const privateUrl = `http://127.0.0.1:${privateServer.address().port}/api/model-gateway/v1/private-voices/${model.id}`
+    const tokenFor = async subjectHash => (await center.serviceToken(rootActivation.credential, 'official-models', child.id, subjectHash)).token
+    const privateToken = await tokenFor(identity.subjectHash), peerToken = await tokenFor(hash('another-private-user')), unscopedToken = await tokenFor()
+    const privateFetch = (route = '', body, token = privateToken) => fetch(privateUrl + route, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, ...(body instanceof FormData || body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) }) })
+    assert.equal((await privateFetch('', undefined, unscopedToken)).status, 403)
     const localStore = mysqlAccountingStore(localPool, 'commerce-v2', 'commerce'), localModel = { id: model.id, version: 1, source: 'official', taskType: model.taskType, adapter: model.adapter, price,
       prepare: (request, context) => core.prepare({ id: model.id, source: 'official' }, request, context) }
     const service = createAgentCommerce({ store: localStore, rootId: root.id, userBank: sqlUserBank(), catalog: async () => [localModel],
@@ -1395,23 +1405,40 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     await service.configure(root, { modelId: model.id, expectedVersion: 0, enabled: true, pointsPerCny: '1', saleMarkup: markup, supplyMarkup: markup }, 'root-owner')
     await service.configure(child, { modelId: model.id, expectedVersion: 0, enabled: true, pointsPerCny: '1', saleMarkup: markup }, 'child-owner')
     await service.credit(root, child.id, '100', 'private-child-credit', 'fictional-private-child-receipt', 'root-owner')
-    const upload = { requestId: 'private-clone', format: 'wav', bytes: Buffer.from('fictional recording for mocked provider only') }, resource = await voices.upload(identity, upload)
+    const upload = { requestId: 'private-clone', format: 'wav', bytes: Buffer.from('fictional recording for mocked provider only') }
+    const uploadForm = consent => { const form = new FormData(); form.set('audio', new Blob([upload.bytes]), '../../untrusted.wav'); form.set('format', 'wav'); form.set('requestId', upload.requestId); form.set('consent', consent); return form }
+    assert.equal((await privateFetch('/upload', uploadForm('false'))).status, 400)
+    const uploaded = await privateFetch('/upload', uploadForm('true')); assert.equal(uploaded.status, 200)
+    const resource = (await uploaded.json()).data
+    assert.equal((await (await privateFetch('/upload', uploadForm('true'))).json()).data.id, resource.id)
     const cloneRequest = { action: 'clone', resourceId: resource.id, text: '你好', name: '虚构供货私有音色', consent: true }
+    await assert.rejects(service.submit(child, 'private-core-user', { requestId: 'private-unconfirmed-price', modelId: model.id, request: cloneRequest, confirmedMaxPoints: '1' }), { code: 'VOICE_PRICE_CHANGED' })
+    assert.equal(counts.clones, 0); assert.equal(await localStore.readRequest('private-unconfirmed-price'), null)
     const peerResource = await voices.upload({ ...identity, subjectHash: hash('another-private-user') }, { ...upload, requestId: 'private-peer-upload' })
     const refused = await service.submit(child, 'private-core-user', { requestId: 'private-forged-resource', modelId: model.id, request: { ...cloneRequest, resourceId: peerResource.id } })
     assert.equal(refused.points, '0.000000'); assert.equal(counts.clones, 0)
     const cloned = await service.submit(child, 'private-core-user', { requestId: 'private-clone', modelId: model.id, request: cloneRequest })
     assert.equal(cloned.points, '12.000000'); assert.equal(cloned.result.voiceId, resource.id); assert.equal((await voices.get(identity, resource.id)).status, 'preview_ready')
     assert.equal((await core.preview(model, resource.id, identity)).bytes.toString(), 'fictional private preview mp3')
+    const previewResponse = await privateFetch(`/resources/${resource.id}/preview`)
+    assert.equal(previewResponse.status, 200); assert.equal(previewResponse.headers.get('cache-control'), 'private, no-store')
+    assert.equal(await previewResponse.text(), 'fictional private preview mp3')
+    assert.equal((await privateFetch(`/resources/${resource.id}/preview`, undefined, peerToken)).status, 404)
+    const privateList = (await (await privateFetch()).json()).data; assert.equal(privateList.length, 1)
+    assert.equal(JSON.stringify(privateList).includes('providerVoiceId'), false)
     assert.equal(fileIds.size, 0); assert.equal((await voices.job(identity, 'private-clone')).cleanupPending, false)
     await service.submit(child, 'private-core-user', { requestId: 'private-clone', modelId: model.id, request: cloneRequest }); assert.equal(counts.clones, 1)
     const activations = await Promise.all(['a', 'b'].map(label => service.submit(child, 'private-core-user', { requestId: `private-activation-${label}`, modelId: model.id, request: { action: 'activate', resourceId: resource.id } })))
     assert.equal(activations.filter(row => row.points === '19.000000').length, 1); assert.equal(counts.syntheses, 1)
     const spoken = await service.submit(child, 'private-core-user', { requestId: 'private-synthesis', modelId: model.id, request: { action: 'synthesize', resourceId: resource.id, text: 'abc' } })
     assert.equal(spoken.points, '9.000000'); assert((await artifacts.read(identity, spoken.result.audioArtifactId)).bytes.equals(Buffer.from('494433ff', 'hex')))
+    const audioResponse = await privateFetch('/requests/private-synthesis/audio'); assert.equal(audioResponse.status, 200)
+    assert.equal(Buffer.from(await audioResponse.arrayBuffer()).toString('hex'), '494433ff')
+    assert.equal((await privateFetch('/requests/private-synthesis/audio', undefined, peerToken)).status, 404)
     assert.equal((await ledger.view(root.id)).balance, '84.000000'); assert.equal((await service.balance(child)).wallet.balance, '72.000000')
     assert.equal(String((await localPool.query("SELECT credit_balance FROM ai_end_users WHERE id='private-core-user'"))[0][0].credit_balance), '60.000000')
-    const removed = await core.remove(model, resource.id, { ...identity, requestId: 'private-delete' }); assert.equal(removed.result.deleted, true)
+    const removedResponse = await privateFetch(`/resources/${resource.id}/delete`, { requestId: 'private-delete' }); assert.equal(removedResponse.status, 200)
+    const removed = (await removedResponse.json()).data; assert.equal(removed.result.deleted, true)
     await core.remove(model, resource.id, { ...identity, requestId: 'private-delete' }); assert.equal(counts.deletes, 1)
     await assert.rejects(artifacts.read(identity, spoken.result.audioArtifactId), { code: 'VOICE_ARTIFACT_EXPIRED' })
     missingUsage = true
@@ -1430,8 +1457,64 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     assert.equal((await afterLease.recover(model, { requestId: 'private-before-dispatch' }, identity)).state, 'unknown')
     assert.equal(counts.clones, 2); auditAccounting(await officialStore.read(), 'ledger'); auditAccounting(await localStore.read(), 'commerce')
   } finally {
+    if (privateServer) { privateServer.closeAllConnections(); await new Promise(resolve => privateServer.close(resolve)) }
     await officialPool?.end(); await localPool?.end(); await centerPool.end()
     for (const name of created) { assert(/^yushu_private_(official|local)_[a-f0-9]{10}$/.test(name)); await admin.query('DROP DATABASE ??', [name]) }
     await admin.end(); assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir())); await fs.rm(dir, { recursive: true, force: true })
+  }
+})
+
+
+test('real MySQL private voice bindings block destructive edits and serialize original key deletion against new claims', { skip: !configured }, async () => {
+  const { gatewayDatabase, licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1') throw new Error('Disposable local database required')
+  const name = `yushu_voice_guard_${crypto.randomBytes(5).toString('hex')}`, admin = await mysql.createConnection(config)
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-binding-'))
+  let pool, created = false
+  try {
+    await admin.query('CREATE DATABASE ??', [name]); created = true; pool = mysql.createPool({ ...config, database: name, connectionLimit: 8 })
+    await pool.query('CREATE TABLE ai_organizations(id VARCHAR(64) PRIMARY KEY,external_id VARCHAR(64),agent_level INT,legacy_owner_user_id VARCHAR(64))')
+    await pool.query('CREATE TABLE ai_model_providers(id VARCHAR(64) PRIMARY KEY,status VARCHAR(16))')
+    await pool.query('CREATE TABLE ai_provider_models(id VARCHAR(64) PRIMARY KEY,provider_id VARCHAR(64),organization_id VARCHAR(64),status VARCHAR(16),archived_at DATETIME)')
+    await pool.query('CREATE TABLE ai_model_upstream_accounts(id VARCHAR(64) PRIMARY KEY,provider_id VARCHAR(64),organization_id VARCHAR(64),status VARCHAR(16))')
+    await pool.query('CREATE TABLE ai_model_provider_keys(id VARCHAR(64) PRIMARY KEY,provider_id VARCHAR(64),organization_id VARCHAR(64),upstream_account_id VARCHAR(64),owner_user_id VARCHAR(64),provider_model_id VARCHAR(64),status VARCHAR(16))')
+    await pool.query("INSERT INTO ai_organizations VALUES ('local-root','root',1,'owner')")
+    await pool.query("INSERT INTO ai_model_providers VALUES ('provider','enabled')")
+    await pool.query("INSERT INTO ai_provider_models VALUES ('guard-model','provider','local-root','enabled',NULL)")
+    await pool.query("INSERT INTO ai_model_upstream_accounts VALUES ('account','provider','local-root','enabled')")
+    await pool.query("INSERT INTO ai_model_provider_keys VALUES ('original-key','provider','local-root','account','owner',NULL,'enabled')")
+    const storage = privateVoiceStorage({ pool, book: 'commerce-v2', directory: dir, inspectAudio: async () => ({ duration: 10 }), bindingGuard: guardCustomVoiceBinding }), { voices } = storage
+    await voices.migrate()
+    const hash = value => crypto.createHash('sha256').update(value).digest('hex'), scope = { rootId: 'root', organizationId: 'child', subjectHash: hash('fictional-user'), modelId: 'guard-model' }
+    const resource = await voices.upload(scope, { requestId: 'guard-upload', format: 'wav', bytes: Buffer.from('fictional-only') })
+    const clone = { requestId: 'guard-clone', action: 'clone', inputHash: hash('consented clone'), bindingHash: hash('original binding'), credentialId: 'original-key' }
+    await voices.claim(scope, resource.id, clone)
+    for (const target of [{ keyId: 'original-key' }, { modelId: 'guard-model' }, { providerId: 'provider' }]) await assert.rejects(assertSupplyVoiceMutationAllowed(pool, target), { code: 'VOICE_BINDING_IN_USE' })
+    await assertSupplyVoiceMutationAllowed(pool, { keyId: 'unrelated-key' })
+    await voices.checkpoint(scope, resource.id, clone.requestId, { cleanupPending: true })
+    await voices.finish(scope, resource.id, clone.requestId, { state: 'unknown' })
+    await assert.rejects(voices.claim(scope, resource.id, { ...clone, requestId: 'guard-delete', action: 'delete' }), { code: 'VOICE_BUSY' })
+    await voices.finish(scope, resource.id, clone.requestId, { state: 'done', usage: [], result: { error: 'PROVIDER_REJECTED' } })
+    await voices.claim(scope, resource.id, { ...clone, requestId: 'guard-delete', action: 'delete' })
+    await voices.finish(scope, resource.id, 'guard-delete', { state: 'done', usage: [], result: { deleted: true } })
+    await assert.rejects(assertSupplyVoiceMutationAllowed(pool, { keyId: 'original-key' }), { code: 'VOICE_BINDING_IN_USE' })
+    await voices.checkpoint(scope, resource.id, clone.requestId, { stage: 'clean', cleanupPending: false })
+    const conn = await pool.getConnection()
+    try { await conn.beginTransaction(); await guardSupplyProviderDeletion(conn, 'provider'); await conn.rollback() } finally { conn.release() }
+    const next = await voices.upload(scope, { requestId: 'guard-next', format: 'wav', bytes: Buffer.from('another fictional recording') })
+    const deleting = await pool.getConnection()
+    try {
+      await deleting.beginTransaction(); await deleting.query("SELECT id FROM ai_model_provider_keys WHERE id='original-key' FOR UPDATE")
+      const claiming = voices.claim(scope, next.id, { ...clone, requestId: 'guard-race-clone' })
+      const settled = claiming.then(() => 'claimed', error => error.code)
+      await assertSupplyVoiceMutationAllowed(deleting, { keyId: 'original-key' })
+      await deleting.query("DELETE FROM ai_model_provider_keys WHERE id='original-key'"); await deleting.commit()
+      assert.equal(await settled, 'VOICE_BINDING_CHANGED')
+      assert.equal((await voices.get(scope, next.id)).status, 'uploaded')
+      await assert.rejects(voices.job(scope, 'guard-race-clone'), { code: 'VOICE_JOB_NOT_FOUND' })
+    } finally { await deleting.rollback().catch(() => {}); deleting.release() }
+  } finally {
+    await pool?.end(); if (created) { assert(/^yushu_voice_guard_[a-f0-9]{10}$/.test(name)); await admin.query('DROP DATABASE ??', [name]) }; await admin.end()
+    assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir())); await fs.rm(dir, { recursive: true, force: true })
   }
 })

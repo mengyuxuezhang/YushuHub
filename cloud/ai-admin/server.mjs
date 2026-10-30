@@ -119,6 +119,7 @@ import { officialResourceClient } from '../../src/services/licensing/official-re
 import { centerBuildScopes, assertRecordedOrganization, officialCenterProjectId as centerProjectId } from '../../src/services/licensing/build-scopes.mjs'
 import { ensureOfficialSupplierRegistration } from '../../src/services/licensing/official-registration.mjs'
 import { assertAccountingRuntime } from '../../src/services/licensing/accounting-mode.mjs'
+import { guardSupplyProviderConnection, guardSupplyProviderDeletion, guardSupplyModelConnection, guardSupplyModelDeletion } from '../../src/services/licensing/private-voice-binding.mjs'
 import { registerAgentSupplyRoutes } from '../../src/routes/agent-supply.mjs'
 import { supplierLicenseAllowsPermission } from '../../src/services/supplier-license-contract.mjs'
 import { createCenterSupplierAuthorizationService, normalizeCenterSupplier } from '../../src/services/center-supplier-authorization.mjs'
@@ -5215,6 +5216,7 @@ async function saveModelProvider(input = {}, scope = null) {
   const conn = await db().getConnection()
   try {
     await conn.beginTransaction()
+    await guardSupplyProviderConnection(conn, id, { baseUrl, protocol })
     if (isDefault) {
       await conn.query(
         organizationId
@@ -5522,6 +5524,7 @@ async function syncProvidersFromCenter(remoteProviders = []) {
         result.skipped += 1
         continue
       }
+      await guardSupplyProviderConnection(conn, payload.id, payload)
       await conn.query(
         `INSERT INTO ai_model_providers
           (id, name, protocol, base_url, status, is_default, timeout_ms, sort_order, notes, center_sync_hash)
@@ -5547,6 +5550,7 @@ async function syncProvidersFromCenter(remoteProviders = []) {
         result.skipped += 1
         continue
       }
+      await guardSupplyProviderDeletion(conn, row.id)
       const [modelRows] = await conn.query('SELECT id FROM ai_provider_models WHERE provider_id = ?', [row.id])
       const modelIds = modelRows.map((item) => item.id).filter(Boolean)
       if (modelIds.length) {
@@ -5592,6 +5596,7 @@ async function syncModelsFromCenter(remoteModels = []) {
         continue
       }
       if (local?.id) matchedLocalIds.add(local.id)
+      if (local?.id) await guardSupplyModelConnection(conn, local.id, payload)
       await conn.query(
         `INSERT INTO ai_provider_models
           (id, provider_id, model_id, display_name, description, model_type, endpoint_path, status, is_default, capabilities, reasoning_config, context_window, sort_order, center_sync_hash)
@@ -5621,6 +5626,7 @@ async function syncModelsFromCenter(remoteModels = []) {
         result.skipped += 1
         continue
       }
+      await guardSupplyModelDeletion(conn, row.id)
       await conn.query('DELETE FROM ai_end_user_model_access WHERE provider_model_id = ?', [row.id])
       await conn.query('DELETE FROM ai_membership_card_model_access WHERE provider_model_id = ?', [row.id])
       await conn.query('DELETE FROM ai_model_pricing_rules WHERE provider_model_id = ?', [row.id])

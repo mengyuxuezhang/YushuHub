@@ -1,5 +1,6 @@
 import { assertNotSystemImageRecord } from './image-generation.mjs'
 import { assertModelServiceRecordInScope } from './model-service-scope.mjs'
+import { assertSupplyVoiceMutationAllowed } from './licensing/private-voice-binding.mjs'
 
 // Retain parent rows for voice, task and billing audit references.
 export async function deleteProviderModel(pool, id, scope) {
@@ -11,6 +12,7 @@ export async function deleteProviderModel(pool, id, scope) {
     assertNotSystemImageRecord(id, '该模型')
     assertModelServiceRecordInScope(model, scope, '模型')
     if (!model.archived_at) {
+      await assertSupplyVoiceMutationAllowed(conn, { modelId: id })
       const [[voice]] = await conn.query("SELECT id FROM ai_private_voices WHERE provider_model_id=? AND status<>'deleted' LIMIT 1", [id])
       if (voice) throw Object.assign(new Error('该模型仍关联私有音色，请先删除关联音色后再删除模型'), { statusCode: 409 })
       const [[pending]] = await conn.query(`SELECT

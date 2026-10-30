@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { assertModelServiceRecordInScope } from './model-service-scope.mjs'
 import { syncAutomaticModelCapability } from './model-management-defaults.mjs'
+import { assertSupplyVoiceMutationAllowed } from './licensing/private-voice-binding.mjs'
 
 function conflict(message) { return Object.assign(new Error(message), { statusCode: 409 }) }
 
@@ -27,6 +28,7 @@ export async function saveProviderModelRecord(pool, model, scope) {
     if (previous) {
       assertModelServiceRecordInScope(previous, scope, '模型')
       if (previous.provider_id !== model.provider.id) throw conflict('不能通过模型标识更换服务商，请在目标服务商下新增模型')
+      if (previous.model_id !== model.modelId || (previous.model_type || 'text') !== model.modelType || (previous.endpoint_path || '') !== (model.endpointPath || '')) await assertSupplyVoiceMutationAllowed(conn, { modelId: previous.id })
       if (previous.archived_at) {
         if (!byName) throw conflict('请使用已删除模型原来的服务商和上游模型 ID重新添加')
         if ((previous.model_type || 'text') !== model.modelType) throw conflict('重新添加已删除模型时须保持原模型类型，避免改变历史记录的含义')
