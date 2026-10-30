@@ -210,7 +210,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       })
       if (!reserved.created) return reserved.operation
       await emitChunk(onAccepted, { requestId })
-      try { return await complete(requestId, await invoke(tenant, snapshot.model, { requestId, request: prepared.request }, { onChunk, recordJob: job => recordJob(requestId, job) })) }
+      try { return await complete(requestId, await invoke(tenant, snapshot.model, { requestId, request: prepared.request }, { onChunk, subjectHash: digest(JSON.stringify([tenant.id, userId])), recordJob: job => recordJob(requestId, job) })) }
       catch (error) {
         if (error.noCharge === true) return complete(requestId, { state: 'done', usage: [], result: { error: 'REQUEST_NOT_ACCEPTED' } })
         return transact({ requestId }, current => {

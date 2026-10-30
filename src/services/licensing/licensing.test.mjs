@@ -967,3 +967,34 @@ test('terminal refunds reject unknown, free and incomplete settlements without t
   await assert.rejects(refund({ id: 'child', level: 2, localOrganizationId: 'local-child' }, { requestId: 'incomplete', commandId: 'refund-incomplete', reason: '虚构测试依据' }, 'owner'), { code: 'REFUND_NOT_AUDITABLE' })
   assert.deepEqual(await store.read(), state)
 })
+test('gateway subjects are signed, separate peer results and preserve legacy replays plus original recovery context', async () => {
+  const { center, now } = setup(), first = await root(center), ledger = createSupplyLedger({ store: memoryStateStore(emptyLedgerState()), now })
+  await ledger.open('first', 'first'); await ledger.credit('first', '10', 'subject-credit', 'operator', 'subject-receipt')
+  const subjectA = digest('fictional-subject-a'), subjectB = digest('fictional-subject-b'), tokens = {}
+  for (const [id, hash] of [['a', subjectA], ['b', subjectB], ['legacy', undefined]]) tokens[id] = (await center.serviceToken(first.credential, 'official-models', 'first', hash)).token
+  await assert.rejects(center.serviceToken(first.credential, 'official-build', 'first', subjectA), { code: 'INVALID_SUBJECT' })
+  await assert.rejects(center.serviceToken(first.credential, 'official-models', 'first', 'raw-user-id'), { code: 'INVALID_SUBJECT' })
+  const contexts = [], usage = [{ meter: 'request', phase: 'request', quantity: '1' }]
+  const gateway = createModelGateway({ ledger, now, authorize: (token, audience) => center.introspect(token, audience), models: [{ id: 'chat', status: 'enabled', version: 1, adapter: 'mock', price: price() }],
+    adapters: { mock: { prepare: async (_model, request) => ({ request, upperUsage: usage }), submit: async (_model, request, context) => {
+      contexts.push(context)
+      return request.pending ? { state: 'pending', job: { taskId: 'original-job' } } : { state: 'done', usage, result: { text: 'private result' } }
+    }, poll: async (_model, _job, context) => { contexts.push(context); return { state: 'done', usage, result: { text: 'recovered private result' } } } } } })
+  const input = { modelId: 'chat', requestId: 'subject-request', request: { subjectHash: subjectB } }
+  await gateway.submit(tokens.a, input)
+  assert.equal(contexts[0].subjectHash, subjectA); assert.equal(contexts[0].organizationId, 'first')
+  assert.equal((await ledger.find(input.requestId, 'first')).snapshot.subjectHash, subjectA)
+  for (const token of [tokens.b, tokens.legacy]) {
+    await assert.rejects(gateway.submit(token, input), { code: 'NOT_FOUND' })
+    await assert.rejects(gateway.status(token, input.requestId), { code: 'NOT_FOUND' })
+    await assert.rejects(gateway.acknowledge(token, input.requestId), { code: 'NOT_FOUND' })
+  }
+  await gateway.submit(tokens.a, input); assert.equal(contexts.length, 1)
+  const legacy = { modelId: 'chat', requestId: 'old-unscoped-call', request: {} }
+  await gateway.submit(tokens.legacy, legacy); await gateway.submit(tokens.a, legacy); assert.equal(contexts.length, 2)
+  const pending = { modelId: 'chat', requestId: 'scoped-pending', request: { pending: true } }
+  await gateway.submit(tokens.a, pending)
+  const recovery = (await center.recoveryToken(first.credential, 'first', pending.requestId)).token
+  assert.equal((await gateway.recover(recovery, pending.requestId, true)).state, 'settled')
+  assert.equal(contexts.at(-1).subjectHash, subjectA)
+})

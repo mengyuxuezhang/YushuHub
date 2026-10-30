@@ -1160,3 +1160,63 @@ test('real MySQL terminal refunds preserve upstream balances, serialize duplicat
     auditAccounting(state, 'commerce')
   } finally { await pool.end() }
 })
+test('real MySQL HTTP gateway persists signed terminal subjects and rejects peer or unscoped access without re-invoking suppliers', { skip: !configured }, async () => {
+  const { gatewayDatabase = 'yushu_gateway_test', licenseDatabase = 'yushu_license_test', ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || ![gatewayDatabase, licenseDatabase].every(name => /^yushu_[a-z0-9_]+$/.test(name))) throw new Error('Disposable databases required')
+  const pool = mysql.createPool({ ...config, database: gatewayDatabase }), centerPool = mysql.createPool({ ...config, database: licenseDatabase })
+  let centerServer, gatewayServer
+  try {
+    const state = mysqlStateStore(centerPool, 'subject-center', emptyCenterState()); await state.migrate()
+    const keys = crypto.generateKeyPairSync('ed25519'), center = createLicenseCenter({ store: state, privateKey: keys.privateKey, publicKeys: { test: keys.publicKey }, keyId: 'test', credentialKey: crypto.randomBytes(32) })
+    const issued = await center.issue({ id: 'subject-root', name: '虚构终端范围一级', packageId: 'first-fixed', domain: 'https://subject.example.com', expiresAt: null, modelIds: ['subject-model'] }, 'fixture')
+    const app = serviceApp(); registerLicenseCenterRoutes(app, { center, operators: { authenticate: async () => 'fixture' } }); serviceErrors(app)
+    centerServer = await new Promise(resolve => { const server = app.listen(0, '127.0.0.1', () => resolve(server)) })
+    const centerUrl = `http://127.0.0.1:${centerServer.address().port}/api/license-center/v1`
+    const request = async (url, body, token, method = 'POST') => { const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }); return { status: response.status, ...await response.json() } }
+    const activated = await request(centerUrl + '/activate', { code: issued.code, requestId: 'subject-activation', instanceId: 'subject-instance', domain: 'https://subject.example.com' }); assert.equal(activated.status, 200)
+    const subjectA = crypto.createHash('sha256').update('fictional-terminal-a').digest('hex'), subjectB = crypto.createHash('sha256').update('fictional-terminal-b').digest('hex'), tokens = {}
+    for (const [name, hash] of [['a', subjectA], ['b', subjectB], ['legacy', undefined]]) { const result = await request(centerUrl + '/service-token', { audience: 'official-models', subjectHash: hash }, activated.data.credential); assert.equal(result.status, 200); tokens[name] = result.data.token }
+    assert.equal((await request(centerUrl + '/service-token', { audience: 'official-build', subjectHash: subjectA }, activated.data.credential)).status, 400)
+    await migrateAccounting({ pool, book: 'subject-ledger', kind: 'ledger', sourceId: 'subject-empty' })
+    const store = mysqlAccountingStore(pool, 'subject-ledger', 'ledger'), ledger = createSupplyLedger({ store }); await ledger.open('subject-root', 'subject-root'); await ledger.credit('subject-root', '10', 'subject-credit', 'fixture', 'fictional-subject-receipt')
+    const contexts = [], usage = [{ meter: 'request', phase: 'request', quantity: '1' }], price = { version: 1, components: [{ meter: 'request', phase: 'request', amount: '1', unitSize: '1' }] }
+    const models = [{ id: 'subject-model', adapter: 'mock', status: 'enabled', version: 1, price }], adapters = { mock: { prepare: async (_model, input) => ({ request: input, upperUsage: usage }), submit: async (_model, _input, context) => { contexts.push(context); return { state: 'done', usage, result: { text: 'fictional private result' } } } } }
+    const gateway = createModelGateway({ ledger, models, adapters, authorize: (token, audience) => center.introspect(token, audience) })
+    const gatewayApp = serviceApp(); registerModelGatewayRoutes(gatewayApp, { gateway, ledger, operators: { authenticate: async () => 'fixture' } }); serviceErrors(gatewayApp)
+    gatewayServer = await new Promise(resolve => { const server = gatewayApp.listen(0, '127.0.0.1', () => resolve(server)) })
+    const url = `http://127.0.0.1:${gatewayServer.address().port}/api/model-gateway/v1`
+    const input = { modelId: 'subject-model', requestId: 'subject-original', request: { subjectHash: subjectB } }
+    assert.equal((await request(url + '/requests', input, tokens.a)).status, 200); assert.equal(contexts[0].subjectHash, subjectA)
+    for (const token of [tokens.b, tokens.legacy]) {
+      assert.equal((await request(url + '/requests', input, token)).status, 404)
+      assert.equal((await request(url + '/requests/subject-original', undefined, token, 'GET')).status, 404)
+      assert.equal((await request(url + '/requests/subject-original/ack', {}, token)).status, 404)
+    }
+    assert.equal((await request(url + '/requests', input, tokens.a)).status, 200); assert.equal(contexts.length, 1)
+    const legacy = { modelId: 'subject-model', requestId: 'subject-old-unscoped', request: {} }
+    await request(url + '/requests', legacy, tokens.legacy); await request(url + '/requests', legacy, tokens.a); assert.equal(contexts.length, 2)
+    assert.equal((await request(url + '/requests', { ...input, requestId: 'subject-peer-original' }, tokens.b)).status, 200)
+    const reloaded = mysqlAccountingStore(pool, 'subject-ledger', 'ledger'); assert.equal((await reloaded.readRequest(input.requestId)).snapshot.subjectHash, subjectA)
+    const recovery = await request(centerUrl + '/recovery-token', { organizationId: 'subject-root', requestId: input.requestId }, activated.data.credential)
+    assert.equal((await request(url + '/recovery/requests/' + input.requestId, undefined, recovery.data.token, 'GET')).status, 200)
+    await migrateAccounting({ pool, book: 'subject-commerce', kind: 'commerce', sourceId: 'subject-local-empty' })
+    await pool.query("INSERT INTO ai_end_users(id,status,credit_balance,organization_id,username) VALUES ('subject-local-user','enabled',10,'subject-local','subject-local-user')")
+    const commerce = createAgentCommerce({ store: mysqlAccountingStore(pool, 'subject-commerce', 'commerce'), rootId: 'subject-root', userBank: sqlUserBank(),
+      catalog: async () => [{ ...models[0], source: 'official', prepare: async input => ({ request: input, upperUsage: usage }) }],
+      invoke: async (_tenant, model, input, options) => {
+        const minted = await request(centerUrl + '/service-token', { audience: 'official-models', organizationId: 'subject-root', subjectHash: options.subjectHash }, activated.data.credential)
+        const submitted = await request(url + '/requests', { ...input, modelId: model.id }, minted.data.token); assert.equal(submitted.status, 200); return submitted.data
+      } })
+    const tenant = { id: 'subject-root', level: 1 }
+    await commerce.configure(tenant, { modelId: 'subject-model', enabled: true, expectedVersion: 0, pointsPerCny: '1', saleMarkup: [], supplyMarkup: [] }, 'fixture')
+    await commerce.submit(tenant, 'subject-local-user', { requestId: 'subject-commerce-call', modelId: 'subject-model', request: { subjectHash: subjectB } })
+    const expectedSubject = crypto.createHash('sha256').update(JSON.stringify(['subject-root', 'subject-local-user'])).digest('hex')
+    assert.equal(contexts.at(-1).subjectHash, expectedSubject)
+    assert.equal((await store.readRequest('subject-commerce-call')).snapshot.subjectHash, expectedSubject)
+    assert.equal(String((await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='subject-local-user'"))[0][0].credit_balance), '9.000000')
+    assert.equal((await ledger.view('subject-root')).balance, '6.000000'); assert.equal(contexts.length, 4)
+  } finally {
+    for (const server of [centerServer, gatewayServer]) if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+    await pool.end(); await centerPool.end()
+  }
+})

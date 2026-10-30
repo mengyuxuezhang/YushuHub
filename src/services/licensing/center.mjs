@@ -202,13 +202,14 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
         return publicGrant(grant)
       })
     },
-    async serviceToken(token, audience, organizationId) {
+    async serviceToken(token, audience, organizationId, subjectHash) {
       if (!['official-build', 'official-resources', 'official-models'].includes(audience)) throw failure('INVALID_AUDIENCE', '服务用途无效')
+      if (subjectHash !== undefined && (audience !== 'official-models' || typeof subjectHash !== 'string' || !/^[a-f0-9]{64}$/.test(subjectHash))) throw failure('INVALID_SUBJECT', '模型终端主体须为64位摘要，且不能复用于其他服务用途')
       const state = await store.read(), root = authenticate(state, token), grant = current(state, organizationId || root.id, now())
       if (grant.id !== root.id && grant.parentId !== root.id) throw failure('SCOPE_DENIED', '组织不属于当前实例', 403)
       if (!activated(state, grant)) throw failure('LICENSE_NOT_ACTIVATED', '授权尚未兑换激活', 403)
       return { token: signClaims({ aud: audience, sub: grant.id, rootId: root.id, instanceId: root.instanceId, version: grant.version,
-        rootVersion: root.version, modelIds: grant.modelIds, capabilities: grant.capabilities, iat: now(), exp: Math.min(now() + 60_000, root.bindingExpiresAt || Infinity) }, signing) }
+        rootVersion: root.version, modelIds: grant.modelIds, capabilities: grant.capabilities, ...(subjectHash ? { subjectHash } : {}), iat: now(), exp: Math.min(now() + 60_000, root.bindingExpiresAt || Infinity) }, signing) }
     },
     async introspect(token, audience) {
       const claims = verifyClaims(token, { keys: publicKeys, audience, now: now() }), state = await store.read()

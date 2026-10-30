@@ -127,9 +127,9 @@ export function createDeploymentLicenseClient({ store, centerUrl, instanceId, pu
           allowSupplierManagement: false, allowPlatformSettings: true, allowCustomBrand: false, allowCustomApiProviders: false, message: error.message }
       }
     },
-    async serviceToken(audience, organizationId) {
+    async serviceToken(audience, organizationId, subjectHash) {
       const state = await refresh(true)
-      return (await request('service-token', { audience, organizationId: organizationId || state.rootId }, state.credential)).token
+      return (await request('service-token', { audience, organizationId: organizationId || state.rootId, ...(subjectHash !== undefined ? { subjectHash } : {}) }, state.credential)).token
     },
     async resource(action, kind, resourceId, organizationId, input = {}) {
       const token = await this.serviceToken('official-build', organizationId)
