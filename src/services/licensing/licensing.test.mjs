@@ -926,3 +926,35 @@ test('migration receipts authenticate all public metadata and reports cannot ove
     await assert.rejects(writeMigrationArtifact('relative.json', result), { code: 'OUTPUT_PATH_REQUIRED' })
   } finally { assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir())); await fs.rm(dir, { recursive: true, force: true }) }
 })
+test('legacy price candidates preserve cached input rates, units, minimums and per-request free meters without inferring cost', async () => {
+  const { legacyPriceProposal } = await import('./legacy-model-review.mjs')
+  const token = (meter, salePoints) => ({ meter, phase: 'usage', unitSize: '1000000', minimumUnits: '0', rounding: 'none', salePoints, status: 'enabled' })
+  const plan = { id: 'legacy-price', providerModelId: 'existing-model', taskType: 'chat', consumptionMultiplier: '0.5', components: [token('input_tokens', '10'), token('output_tokens', '20')] }
+  const review = { pointsPerCny: '10', conversionReview: '核对旧终端比例', costReview: '独立核对供应商人民币报价', costComponents: [
+    { ...token('input_tokens', '0'), amount: '0.1' }, { ...token('cached_tokens', '0'), amount: '0.01' }, { ...token('output_tokens', '0'), amount: '0.2' },
+    { meter: 'request', phase: 'request', unitSize: '1', amount: '0', rounding: 'none', minimumUnits: '0' }] }
+  const proposal = legacyPriceProposal(plan, review)
+  assert.equal(proposal.sale.components.find(item => item.meter === 'input_tokens').amount, '1.000000')
+  assert.equal(proposal.sale.components.find(item => item.meter === 'cached_tokens').amount, '1.000000')
+  assert.equal(proposal.supplierCost.components.find(item => item.meter === 'cached_tokens').amount, '0.010000')
+  assert.equal(proposal.consumptionMultiplier, '0.500000'); assert.equal(proposal.requiresUsageShadow, true)
+  assert(proposal.zeroBase.components.every(item => item.amount === '0.000000'))
+  const requestOnly = legacyPriceProposal({ ...plan, components: [{ meter: 'request', phase: 'request', unitSize: '1', minimumUnits: '2', rounding: 'ceil', salePoints: '10', status: 'enabled' }] },
+    { ...review, costComponents: review.costComponents.map(item => item.meter === 'request' ? { ...item, minimumUnits: '2', rounding: 'ceil' } : item) })
+  assert.equal(requestOnly.sale.components.find(item => item.meter === 'request').minimumUnits, '2.000000')
+  assert(requestOnly.sale.components.filter(item => item.meter !== 'request').every(item => item.amount === '0.000000'))
+})
+
+test('legacy price review refuses lossy conversion, missing costs and unsupported activation or task charges', async () => {
+  const { legacyPriceProposal } = await import('./legacy-model-review.mjs')
+  const component = { meter: 'request', phase: 'request', unitSize: '1', minimumUnits: '0', rounding: 'none', salePoints: '1', status: 'enabled' }
+  const plan = { id: 'legacy-search', providerModelId: 'existing-search', taskType: 'web_search', consumptionMultiplier: '1', components: [component] }
+  const review = { pointsPerCny: '3', conversionReview: '已核对兑换比例', costReview: '已核对实际人民币成本', costComponents: [{ ...component, amount: '0.1' }] }
+  assert.throws(() => legacyPriceProposal(plan, review), { code: 'NONREPRESENTABLE_CNY' })
+  assert.throws(() => legacyPriceProposal(plan, { ...review, pointsPerCny: '1', costReview: '' }), { code: 'PRICE_REVIEW_REQUIRED' })
+  assert.throws(() => legacyPriceProposal(plan, { ...review, pointsPerCny: '1', costComponents: [{ ...component, amount: '0.1', unitSize: '2' }] }), { code: 'COST_METER_MISMATCH' })
+  assert.throws(() => legacyPriceProposal({ ...plan, taskType: 'video_generation' }, review), { code: 'UNSUPPORTED_LEGACY_TASK' })
+  assert.throws(() => legacyPriceProposal({ ...plan, components: [{ ...component, meter: 'resource_activation', phase: 'activation' }] }, { ...review, pointsPerCny: '1' }), { code: 'UNSUPPORTED_LEGACY_METER' })
+  assert.throws(() => legacyPriceProposal({ ...plan, components: [{ ...component, salePoints: '0.00000001' }] }, { ...review, pointsPerCny: '1' }), { code: 'LEGACY_PRECISION_REVIEW_REQUIRED' })
+  assert.equal(legacyPriceProposal({ ...plan, components: [{ ...component, salePoints: '1.00000000', unitSize: '1.00000000' }] }, { ...review, pointsPerCny: '1' }).sale.components[0].amount, '1.000000')
+})

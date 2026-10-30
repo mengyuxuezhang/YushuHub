@@ -5,7 +5,8 @@ import { decimal, failure, identifier, micros } from './protocol.mjs'
 const groups = {
   users: ['ai_users', 'ai_end_users', 'ai_organization_members', 'ai_user_groups', 'ai_user_group_members', 'ai_user_group_permissions', 'ai_role_templates', 'ai_role_template_permissions'],
   balances: ['ai_end_users'], memberships: ['ai_membership_cards', 'ai_end_user_memberships'], orders: ['ai_payment_orders'], ledger: ['ai_credit_ledger'],
-  modelAccess: ['ai_end_user_model_access', 'ai_membership_card_model_access'], modelPrices: ['ai_model_pricing_rules', 'ai_model_pricing_plans', 'ai_model_pricing_components'],
+  modelAccess: ['ai_end_user_model_access', 'ai_membership_card_model_access'], modelPrices: ['ai_model_pricing_rules', 'ai_model_pricing_plans', 'ai_model_pricing_components', 'ai_currency_exchange_rates'],
+  modelRouting: ['ai_model_providers', 'ai_provider_models', 'ai_model_task_capabilities', 'ai_model_upstream_accounts', 'ai_model_provider_keys'],
   projects: ['ai_projects'], builds: ['ai_builds'],
 }
 const omit = /password|secret|credential|api_?key|token(?!s$)|model_gateway_key|qr_code|checkout_url|client_ip|(?:^|_)log$|(?:^|_)error$|background_url|^last_login|^last_seen|^updated_at$/i
@@ -51,7 +52,8 @@ export async function collectMigrationProofs(connection) {
   const proofs = {}
   for (const [group, tables] of Object.entries(groups)) {
     const parts = []
-    for (const table of tables) parts.push(await tableProof(connection, table, group === 'balances' ? ['id', 'credit_balance', 'organization_id'] : null))
+    for (const table of tables) parts.push(await tableProof(connection, table, group === 'balances' ? ['id', 'credit_balance', 'organization_id']
+      : table === 'ai_model_provider_keys' ? ['id', 'owner_user_id', 'provider_id', 'upstream_account_id', 'provider_model_id', 'organization_id', 'status', 'weight', 'updated_at'] : null))
     proofs[group] = { count: parts.reduce((sum, part) => sum + part.count, 0), hash: migrationHash(parts), tables: parts }
   }
   const [[balance]] = await connection.query('SELECT COALESCE(SUM(credit_balance),0) AS total FROM ai_end_users')
