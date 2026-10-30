@@ -29,6 +29,8 @@ export function organizationAuthorizationExpired(context, now = Date.now()) {
 }
 
 export function expiredOrganizationRequestAllowed(method, path, context) {
+  if (context?.authorizationSource === 'license-center' && context.memberStatus === 'enabled' && context.organizationLevel === 1 && context.isOwner
+    && method === 'POST' && /^\/api\/supply\/children\/[^/]+\/reverse$/.test(path)) return true
   if (context?.authorizationSource === 'license-center' && context.memberStatus === 'enabled' && recordRequestAllowed(method, path)) return true
   if ((method === 'GET' && path === '/api/authorization/monitor') || (method === 'PUT' && path === '/api/authorization/monitor/config')
     || (method === 'POST' && path === '/api/authorization/monitor/test')) return true

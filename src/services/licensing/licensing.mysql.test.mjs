@@ -9,7 +9,7 @@ import { promisify } from 'node:util'
 import mysql from 'mysql2/promise'
 import { memoryStateStore, mysqlStateStore } from '../../repositories/licensing-state.mjs'
 import { mysqlAccountingStore } from '../../repositories/accounting.mjs'
-import { migrateAccounting, verifyAccountingImport } from './accounting-migration.mjs'
+import { auditAccounting, migrateAccounting, verifyAccountingImport } from './accounting-migration.mjs'
 import { assertAccountingRuntime } from './accounting-mode.mjs'
 import { createSupplyLedger, emptyLedgerState } from './ledger.mjs'
 import { createLicenseCenter, emptyCenterState } from './center.mjs'
@@ -784,4 +784,40 @@ test('real MySQL custom async speech: persistent original jobs, restart/expiry r
     await service.submit(child, 'stream-user', { ...input, requestId: 'custom-async-response-lost' }); await runtime.flush()
     assert.equal(creates, 2); assert.equal((await runtime.store.readRequest('custom-async-response-lost')).state, 'unknown')
   } finally { runtime?.stop(); await pool.end(); delete process.env.CUSTOM_ASYNC_TEST_KEY; await fs.rm(dir, { recursive: true, force: true }) }
+})
+
+
+test('real MySQL child supply reversals serialize, preserve original entries and separate refunds from prepayments', { skip: !configured }, async () => {
+  const { gatewayDatabase = 'yushu_gateway_test', licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable test database required')
+  const pool = mysql.createPool({ ...config, database: gatewayDatabase, connectionLimit: 12 })
+  const root = { id: 'reversal-root', level: 1 }, childId = 'reversal-child'
+  try {
+    await migrateAccounting({ pool, book: 'reversal-commerce', kind: 'commerce', sourceId: 'reversal-empty' })
+    const store = mysqlAccountingStore(pool, 'reversal-commerce', 'commerce')
+    const service = createAgentCommerce({ store, rootId: root.id, catalog: async () => [], userBank: {} })
+    await service.credit(root, childId, '10', 'reversal-funds', 'virtual-receipt', 'owner')
+    let state = await store.read(), credit = state.entries[0]
+    const duplicate = await Promise.all(Array.from({ length: 10 }, () => service.reverse(root, childId, credit.id, 'reverse-once', '测试充值纠错', 'owner')))
+    assert(duplicate.every(row => row.wallet.balance === '0.000000'))
+    await assert.rejects(service.reverse(root, childId, credit.id, 'reverse-again', '不能重复冲正', 'owner'), { code: 'INVALID_REVERSAL' })
+    await assert.rejects(async () => service.reverse({ ...root, level: 2 }, childId, credit.id, 'wrong-level', '不能越级操作', 'owner'), { code: 'LEVEL_REQUIRED' })
+    await service.credit(root, childId, '10', 'reversal-next-funds', 'next-virtual-receipt', 'owner')
+    await store.scopeTransaction({ walletId: childId }, state => { state.wallets[childId].reserved = '5.000000' })
+    const next = (await store.read()).entries.find(e => e.kind === 'credit' && e.id !== credit.id)
+    await assert.rejects(service.reverse(root, childId, next.id, 'held-credit', '已预占禁止冲回', 'owner'), { code: 'INSUFFICIENT_FUNDS' })
+    await store.scopeTransaction({ walletId: childId }, state => {
+      state.wallets[childId].reserved = '0.000000'; state.wallets[childId].balance = '8.000000'
+      state.entries.push({ id: 'settled-supply-entry', organizationId: childId, kind: 'supply_debit', amount: '-2.000000', at: Date.now() })
+    })
+    await assert.rejects(service.reverse(root, 'sibling-wallet', 'settled-supply-entry', 'wrong-wallet', '不得跨组织冲正', 'owner'), { code: 'INVALID_REVERSAL' })
+    const restored = await service.reverse(root, childId, 'settled-supply-entry', 'refund-supply', '测试供货全额退款', 'owner')
+    assert.equal(restored.wallet.balance, '10.000000'); assert.equal(restored.userPointsChanged, false)
+    const report = await service.balance(root)
+    assert.equal(report.totals.prepaymentCorrections, '-10.000000'); assert.equal(report.totals.supplyRefunds, '2.000000'); assert.equal(report.totals.netMargin, '-2.000000')
+    const childReport = await service.balance({ id: childId, level: 2 }); assert.equal(childReport.totals.netMargin, '2.000000')
+    state = await store.read(); assert.deepEqual(state.entries.find(e => e.id === credit.id), credit)
+    assert.equal(state.entries.filter(e => e.kind === 'reversal').length, 2)
+    assert.equal(auditAccounting(state, 'commerce').wallets[childId].balance, '10.000000')
+  } finally { await pool.end() }
 })

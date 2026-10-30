@@ -187,16 +187,23 @@ export function mysqlAccountingStore(pool, book, kind) {
     },
     async commerceTotals(walletId, all = false) {
       if (kind !== 'commerce') throw failure('INVALID_BOOK', '经营报表仅适用于本地账本')
-      await ready(pool)
+      return snapshot(async connection => {
       const names = ['salesAmount', 'listSalesAmount', 'upstreamAmount', 'supplyAmount', 'firstMargin', 'secondMargin', 'marketingSubsidy', 'points']
       const value = key => `NULLIF(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.${key}')),'null')`
       const columns = names.map(key => {
         const amount = key === 'listSalesAmount' ? `COALESCE(${value(key)},${value('salesAmount')},'0')` : `COALESCE(${value(key)},'0')`
         return `COALESCE(SUM(CASE WHEN state='settled' THEN CAST(${amount} AS DECIMAL(32,6)) ELSE 0 END),0) AS ${key}`
       })
-      const [[row]] = await pool.query(`SELECT COUNT(*) AS requestCount,SUM(state<>'settled') AS pendingCount,${columns.join(',')}
+      const [[row]] = await connection.query(`SELECT COUNT(*) AS requestCount,SUM(state<>'settled') AS pendingCount,${columns.join(',')}
         FROM accounting_requests WHERE book=?${all ? '' : ' AND wallet_id=?'}`, all ? [book] : [book, walletId])
-      return { requestCount: Number(row.requestCount), pendingCount: Number(row.pendingCount || 0), ...Object.fromEntries(names.map(key => [key, String(row[key])])) }
+      const [[adjustments]] = await connection.query(`SELECT
+        COALESCE(SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(payload,'$.reversalOfKind'))='supply_debit' THEN amount ELSE 0 END),0) AS supplyRefunds,
+        COALESCE(SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(payload,'$.reversalOfKind'))='credit' THEN amount ELSE 0 END),0) AS prepaymentCorrections
+        FROM accounting_entries WHERE book=? AND kind='reversal'${all ? '' : ' AND wallet_id=?'}`, all ? [book] : [book, walletId])
+      return { requestCount: Number(row.requestCount), pendingCount: Number(row.pendingCount || 0), ...Object.fromEntries(names.map(key => [key, String(row[key])])),
+        supplyRefunds: String(adjustments.supplyRefunds), prepaymentCorrections: String(adjustments.prepaymentCorrections),
+        netMargin: decimal(micros(String(all ? row.firstMargin : row.secondMargin)) + (all ? -1n : 1n) * micros(String(adjustments.supplyRefunds))) }
+      })
     },
     async pending() {
       await ready(pool)

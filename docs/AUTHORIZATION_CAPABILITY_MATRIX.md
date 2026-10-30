@@ -40,7 +40,7 @@
 | `end_users.manage` 终端用户管理 | /end-users | 本组织用户、模型权限、积分权益 | 有/有/有 | `src/routes/admin-business.mjs`<br>`src/routes/organizations.mjs` | `npm run test:end-users` |
 | `memberships.manage` 会员卡管理 | /memberships | 会员模板/归属/模块优惠及价格快照 | 有/有/有 | `src/routes/memberships.mjs`<br>`src/routes/organizations.mjs` | `npm run test:memberships`<br>`npm run test:licensing:mysql` |
 | `payments.manage` 支付中心 | /payments | 商户配置和订单；失效仅看账，不放开新购买 | 有/有/有 | `src/routes/organizations.mjs`<br>`src/routes/payments.mjs` | `npm run test:payments`<br>`npm run test:licensing` |
-| `credits.manage` 积分管理 | /credits | 原积分账保留；人工积分不增加上游钱包 | 有/有/有 | `src/routes/admin-business.mjs`<br>`src/routes/organizations.mjs` | `npm run test:end-users`<br>`npm run test:licensing:mysql` |
+| `credits.manage` 积分管理 | /credits | 原积分账保留；人工积分不增加上游钱包；财务可读本地供货账，冲正须一级所有者 | 有/有/有 | `src/routes/admin-business.mjs`<br>`src/routes/organizations.mjs` | `npm run test:end-users`<br>`npm run test:licensing:mysql` |
 | `redeem_codes.manage` 兑换码管理 | /redeem-codes | 原兑换权益保留；失效禁止新兑换 | 有/有/有 | `src/routes/organizations.mjs`<br>`src/routes/redeem-codes.mjs` | `npm run test:redeem-codes` |
 | `model_providers.manage` 服务商管理 | /models/providers | 仅一级自定义可修改；固定仅查看供货展示 | 有/有/无 | `src/routes/model-service.mjs` | `npm run test:model-v2`<br>`npm run test:licensing` |
 | `model_keys.manage` Key 池管理 | /models/keys | 仅一级自定义；固定/二级禁止 | 有/无/无 | `src/routes/model-service.mjs`<br>`src/routes/upstream-accounts.mjs`<br>`src/routes/voice-configuration.mjs`<br>`src/routes/voice-resources.mjs` | `npm run test:model-v2`<br>`npm run test:licensing` |
@@ -69,7 +69,7 @@
 - 组织隔离：伪造组织/owner/userId、兄弟组织、一级直接查看二级用户明细；默认拒绝，例外代操作尚未提供。员工停用不得借只读账单恢复权限。
 - 资源：目录、包、签名、受保护租约、安装、撤销、中心停用及重启；现有领域测试不替代真实中心→一级→二级→客户端的全部回归。
 - 账务：原用户积分/会员/订单守恒，供货结算进入原报表但不把预占释放当消费；失败/未知不当成功消费，免费成功也计次。
-- 期限：失效禁止新业务，原角色有权的历史订单/积分流水/报表/导出保留；退款闭环仍待补齐，不把只读当成退款实现。
+- 期限：失效禁止新业务，原角色有权的历史订单/积分流水/报表/导出保留；供货钱包已有不可变冲正；终端退款闭环仍待补齐，不把只读当成退款实现。
 - 模型：原文本/搜索/图像/语音逐调用路径；私有音色新建生命周期、自接异步、更多真实供应商与现有密钥池接入仍有缺口。视频/向量等原开发中能力不提升为上线承诺。
 - 迁移/发布：一级历史写入导入、影子差异、额度基线、无损回退、真实构建/产物/下游更新、7天正式试点仍是交付门槛。无存量二级与私有音色历史，不补做已经延期的跨一级历史迁移。
 

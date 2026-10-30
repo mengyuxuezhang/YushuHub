@@ -172,7 +172,7 @@ export const navigationSections: NavigationSection[] = [
         title: "模型供货与收益",
         subtitle: "加价、预付余额和收益",
         icon: ReceiptText,
-        permissions: ["pricing_rules.manage"],
+        permissions: ["pricing_rules.manage", "credits.manage"],
         phase: "P5",
       },
     ],

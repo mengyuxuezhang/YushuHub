@@ -120,7 +120,8 @@ async function seedOrganizationCompatibility({ centerMode = false, supplierId = 
        business_mode, deployment_mode, runtime_owner_organization_id, legacy_owner_user_id, status)
      VALUES (?, ?, ?, ?, ?, NULL, ?, 'personal', ?, ?, 'admin', 'enabled')
      ON DUPLICATE KEY UPDATE
-       external_id=VALUES(external_id), name=VALUES(name), organization_type=VALUES(organization_type),
+       external_id=IF(external_id='',VALUES(external_id),external_id),
+       name=IF(authorization_version>0,name,VALUES(name)), organization_type=VALUES(organization_type),
        agent_level=VALUES(agent_level), root_organization_id=VALUES(root_organization_id),
        deployment_mode=VALUES(deployment_mode), runtime_owner_organization_id=VALUES(runtime_owner_organization_id),
        legacy_owner_user_id=IF(legacy_owner_user_id='', 'admin', legacy_owner_user_id)`,

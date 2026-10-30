@@ -6727,7 +6727,7 @@ registerOrganizationRoutes(app, {
 const commerceRuntime = agentCommerceRuntime({ client: authorizationClient, database: db })
 const resourcesRuntime = resourceRuntime({ client: authorizationClient, database: db, resolveOrganization: organizationRepository.findOrganizationById, readBuild: findBuildById })
 registerDeploymentAuthorizationRoutes(app, { client: authorizationClient, repository: organizationRepository, database: db, ensureAccountFreeMembership, monitor: commerceRuntime?.monitor })
-registerAgentSupplyRoutes(app, { runtime: commerceRuntime, client: authorizationClient,
+registerAgentSupplyRoutes(app, { runtime: commerceRuntime, client: authorizationClient, repository: organizationRepository,
   resolveUserContext: async user => {
     const billingOwnerUserId = await keyOwnerUserIdForEndUser(user.id)
     const resolved = await organizationRepository.findOrganizationContextForUser(billingOwnerUserId)

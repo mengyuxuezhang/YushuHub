@@ -120,6 +120,30 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
         return account
       })
     },
+    reverse(tenant, childId, entryId, requestId, reason, actor) {
+      if (tenant.level !== 1 || tenant.id !== rootId) throw failure('LEVEL_REQUIRED', '只有所属一级可以冲正二级供货流水', 403)
+      identifier(childId); identifier(entryId); identifier(requestId)
+      if (!actor || typeof reason !== 'string' || reason.trim().length < 3 || reason.length > 500) throw failure('REASON_REQUIRED', '冲正须记录操作人及3至500字原因')
+      return transact({ walletId: childId, commandId: requestId, entryId }, state => {
+        const fingerprint = digest(JSON.stringify({ childId, entryId, reason: reason.trim(), actor })), previous = state.commands[requestId]
+        if (previous) {
+          if (previous.fingerprint !== fingerprint) throw failure('IDEMPOTENCY_CONFLICT', '冲正请求ID冲突', 409)
+          return previous.result
+        }
+        const original = state.entries.find(entry => entry.id === entryId && entry.organizationId === childId)
+        if (!original || !['credit', 'supply_debit'].includes(original.kind) || state.entries.some(entry => entry.reverses === entryId)) throw failure('INVALID_REVERSAL', '流水不存在、不支持冲正或已冲正', 409)
+        const wallet = state.wallets[childId], adjustment = -micros(original.amount)
+        if (!wallet) throw failure('NOT_FOUND', '二级供货钱包不存在', 404)
+        if (adjustment < 0n && micros(wallet.balance) - micros(wallet.reserved) < -adjustment) throw failure('INSUFFICIENT_FUNDS', '可用余额不足，不能冲正已消费或已预占的充值', 402)
+        wallet.balance = decimal(micros(wallet.balance) + adjustment)
+        const reversal = { id: crypto.randomUUID(), organizationId: childId, kind: 'reversal', reversalOfKind: original.kind,
+          amount: decimal(adjustment), reverses: entryId, requestId: original.requestId || null, commandId: requestId, actor, reason: reason.trim(), at: now() }
+        state.entries.push(reversal)
+        const result = { wallet: { ...wallet }, reversal, userPointsChanged: false }
+        state.commands[requestId] = { fingerprint, result }
+        return result
+      })
+    },
     async balance(tenant) {
       const state = store.history ? await store.history(tenant.id, tenant.level === 1) : await store.read(), operations = Object.values(state.requests).filter(op => tenant.level === 1 || op.organizationId === tenant.id)
       const totals = store.commerceTotals ? await store.commerceTotals(tenant.id, tenant.level === 1) : null

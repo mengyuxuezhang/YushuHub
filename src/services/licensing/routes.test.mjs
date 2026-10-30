@@ -6,7 +6,7 @@ import { filterOrganizationPermissions } from '../organization-expiry.mjs'
 import { supplierLicenseAllowsPermission } from '../supplier-license-contract.mjs'
 import { registerOrganizationRoutes } from '../../routes/organizations.mjs'
 import { buildOrganizationContext } from '../organizations.mjs'
-import { publicSupplyOperation, publicSupplyCatalogRow } from '../../routes/agent-supply.mjs'
+import { publicSupplyOperation, publicSupplyCatalogRow, registerAgentSupplyRoutes } from '../../routes/agent-supply.mjs'
 import { chatCompletionChunks, projectSupplyCatalog } from '../../routes/client-supply-bridge.mjs'
 import { registerDeploymentAuthorizationRoutes } from '../../routes/deployment-authorization.mjs'
 
@@ -133,4 +133,28 @@ test('secondary catalog hides self-supplied vendor cost and shows only inherited
   assert.equal(JSON.stringify(result).includes('privateCost'), false)
   assert.deepEqual(result.model.price, row.supply)
   assert.equal(publicSupplyCatalogRow(row, 1), row)
+})
+
+
+test('expired first owner can reverse only a trusted direct child ledger, while staff and second agents cannot', async () => {
+  let context = { organizationId: 'local-root', externalId: 'root', organizationLevel: 1, authorizationSource: 'license-center', centralLicenseActive: false, memberStatus: 'enabled', organizationStatus: 'enabled', isOwner: true }
+  let keys = ['credits.manage'], parent = 'local-root'
+  const calls = [], runtime = { recordTenant: async value => { assert.equal(value, context); return { id: value.externalId, level: value.organizationLevel } },
+    service: async options => { assert.equal(options.recovery, true); return { balance: async tenant => tenant, reverse: async (...args) => { calls.push(args); return { userPointsChanged: false } } } } }
+  setAuthDependencies({ getUserBySession: async () => ({ id: 'owner', organizationContext: context }), getEffectivePermissionKeys: async () => keys, permissionByKey: () => null })
+  const app = express(); app.use(express.json())
+  registerAgentSupplyRoutes(app, { runtime, repository: { findOrganizationById: async () => ({ id: 'local-child', externalId: 'trusted-child', agentLevel: 2, parentOrganizationId: parent }) } })
+  app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ code: error.code }))
+  const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)) }), url = `http://127.0.0.1:${server.address().port}`
+  const reverse = () => fetch(url + '/api/supply/children/local-child/reverse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entryId: 'entry', requestId: 'correction', reason: '测试冲正', organizationId: 'forged' }) })
+  try {
+    assert.equal((await fetch(url + '/api/supply/balance?organizationId=forged')).status, 200)
+    assert.equal((await reverse()).status, 200); assert.equal(calls[0][1], 'trusted-child')
+    parent = 'sibling'; assert.equal((await reverse()).status, 404); parent = 'local-root'
+    keys = []; assert.equal((await reverse()).status, 403); keys = ['credits.manage']
+    context = { ...context, isOwner: false }; assert.equal((await reverse()).status, 403)
+    context = { ...context, isOwner: true, organizationLevel: 2 }; assert.equal((await reverse()).status, 403)
+    context = { ...context, organizationLevel: 1, memberStatus: 'disabled' }; assert.equal((await reverse()).status, 403)
+    assert.equal(calls.length, 1)
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
 })
