@@ -6,6 +6,7 @@ import { registerOrganizationRoutes } from '../../routes/organizations.mjs'
 import { buildOrganizationContext } from '../organizations.mjs'
 import { publicSupplyOperation } from '../../routes/agent-supply.mjs'
 import { chatCompletionChunks, projectSupplyCatalog } from '../../routes/client-supply-bridge.mjs'
+import { registerDeploymentAuthorizationRoutes } from '../../routes/deployment-authorization.mjs'
 
 test('central organization grants are independent of parent menus and never fall back from an unmigrated child to root', async () => {
   const calls = [], repository = {
@@ -21,6 +22,30 @@ test('central organization grants are independent of parent menus and never fall
   license.forOrganization = async () => ({ verified: false, capabilities: [] })
   const inactive = await buildOrganizationContext({ id: 'user' }, repository, { getSupplierLicense: license })
   assert.equal(inactive.centralLicenseActive, false); assert.deepEqual(inactive.capabilityKeys, [])
+})
+
+test('monitor remediation remains available after expiry only to the authenticated first-level owner', async () => {
+  let context = { organizationId: 'root', organizationLevel: 1, isOwner: true, authorizationSource: 'license-center', centralLicenseActive: false,
+    organizationStatus: 'enabled', memberStatus: 'enabled' }
+  let loggedIn = true, writes = 0
+  setAuthDependencies({ getUserBySession: async () => loggedIn ? { id: 'admin', organizationContext: context } : null })
+  const app = express(); app.use(express.json())
+  registerDeploymentAuthorizationRoutes(app, { client: {}, monitor: { state: async () => ({ healthy: true }), configure: async () => { writes++; return { configured: true } }, test: async () => ({ queued: true }) } })
+  app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ code: error.code }))
+  const server = await new Promise(resolve => { const server = app.listen(0, '127.0.0.1', () => resolve(server)) })
+  const url = `http://127.0.0.1:${server.address().port}/api/authorization/monitor`
+  try {
+    assert.equal((await fetch(url)).status, 200)
+    assert.equal((await fetch(`${url}/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 200)
+    context = { ...context, organizationLevel: 2 }
+    assert.equal((await fetch(url)).status, 403)
+    assert.equal((await fetch(`${url}/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 403)
+    context = { ...context, organizationLevel: 1, isOwner: false }
+    assert.equal((await fetch(url)).status, 403)
+    loggedIn = false
+    assert.equal((await fetch(url)).status, 401)
+    assert.equal(writes, 1)
+  } finally { await new Promise(resolve => server.close(resolve)) }
 })
 
 test('central HTTP routes reject legacy issuance, capability edits, expiry changes and reset but allow business stop', async () => {

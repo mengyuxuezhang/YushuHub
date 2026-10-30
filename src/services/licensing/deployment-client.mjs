@@ -44,6 +44,20 @@ export function createDeploymentLicenseClient({ store, centerUrl, instanceId, pu
   }
   return {
     refresh,
+    async recoveryToken(organizationId, requestId) {
+      const state = await store.read()
+      if (!state.credential || !state.rootId) throw failure('INSTANCE_UNAUTHORIZED', '实例尚未激活', 401)
+      return (await request('recovery-token', { organizationId: organizationId || state.rootId, requestId }, state.credential)).token
+    },
+    async recoveryIdentity() {
+      const state = await store.read()
+      if (!state.credential || !state.rootId) throw failure('INSTANCE_UNAUTHORIZED', '实例尚未激活', 401)
+      return { id: state.rootId }
+    },
+    async monitorState() {
+      const state = await store.read()
+      return { activated: Boolean(state.credential && state.rootId), checkedAt: state.checkedAt || 0, rejected: Boolean(state.rejected) }
+    },
     async activate(code, level = 1) {
       const state = await store.read(), codeId = crypto.createHash('sha256').update(code).digest('hex')
       if (state.activations?.[codeId]) {

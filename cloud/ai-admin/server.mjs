@@ -6693,8 +6693,9 @@ registerOrganizationRoutes(app, {
   },
 })
 
-registerDeploymentAuthorizationRoutes(app, { client: authorizationClient, repository: organizationRepository, database: db, ensureAccountFreeMembership })
-registerAgentSupplyRoutes(app, { runtime: agentCommerceRuntime({ client: authorizationClient, database: db }), client: authorizationClient,
+const commerceRuntime = agentCommerceRuntime({ client: authorizationClient, database: db })
+registerDeploymentAuthorizationRoutes(app, { client: authorizationClient, repository: organizationRepository, database: db, ensureAccountFreeMembership, monitor: commerceRuntime?.monitor })
+registerAgentSupplyRoutes(app, { runtime: commerceRuntime, client: authorizationClient,
   resolveUserContext: async user => {
     const resolved = await organizationRepository.findOrganizationContextForUser(await keyOwnerUserIdForEndUser(user.id))
     if (!resolved) throw new Error('终端用户没有有效的组织归属')
@@ -6984,6 +6985,7 @@ pool = await initDatabase({
   permissionKeys: permissionCatalogItems().map((item) => item.key),
 })
 await assertAccountingRuntime(pool, Boolean(authorizationClient))
+await commerceRuntime?.startMonitoring()
 const updateDatabaseMigration = await migrateOfficialUpdateDatabaseSettings(pool)
 if (updateDatabaseMigration.changedRows > 0) console.log(`[ai-admin] migrated ${updateDatabaseMigration.changedRows} saved official update source setting(s)`)
 await reconcileCenterSupplierOrganizations()

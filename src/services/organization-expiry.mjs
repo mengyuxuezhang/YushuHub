@@ -28,6 +28,8 @@ export function organizationAuthorizationExpired(context, now = Date.now()) {
 }
 
 export function expiredOrganizationRequestAllowed(method, path) {
+  if ((method === 'GET' && path === '/api/authorization/monitor') || (method === 'PUT' && path === '/api/authorization/monitor/config')
+    || (method === 'POST' && path === '/api/authorization/monitor/test')) return true
   if (method === 'GET' && ['/api/authorization/state', '/api/me', '/api/me/permissions'].includes(path)) return true
   if (method === 'POST' && path === '/api/authorization/activate') return true
   const readPaths = ['/api/license', '/api/source-version', '/api/platform-settings', '/api/diagnostics', '/api/workers', '/api/organizations/context', '/api/organizations/children']

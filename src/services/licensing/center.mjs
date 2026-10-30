@@ -32,10 +32,10 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
   if (!privateKey || !keyId || !credentialKey || !publicKeys?.[keyId]) throw new Error('Signing and credential keys must be configured')
   const signing = { privateKey, keyId }
   const derive = (hash, instance) => crypto.createHmac('sha256', credentialKey).update(`${hash}:${instance}`).digest('base64url')
-  function authenticate(state, token) {
+  function authenticate(state, token, recovery = false) {
     const id = state.credentials[digest(token || '')]
-    const grant = id ? current(state, id, now()) : null
-    if (!grant || grant.level !== 1 || !equal(grant.credentialHash, digest(token))) throw failure('INSTANCE_UNAUTHORIZED', '实例凭据无效', 401)
+    const grant = id ? (recovery ? state.grants[id] : current(state, id, now())) : null
+    if (!grant || grant.level !== 1 || !equal(grant.credentialHash, digest(token)) || (recovery && grant.status === 'revoked')) throw failure('INSTANCE_UNAUTHORIZED', '实例凭据无效', 401)
     return grant
   }
   function certificate(state, grant) {
@@ -168,10 +168,23 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
     },
     async introspect(token, audience) {
       const claims = verifyClaims(token, { keys: publicKeys, audience, now: now() }), state = await store.read()
-      const grant = current(state, claims.sub, now()), root = current(state, claims.rootId, now())
+      const recovery = audience === 'official-model-recovery'
+      const grant = recovery ? state.grants[claims.sub] : current(state, claims.sub, now()), root = recovery ? state.grants[claims.rootId] : current(state, claims.rootId, now())
+      if (!grant || !root || root.level !== 1 || (recovery && (grant.status === 'revoked' || root.status === 'revoked'
+        || !claims.requestId || JSON.stringify(claims.actions) !== JSON.stringify(['status', 'poll', 'ack'])))) throw failure('RECOVERY_DENIED', '恢复权限无效或已撤销', 403)
       if (claims.version !== grant.version || claims.rootVersion !== root.version || claims.instanceId !== root.instanceId
         || (grant.id !== root.id && grant.parentId !== root.id)) throw failure('STALE_LICENSE', '授权或绑定已变更', 403)
       return { ...claims, grant: publicGrant(grant), root: publicGrant(root) }
+    },
+    async recoveryToken(token, organizationId, requestId) {
+      identifier(requestId)
+      const state = await store.read(), root = authenticate(state, token, true), grant = state.grants[identifier(organizationId || root.id)]
+      if (!grant || grant.status === 'revoked' || (grant.id !== root.id && grant.parentId !== root.id)) throw failure('RECOVERY_DENIED', '组织不属于当前实例或已撤销', 403)
+      // This is not permission to create a request. The gateway must find the
+      // already accepted request and verify its root and organization.
+      return { token: signClaims({ aud: 'official-model-recovery', sub: grant.id, rootId: root.id, requestId,
+        instanceId: root.instanceId, version: grant.version, rootVersion: root.version, actions: ['status', 'poll', 'ack'],
+        iat: now(), exp: now() + 60_000 }, signing) }
     },
     async rotate(id, input, actor) {
       return store.transaction(state => {

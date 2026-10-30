@@ -1,6 +1,7 @@
 import { canonicalAccounting, mysqlAccountingStore } from '../../repositories/accounting.mjs'
 import { LICENSING_SCHEMA } from '../../repositories/licensing-state.mjs'
 import { decimal, digest, failure, micros } from './protocol.mjs'
+import { emptyMonitorState } from './accounting-monitor.mjs'
 
 const parse = v => typeof v === 'string' ? JSON.parse(v) : v
 const fields = kind => kind === 'ledger' ? ['wallets', 'operations', 'entries', 'commands', 'outbox', 'prices', 'quotas']
@@ -76,6 +77,7 @@ export async function migrateAccounting({ pool, book, kind, sourceId, allowImpor
     const [[existing]] = await connection.query('SELECT * FROM accounting_books WHERE book=? FOR UPDATE', [book])
     if (existing) {
       if (existing.kind !== kind || existing.source_id !== sourceId || (source && state.accountingCutover?.book !== book)) throw failure('MIGRATION_CONFLICT', '新旧账务绑定不一致，不能重复初始化', 409)
+      await connection.query('INSERT IGNORE INTO licensing_state (id,document) VALUES (?,?)', [`${book}-monitor`, JSON.stringify(emptyMonitorState())])
       await connection.commit()
       return { initialized: true, repeated: true, book }
     }
@@ -85,6 +87,7 @@ export async function migrateAccounting({ pool, book, kind, sourceId, allowImpor
     const audit = auditAccounting(state, kind)
     await connection.query('INSERT INTO accounting_books (book,kind,source_id,source_hash,activated_at) VALUES (?,?,?,?,?)', [book, kind, sourceId, audit.hash, Date.now()])
     await store.importState(connection, data)
+    await connection.query('INSERT INTO licensing_state (id,document) VALUES (?,?)', [`${book}-monitor`, JSON.stringify(emptyMonitorState())])
     if (kind === 'ledger') {
       // Preserve MFA replay counters and sessions; they are not monetary state.
       const operators = { sessions: state.sessions || {}, otpCounters: state.otpCounters || {}, audit: state.audit || [] }

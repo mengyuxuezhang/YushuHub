@@ -216,6 +216,32 @@ export function mysqlAccountingStore(pool, book, kind) {
         event.nextAttemptAt = Date.now() + Math.min(300_000, 1000 * 2 ** Math.min(9, event.attempts))
       })
     },
+    monitoring(previous = {}, now = Date.now()) {
+      return snapshot(async connection => {
+        const [[requests]] = await connection.query("SELECT SUM(state='unknown') n FROM accounting_requests WHERE book=?", [book])
+        const [[holds]] = await connection.query("SELECT MIN(CAST(JSON_UNQUOTE(JSON_EXTRACT(r.payload,'$.createdAt')) AS UNSIGNED)) oldest FROM accounting_holds h JOIN accounting_requests r ON r.book=h.book AND r.id=h.request_id WHERE h.book=? AND h.released=0", [book])
+        const [[events]] = await connection.query('SELECT COUNT(*) n,MIN(created_at) oldest FROM accounting_outbox WHERE book=? AND completed=0', [book])
+        const [[debt]] = await connection.query('SELECT COUNT(*) n FROM accounting_wallets WHERE book=? AND balance<0', [book])
+        // Bounded rotating audit uses one consistent DB snapshot; never inspect
+        // result payloads or take monetary locks for operational monitoring.
+        const [wallets] = await connection.query('SELECT id,balance,reserved FROM accounting_wallets WHERE book=? AND id>? ORDER BY id LIMIT 101', [book, previous.auditCursor || ''])
+        const page = wallets.slice(0, 100); let mismatches = 0
+        if (page.length) {
+          const ids = page.map(w => w.id), placeholders = ids.map(() => '?').join(',')
+          const [entries] = await connection.query(`SELECT wallet_id,SUM(amount) total FROM accounting_entries WHERE book=? AND wallet_id IN (${placeholders}) GROUP BY wallet_id`, [book, ...ids])
+          const [reserved] = await connection.query(`SELECT wallet_id,SUM(amount) total FROM accounting_holds WHERE book=? AND released=0 AND wallet_id IN (${placeholders}) GROUP BY wallet_id`, [book, ...ids])
+          const balances = new Map(entries.map(e => [e.wallet_id, micros(String(e.total))])), amounts = new Map(reserved.map(e => [e.wallet_id, micros(String(e.total))]))
+          mismatches = page.filter(w => micros(String(w.balance)) !== (balances.get(w.id) || 0n) || micros(String(w.reserved)) !== (amounts.get(w.id) || 0n)).length
+        }
+        const sweep = (previous.sweepMismatches || 0) + mismatches, complete = wallets.length <= 100
+        return { unknown: Number(requests.n || 0), pendingEvents: Number(events.n), debts: Number(debt.n),
+          oldestHoldAgeMs: holds.oldest === null ? 0 : Math.max(0, now - Number(holds.oldest)),
+          oldestEventAgeMs: events.oldest === null ? 0 : Math.max(0, now - Number(events.oldest)),
+          auditCursor: complete ? '' : page.at(-1).id, auditedWallets: page.length, sweepMismatches: complete ? 0 : sweep,
+          auditMismatches: complete ? sweep : Math.max(previous.auditMismatches || 0, sweep),
+          auditCompletedAt: complete ? now : previous.auditCompletedAt || null }
+      })
+    },
     reconciliation(now) {
       return snapshot(async connection => {
         const condition = "(state='unknown' OR (state IN ('reserved','running') AND updated_at<?))"

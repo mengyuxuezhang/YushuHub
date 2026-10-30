@@ -26,6 +26,13 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
     const amount = quoteSupply(operation.snapshot.price, outcome.usage)
     return ledger.settle(operation.requestId, amount, outcome.usage, outcome.result)
   }
+  async function recovery(token, requestId, action) {
+    const claims = await authorize(token, 'official-model-recovery')
+    if (claims.requestId !== identifier(requestId) || !claims.actions?.includes(action) || claims.root?.level !== 1) throw failure('RECOVERY_SCOPE_DENIED', '恢复凭据不适用于此请求或操作', 403)
+    const operation = await ledger.find(requestId, claims.rootId)
+    if (operation.snapshot.organizationId !== claims.sub) throw failure('NOT_FOUND', '任务不存在', 404)
+    return { claims, operation }
+  }
   return {
     async catalog(token) {
       const claims = await check(token)
@@ -80,6 +87,20 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
     async acknowledge(token, requestId) {
       const claims = await check(token), operation = await ledger.find(requestId, claims.rootId)
       if (operation.snapshot.organizationId !== claims.sub) throw failure('NOT_FOUND', '任务不存在', 404)
+      return ledger.acknowledge(requestId, claims.rootId)
+    },
+    async recover(token, requestId, poll = false) {
+      const { claims, operation } = await recovery(token, requestId, poll ? 'poll' : 'status')
+      if (!poll || operation.state !== 'pending') return operation
+      // Accepted jobs retain their model/version and price snapshot even if the
+      // current grant no longer lists this model. Only query the original job.
+      const model = catalog.get(operation.snapshot.modelId), adapter = model && adapters[model.adapter]
+      if (!model || model.version !== operation.snapshot.version || !adapter?.poll) throw failure('CONFIG_CHANGED', '原任务配置不可用，需要人工对账', 409)
+      try { return await finish(claims, operation, await adapter.poll(model, operation.job)) }
+      catch { return ledger.unknown(requestId, 'POLL_OUTCOME_UNKNOWN') }
+    },
+    async acknowledgeRecovery(token, requestId) {
+      const { claims } = await recovery(token, requestId, 'ack')
       return ledger.acknowledge(requestId, claims.rootId)
     },
     async reconcile(requestId, input, actor) {

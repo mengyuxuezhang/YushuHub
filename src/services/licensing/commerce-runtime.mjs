@@ -1,5 +1,9 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import { mysqlAccountingStore } from '../../repositories/accounting.mjs'
+import { mysqlStateStore } from '../../repositories/licensing-state.mjs'
+import { ModelCredentialVault } from '../model-credentials.mjs'
+import { createAccountingMonitor } from './accounting-monitor.mjs'
 import { createAgentCommerce, sqlUserBank } from './commerce.mjs'
 import { httpGatewayAdapters } from './http-adapters.mjs'
 import { digest, failure } from './protocol.mjs'
@@ -8,13 +12,16 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
   if (!client) return null
   const pool = { query: (...args) => database().query(...args), getConnection: () => database().getConnection() }
   const store = mysqlAccountingStore(pool, 'commerce-v2', 'commerce'), adapters = httpGatewayAdapters(fetchImpl)
+  const monitorStore = mysqlStateStore(pool, 'commerce-v2-monitor', {})
+  const monitor = createAccountingMonitor({ store: monitorStore, collect: (previous, now) => store.monitoring(previous, now), book: 'commerce-v2',
+    licenseState: () => client.monitorState(), vault: new ModelCredentialVault(env.AI_ACCOUNTING_MONITOR_KEY_FILE || path.resolve('data/accounting-monitor.key')), fetchImpl })
   const customModels = env.AI_AGENT_CUSTOM_MODELS_FILE ? JSON.parse(fs.readFileSync(env.AI_AGENT_CUSTOM_MODELS_FILE, 'utf8')) : []
   const gatewayUrl = env.AI_MODEL_GATEWAY_URL ? new URL(env.AI_MODEL_GATEWAY_URL) : null
   if (gatewayUrl && gatewayUrl.protocol !== 'https:') throw new Error('Official gateway requires HTTPS')
-  async function gateway(tenant, path, body) {
+  async function gateway(tenant, path, body, requestId) {
     if (!gatewayUrl) throw failure('GATEWAY_UNCONFIGURED', '官方模型网关未配置', 503)
-    const token = await client.serviceToken('official-models', tenant.id)
-    const response = await fetchImpl(`${gatewayUrl.origin}/api/model-gateway/v1${path}`, { method: body === undefined ? 'GET' : 'POST',
+    const token = requestId ? await client.recoveryToken(tenant.id, requestId) : await client.serviceToken('official-models', tenant.id)
+    const response = await fetchImpl(`${gatewayUrl.origin}/api/model-gateway/v1${path}`, { method: body === undefined ? 'GET' : 'POST', redirect: 'error',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(240_000) })
     const payload = await response.json()
     if (!response.ok || !payload.success) {
@@ -40,14 +47,15 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     }))
   }
   const runtime = {
-    store,
+    store, monitor,
+    async startMonitoring() { await store.assertReady(); await monitorStore.read(); monitor.start() },
     async tenant(context) {
       const grant = await client.claims(context.externalId || (context.organizationLevel === 2 ? context.organizationId : undefined))
       if (grant.level !== context.organizationLevel) throw failure('BINDING_MISMATCH', '本地组织与授权层级不符', 403)
       return { ...grant, ...(context.allowedModelIds ? { modelIds: grant.modelIds.filter(id => context.allowedModelIds.includes(id)) } : {}) }
     },
-    async service() {
-      const root = await client.claims()
+    async service({ recovery = false } = {}) {
+      const root = recovery ? await client.recoveryIdentity() : await client.claims()
       return createAgentCommerce({ store, rootId: root.id, userBank: sqlUserBank(), catalog,
         invoke: async (tenant, model, input) => {
           if (model.source === 'official') return gateway(tenant, '/requests', { ...input, modelId: model.id, priceHash: digest(JSON.stringify(model.price)) })
@@ -58,34 +66,35 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
         },
         lookup: async (tenant, operation) => {
           if (operation.snapshot.model.source !== 'official') throw failure('RECONCILIATION_REQUIRED', '自接模型未知结果需人工核对，禁止自动重发', 409)
-          return gateway(tenant, `/requests/${encodeURIComponent(operation.requestId)}${operation.state === 'pending' ? '/poll' : ''}`, operation.state === 'pending' ? {} : undefined)
+          return gateway(tenant, `/recovery/requests/${encodeURIComponent(operation.requestId)}${operation.state === 'pending' ? '/poll' : ''}`, operation.state === 'pending' ? {} : undefined, operation.requestId)
         },
       })
     },
-    async acknowledge(tenant, requestId) { return gateway(tenant, `/requests/${encodeURIComponent(requestId)}/ack`, {}) },
+    async acknowledge(tenant, requestId) { return gateway(tenant, `/recovery/requests/${encodeURIComponent(requestId)}/ack`, {}, requestId) },
   }
   let reconciling = false
   runtime.flush = async () => {
     if (reconciling) return
     reconciling = true
     try {
-      const service = await runtime.service()
+      const service = await runtime.service({ recovery: true })
       for (const operation of (await store.pending()).filter(op => op.snapshot.model.source === 'official')) {
-        try { await service.recover(await client.claims(operation.organizationId), operation.userId, operation.requestId) }
-        catch { await store.deferRequest(operation.requestId) }
+        try { await service.recover({ id: operation.organizationId }, operation.userId, operation.requestId) }
+        catch { monitor.recoveryError(); await store.deferRequest(operation.requestId) }
       }
       for (const event of await store.events()) {
         try {
           if (event.source === 'official') {
             const operation = await store.readRequest(event.requestId)
             if (!operation) continue
-            await runtime.acknowledge(await client.claims(operation.organizationId), event.requestId)
+            await runtime.acknowledge({ id: operation.organizationId }, event.requestId)
           }
           await store.scopeTransaction({ requestId: event.requestId }, current => { current.outbox[event.requestId].acknowledged = true })
-        } catch { await store.deferEvent(event.requestId) }
+        } catch { monitor.recoveryError(); await store.deferEvent(event.requestId) }
       }
     } finally { reconciling = false }
   }
-  const timer = setInterval(() => runtime.flush().catch(() => {}), 30_000); timer.unref()
+  const timer = setInterval(() => runtime.flush().catch(() => monitor.recoveryError()), 30_000); timer.unref()
+  runtime.stop = () => { clearInterval(timer); monitor.stop() }
   return runtime
 }

@@ -5,11 +5,16 @@ import { hashPassword } from '../utils/crypto.mjs'
 import { safeUsername } from '../utils/slug.mjs'
 import { endpoint } from './license-center.mjs'
 
-export function registerDeploymentAuthorizationRoutes(app, { client, repository, database, ensureAccountFreeMembership }) {
+export function registerDeploymentAuthorizationRoutes(app, { client, repository, database, ensureAccountFreeMembership, monitor }) {
   if (!client) return
   const owner = (req, _res, next) => {
     if (req.organizationContext?.organizationLevel !== 1 || !req.organizationContext?.isOwner) return next(failure('OWNER_REQUIRED', '只有一级组织所有者可以激活部署授权', 403))
     next()
+  }
+  if (monitor) {
+    app.get('/api/authorization/monitor', requireAuth, owner, endpoint(() => monitor.state()))
+    app.put('/api/authorization/monitor/config', requireAuth, owner, endpoint(req => monitor.configure(req.body, req.user.id)))
+    app.post('/api/authorization/monitor/test', requireAuth, owner, endpoint(req => monitor.test(req.body.requestId, req.user.id)))
   }
   app.get('/api/authorization/state', requireAuth, endpoint(async req => ({ mode: 'center', license: await client.license(req.organizationContext?.externalId || (req.organizationContext?.organizationLevel === 2 ? req.organizationContext.organizationId : undefined)) })))
   app.post('/api/authorization/activate', requireAuth, owner, endpoint(async req => {

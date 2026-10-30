@@ -19,6 +19,9 @@ import { createModelGateway } from './gateway.mjs'
 import { registerLicenseCenterRoutes } from '../../routes/license-center.mjs'
 import { registerModelGatewayRoutes } from '../../routes/model-gateway.mjs'
 import { serviceApp, serviceErrors } from './runtime.mjs'
+import { createAccountingMonitor } from './accounting-monitor.mjs'
+import { ModelCredentialVault } from '../model-credentials.mjs'
+import { agentCommerceRuntime } from './commerce-runtime.mjs'
 
 const configured = Boolean(process.env.LICENSING_TEST_DB)
 test('real MySQL: independent services, HTTP activation, concurrent accounting, restart and SQL user funds', { skip: !configured }, async () => {
@@ -220,11 +223,79 @@ test('real MySQL: independent services, HTTP activation, concurrent accounting, 
 
     // Exercise the actual standalone entrypoint, explicit DDL command and MFA store.
     runtimeFiles = await fs.mkdtemp(path.join(os.tmpdir(), 'yushu-accounting-'))
+    await gatewayPool.query("DELETE FROM licensing_state WHERE id='gateway-monitor'")
+    assert.equal((await migrateAccounting({ pool: gatewayPool, book: 'gateway', kind: 'ledger', sourceId: 'gateway-legacy' })).repeated, true)
+    // Real DB operational state is independent of funds and remains durable.
+    const monitorStore = mysqlStateStore(gatewayPool, 'gateway-monitor', {})
+    const monitorOptions = { store: monitorStore, collect: (previous, now) => ledgerStore.monitoring(previous, now), book: 'gateway',
+      vault: new ModelCredentialVault(path.join(runtimeFiles, 'monitor.key')), fetchImpl: async () => new Response('{"code":0}') }
+    const monitor = createAccountingMonitor(monitorOptions)
+    const baseline = await ledgerStore.monitoring()
+    assert.equal(baseline.auditMismatches, 0)
+    assert(baseline.oldestHoldAgeMs >= 0)
+    await gatewayPool.query("UPDATE accounting_wallets SET balance=balance+1 WHERE book='gateway' AND id='mysql-first'")
+    assert.equal((await ledgerStore.monitoring()).auditMismatches, 1)
+    await gatewayPool.query("UPDATE accounting_wallets SET balance=balance-1 WHERE book='gateway' AND id='mysql-first'")
+    assert.equal((await ledgerStore.monitoring()).auditMismatches, 0)
+    const webhook = 'https://open.feishu.cn/open-apis/bot/v2/hook/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    await monitor.configure({ enabled: true, expectedVersion: 0, url: webhook }, 'operator')
+    await migrateAccounting({ pool: gatewayPool, book: 'gateway', kind: 'ledger', sourceId: 'gateway-legacy' })
+    assert.equal((await monitor.state()).config.version, 1)
+    await monitor.test('sql-webhook-test', 'operator')
+    await Promise.all([monitor.drain(), createAccountingMonitor(monitorOptions).drain()])
+    assert.equal((await createAccountingMonitor(monitorOptions).state()).deliveries[0].attempts, 1)
+    assert(!JSON.stringify(await monitorStore.read()).includes(webhook))
+    await migrateAccounting({ pool: gatewayPool, book: 'audit-pages', kind: 'ledger', sourceId: 'audit-pages-legacy' })
+    const pageStore = mysqlAccountingStore(gatewayPool, 'audit-pages', 'ledger'), pageLedger = createSupplyLedger({ store: pageStore })
+    for (let i = 0; i < 101; i++) await pageLedger.open(`page-${String(i).padStart(3, '0')}`, 'test-owner')
+    await gatewayPool.query("UPDATE accounting_wallets SET balance=1 WHERE book='audit-pages' AND id='page-000'")
+    let page = await pageStore.monitoring()
+    assert.equal(page.auditedWallets, 100); assert.equal(page.auditMismatches, 1); assert(page.auditCursor)
+    page = await pageStore.monitoring(page)
+    assert.equal(page.auditedWallets, 1); assert.equal(page.auditMismatches, 1); assert.equal(page.auditCursor, '')
+    await gatewayPool.query("UPDATE accounting_wallets SET balance=0 WHERE book='audit-pages' AND id='page-000'")
+    page = await pageStore.monitoring(page)
+    assert.equal(page.auditMismatches, 1) // partial clean sweep cannot resolve
+    page = await pageStore.monitoring(page)
+    assert.equal(page.auditMismatches, 0)
+
+    // The local background worker must settle accepted work without obtaining
+    // an active deployment grant or reopening catalog/new-request permissions.
+    let expired = false, lookups = 0, acknowledgements = 0
+    const runtimeClient = { claims: async () => { if (expired) throw new Error('LICENSE_INACTIVE'); return { id: 'root', level: 1, modelMode: 'fixed' } },
+      serviceToken: async () => { assert(!expired); return 'normal' }, recoveryIdentity: async () => ({ id: 'root' }),
+      recoveryToken: async (org, id) => { assert.equal(org, 'root'); assert.equal(id, 'runtime-accepted'); return 'recovery' } }
+    const localRuntime = agentCommerceRuntime({ client: runtimeClient, database: () => gatewayPool, env: { AI_MODEL_GATEWAY_URL: 'https://gateway.example.com' },
+      fetchImpl: async (url, options) => {
+        let data
+        if (url.endsWith('/catalog')) data = [{ id: 'test-chat', source: 'official', adapter: 'openai.chat', version: 1,
+          price: { ...price, components: [...price.components, ...['input_tokens', 'cached_tokens', 'output_tokens'].map(meter => ({ meter, unitSize: '1', amount: '0' }))] }, contextWindow: 100, maxOutputTokens: 10 }]
+        else if (url.endsWith('/requests')) data = { state: 'pending' }
+        else {
+          assert(expired); assert.equal(options.headers.Authorization, 'Bearer recovery')
+          if (url.endsWith('/ack')) { acknowledgements++; data = { acknowledged: true } }
+          else { lookups++; assert(url.includes('/recovery/requests/runtime-accepted/poll')); data = { state: 'settled', result: { text: 'done' }, usage } }
+        }
+        return new Response(JSON.stringify({ success: true, data }))
+      } })
+    try {
+      await gatewayPool.query("UPDATE ai_end_users SET status='enabled',credit_balance=10 WHERE id='test-user'")
+      const service = await localRuntime.service()
+      await service.configure(first, { modelId: 'test-chat', enabled: true, saleMarkup: [], supplyMarkup: [], pointsPerCny: '1', expectedVersion: 0 }, 'operator')
+      assert.equal((await service.submit(first, 'test-user', { requestId: 'runtime-accepted', modelId: 'test-chat', request: { messages: [{ role: 'user', content: 'hello' }], maxTokens: 5 } })).state, 'pending')
+      expired = true
+      await assert.rejects(localRuntime.service(), /LICENSE_INACTIVE/)
+      await localRuntime.flush(); await localRuntime.flush()
+      assert.equal(lookups, 1); assert.equal(acknowledgements, 1)
+      assert.equal((await localRuntime.store.readRequest('runtime-accepted')).state, 'settled')
+      const [[balance]] = await gatewayPool.query("SELECT credit_balance FROM ai_end_users WHERE id='test-user'")
+      assert.equal(balance.credit_balance, '9.000000')
+    } finally { localRuntime.stop() }
     await fs.writeFile(path.join(runtimeFiles, 'operators.json'), JSON.stringify(operators), { mode: 0o600 })
     await fs.writeFile(path.join(runtimeFiles, 'models.json'), '[]')
     const runtimeEnv = { ...process.env, NODE_ENV: 'test', AI_GATEWAY_DB_HOST: config.host, AI_GATEWAY_DB_PORT: String(config.port),
       AI_GATEWAY_DB_USER: config.user, AI_GATEWAY_DB_PASSWORD: config.password, AI_GATEWAY_DB_NAME: gatewayDatabase,
-      AI_GATEWAY_PORT: '0', AI_LICENSE_CENTER_URL: centerUrl, AI_GATEWAY_OPERATORS_FILE: path.join(runtimeFiles, 'operators.json'), AI_GATEWAY_MODELS_FILE: path.join(runtimeFiles, 'models.json') }
+      AI_GATEWAY_MONITOR_KEY_FILE: path.join(runtimeFiles, 'gateway-monitor.key'), AI_GATEWAY_PORT: '0', AI_LICENSE_CENTER_URL: centerUrl, AI_GATEWAY_OPERATORS_FILE: path.join(runtimeFiles, 'operators.json'), AI_GATEWAY_MODELS_FILE: path.join(runtimeFiles, 'models.json') }
     await promisify(execFile)(process.execPath, ['cloud/model-gateway/server.mjs', '--migrate'], { env: runtimeEnv })
     runtimeProcess = spawn(process.execPath, ['cloud/model-gateway/server.mjs'], { env: runtimeEnv, stdio: ['ignore', 'pipe', 'pipe'] })
     const port = await new Promise((resolve, reject) => {
@@ -237,6 +308,10 @@ test('real MySQL: independent services, HTTP activation, concurrent accounting, 
     })
     const runtimeUrl = `http://127.0.0.1:${port}`
     const runtimeLogin = await request(runtimeUrl, '/api/model-gateway/v1/operator/login', { username: 'operator', password: 'isolated-password', code: totp(totpSecret, Math.floor(Date.now() / 30_000)) })
+    assert.equal((await fetch(`${runtimeUrl}/api/model-gateway/v1/operator/monitor`)).status, 401)
+    assert.equal((await request(runtimeUrl, '/api/model-gateway/v1/operator/monitor', undefined, runtimeLogin.token, 'GET')).config.configured, false)
+    const configResult = await request(runtimeUrl, '/api/model-gateway/v1/operator/monitor/config', { enabled: true, expectedVersion: 0, url: webhook }, runtimeLogin.token, 'PUT')
+    assert.equal(configResult.configured, true); assert.equal(configResult.version, 1)
     await request(runtimeUrl, '/api/model-gateway/v1/operator/wallets', { organizationId: 'mysql-first' }, runtimeLogin.token)
     await request(runtimeUrl, '/api/model-gateway/v1/operator/wallets/mysql-first/credit', { amount: '1', requestId: 'runtime-credit', receipt: 'runtime-receipt' }, runtimeLogin.token)
     const freshToken = await request(centerUrl, '/api/license-center/v1/service-token', { audience: 'official-models' }, activated.credential)
