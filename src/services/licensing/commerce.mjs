@@ -24,6 +24,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
   const recordJob = (requestId, job) => transact({ requestId }, state => {
     const operation = state.requests[requestId]
     if (!operation || operation.snapshot.model.source !== 'custom') throw failure('NOT_FOUND', '自接任务不存在', 404)
+    if (job?.provider === 'minimax-private' && operation.state === 'settled') throw failure('ASYNC_DISPATCH_CLOSED', '已结算私有音色请求不能再受理供应商操作', 409)
     if (operation.job && ['provider', 'taskId', 'configHash'].some(key => operation.job[key] !== job[key])) throw failure('ASYNC_BINDING_CHANGED', '任务绑定不能替换', 409)
     if (job?.provider === 'minimax-private' && (job.taskId !== requestId || !job.resourceId || !['clone', 'activate', 'synthesize'].includes(job.action)
       || (operation.job && ['resourceId', 'action'].some(key => operation.job[key] !== job[key])))) throw failure('ASYNC_BINDING_CHANGED', '私有音色任务归属不能替换', 409)

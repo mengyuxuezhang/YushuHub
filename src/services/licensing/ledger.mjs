@@ -108,6 +108,7 @@ export function createSupplyLedger({ store, now = Date.now }) {
     pending(requestId, job) {
       return transact({ requestId }, state => {
         const operation = state.operations[identifier(requestId)]
+        if (job?.provider === 'minimax-private' && operation?.state === 'settled') throw failure('ASYNC_DISPATCH_CLOSED', '已结算私有音色请求不能再受理供应商操作', 409)
         if (operation?.state === 'settled') return operation
         if (!operation || !['running', 'pending', 'unknown'].includes(operation.state)) throw failure('INVALID_TRANSITION', '任务状态不允许更新', 409)
         if ((job?.provider === 'minimax-private' || operation.job?.provider === 'minimax-private') && (job?.provider !== 'minimax-private' || job.taskId !== requestId || !job.resourceId || !['clone', 'activate', 'synthesize'].includes(job.action)

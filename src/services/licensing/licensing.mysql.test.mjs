@@ -45,6 +45,7 @@ import { privateVoiceStorage } from './private-voice-runtime.mjs'
 import { registerPrivateVoiceGatewayRoutes } from '../../routes/private-voice-gateway.mjs'
 import { assertSupplyVoiceMutationAllowed, guardCustomVoiceBinding, guardSupplyProviderDeletion } from './private-voice-binding.mjs'
 import { supplyVoiceRouting } from '../../repositories/supply-voice-routing.mjs'
+import './private-voice-custom.mysql.test.mjs'
 
 const configured = Boolean(process.env.LICENSING_TEST_DB)
 

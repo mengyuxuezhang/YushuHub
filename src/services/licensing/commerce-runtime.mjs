@@ -18,11 +18,12 @@ import crypto from 'node:crypto'
 import { guardCustomVoiceBinding } from './private-voice-binding.mjs'
 import { supplyVoiceRouting } from '../../repositories/supply-voice-routing.mjs'
 
-export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch, benefits = supplyMembershipBenefit, now = Date.now }) {
+export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch, benefits = supplyMembershipBenefit, inspectPrivateVoiceAudio, now = Date.now }) {
   if (!client) return null
   const pool = { query: (...args) => database().query(...args), getConnection: () => database().getConnection() }
   const store = mysqlAccountingStore(pool, 'commerce-v2', 'commerce')
-  const privateVoiceStore = privateVoiceStorage({ pool, book: 'commerce-v2', directory: env.AI_SUPPLY_PRIVATE_VOICE_DIRECTORY, retentionDays: env.AI_SUPPLY_PRIVATE_VOICE_RETENTION_DAYS || 30, bindingGuard: guardCustomVoiceBinding, now })
+  const privateVoiceStore = privateVoiceStorage({ pool, book: 'commerce-v2', directory: env.AI_SUPPLY_PRIVATE_VOICE_DIRECTORY, retentionDays: env.AI_SUPPLY_PRIVATE_VOICE_RETENTION_DAYS || 30, inspectAudio: inspectPrivateVoiceAudio,
+    bindingGuard: (connection, scope, credentialId, options) => customModels.some(model => model.id === scope.modelId && !model.providerModelId) ? undefined : guardCustomVoiceBinding(connection, scope, credentialId, options), now })
   const adapters = httpGatewayAdapters(fetchImpl, { privateVoiceStore })
   const voiceRouting = supplyVoiceRouting({ pool, book: 'commerce-v2', now })
   const monitorStore = mysqlStateStore(pool, 'commerce-v2-monitor', {})
@@ -233,8 +234,20 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
         },
         lookup: async (tenant, operation, options) => {
           if (operation.snapshot.model.source !== 'official') {
-            const original = operation.snapshot.model, definition = await definitionFor(root.id, original, true)
-            const config = await customExecution(definition, root, { credentials: true, credentialId: operation.job?.credentialId, recovery: true })
+            const original = operation.snapshot.model
+            let credentialId = operation.job?.credentialId
+            if (original.adapter === 'minimax.private_voice') {
+              if (!privateVoiceStore) throw failure('RECONCILIATION_REQUIRED', '原音色存储不可用，保留原预占', 409)
+              let job
+              try { job = await privateVoiceStore.voices.job({ ...options, modelId: original.id }, operation.requestId) }
+              catch (error) { if (error.code !== 'VOICE_JOB_NOT_FOUND') throw error; return { state: 'unknown' } }
+              // The SQL resource result is immutable and already records actual
+              // usage. Recovery needs no live Key and must never dispatch again.
+              if (job.state === 'done') return job.outcome
+              credentialId ||= job.credentialId
+            }
+            const definition = await definitionFor(root.id, original, true)
+            const config = await customExecution(definition, root, { credentials: true, credentialId, recovery: true })
             const adapter = config && adapters[config.adapter]
             if (!config || config.version !== original.version || config.bindingHash !== original.bindingHash || config.adapter !== original.adapter || !['minimax.speech_async', 'minimax.private_voice'].includes(config.adapter) || !adapter?.recover) throw failure('RECONCILIATION_REQUIRED', '自接模型原配置或查询适配器不可用，禁止自动重发', 409)
             return adapter.recover(config, operation, options)
