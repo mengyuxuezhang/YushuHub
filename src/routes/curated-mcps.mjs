@@ -334,7 +334,7 @@ export function registerCuratedMcpRoutes(app, {
               VALUES (?,?,?,1,?,?,?,'available',?)`, [crypto.randomUUID(), mcpId, ownerUserId, versionId, item.defaultDeliveryPolicy || 'market', 'follow_latest', ownerUserId])
           }
         }
-        await db().query("UPDATE ai_curated_mcp_distributions SET enabled=1,status='available' WHERE mcp_id=? AND status IN ('revoked','disabled')", [mcpId])
+        await db().query("UPDATE ai_curated_mcp_distributions SET status=IF(enabled=1,'available','disabled') WHERE mcp_id=? AND status='revoked'", [mcpId])
         if (changed) result[existing ? 'updated' : 'added'] += 1
       } catch (error) {
         result.failed.push({ mcpId: item.id, error: error instanceof Error ? error.message : String(error) })
@@ -346,7 +346,7 @@ export function registerCuratedMcpRoutes(app, {
     for (const row of localOfficial) {
       if (remoteIds.has(row.id)) continue
       await db().query(`UPDATE ai_curated_mcps SET status='disabled' WHERE id=?`, [row.id])
-      await db().query(`UPDATE ai_curated_mcp_distributions SET enabled=0,status='revoked' WHERE mcp_id=?`, [row.id])
+      await db().query(`UPDATE ai_curated_mcp_distributions SET status='revoked' WHERE mcp_id=?`, [row.id])
       result.removed += 1
     }
     onProgress({ stage: 'reporting', message: '正在上报同步结果…', percent: 97, current: remoteItems.length, total: remoteItems.length, currentMcp: '' })

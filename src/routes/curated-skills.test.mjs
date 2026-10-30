@@ -14,6 +14,28 @@ function skillRoutes(options = {}) {
   return { routes, ...registerCuratedSkillRoutes(app, { keyOwnerUserIdForEndUser: async () => '', ...options }) }
 }
 
+test('official protected lease forwards only the authenticated client grant and hashed proofs', async () => {
+  let forwarded
+  const row = { id: 'distribution', skill_id: 'official-protected', selected_version_id: 'v1', owner_user_id: 'child-owner', version: '1.0.0',
+    skill_status: 'published', version_status: 'published', distribution_type: 'protected', source_type: 'official_sync', manifest_json: '{}' }
+  setPool({ async query(sql, args) {
+    if (sql.startsWith('SELECT d.*')) { assert.deepEqual(args, [row.skill_id, 'child-owner', 'personal']); return [[row]] }
+    if (sql.startsWith('SELECT audience_type') || sql.startsWith('SELECT card_id') || sql.startsWith('INSERT INTO ai_curated_skill_events')) return [[]]
+    throw new Error(`Unexpected query: ${sql}`)
+  } })
+  const { routes } = skillRoutes({ keyOwnerUserIdForEndUser: async () => 'child-owner', fetchCenterLease: async (...args) => { forwarded = args; return { contentKey: 'test-key', expiresAt: '2030-01-01' } } })
+  const req = { clientUser: { id: 'child-user', sessionDeviceId: 'trusted-device' }, clientAuthorization: { grantId: 'central-child' },
+    params: { skillId: row.skill_id, version: row.version }, body: { deviceId: 'trusted-device', organizationId: 'forged-root', grantId: 'forged-root' } }
+  const res = { statusCode: 200, status(code) { this.statusCode = code; return this }, setHeader() {}, json(body) { this.body = body } }
+  await routes.get('POST /api/client/skill-market/:skillId/versions/:version/lease')(req, res)
+  assert.equal(res.body.success, true); assert.equal(forwarded[3], 'central-child')
+  assert.match(forwarded[2].deviceIdHash, /^[a-f0-9]{64}$/); assert.match(forwarded[2].endUserHash, /^[a-f0-9]{64}$/)
+  assert.equal(JSON.stringify(forwarded).includes('forged-root'), false)
+  forwarded = null; req.body.deviceId = 'other-device'
+  await routes.get('POST /api/client/skill-market/:skillId/versions/:version/lease')(req, res)
+  assert.equal(res.statusCode, 403); assert.equal(forwarded, null)
+})
+
 test('client and center package routes keep authorization gates and report missing files safely', async () => {
   let allowed = true
   const row = { id: 'distribution', skill_id: 'missing-download-regression', owner_user_id: 'owner',

@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import express from 'express'
-import { setAuthDependencies, requireAuth, requirePermission, requireClientAuth } from '../../middleware/auth.mjs'
+import { setAuthDependencies, requireAuth, requirePermission, requireClientAuth, requireCenterAuth } from '../../middleware/auth.mjs'
+import { createClientAuthorization, officialServicePolicy } from './resource-access.mjs'
 import { filterOrganizationPermissions } from '../organization-expiry.mjs'
 import { supplierLicenseAllowsPermission } from '../supplier-license-contract.mjs'
 import { registerOrganizationRoutes } from '../../routes/organizations.mjs'
@@ -9,6 +10,56 @@ import { buildOrganizationContext } from '../organizations.mjs'
 import { publicSupplyOperation, publicSupplyCatalogRow, registerAgentSupplyRoutes } from '../../routes/agent-supply.mjs'
 import { chatCompletionChunks, projectSupplyCatalog } from '../../routes/client-supply-bridge.mjs'
 import { registerDeploymentAuthorizationRoutes } from '../../routes/deployment-authorization.mjs'
+
+test('terminal resource access resolves its organization and requires independent distribution capabilities', async () => {
+  let parentStatus = 'enabled', organizationId = 'local-child', level = 2, keys = ['curated_skills.distribute']
+  const calls = [], repository = {
+    findOrganizationContextForUser: async owner => { assert.equal(owner, 'child-owner'); return { organization: { id: 'local-child', externalId: 'central-child', status: 'enabled', agentLevel: 2, parentOrganizationId: 'local-root' } } },
+    findOrganizationById: async id => { assert.equal(id, 'local-root'); return { status: parentStatus } },
+  }
+  const authorize = createClientAuthorization({ repository, ownerForUser: async () => 'child-owner', client: { license: async id => {
+    calls.push(id); return { id, level, verified: true, status: 'enabled', capabilities: keys.map(key => ({ key, enabled: true })) }
+  } } })
+  setAuthDependencies({ getEndUserByToken: async () => ({ id: 'child-user', status: 'enabled', organizationId }), getClientAuthorization: authorize })
+  const app = express()
+  for (const family of ['skill', 'mcp', 'agent']) app.all(`/api/client/${family}-market`, requireClientAuth, (req, res) => res.json({ grantId: req.clientAuthorization.grantId }))
+  const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)) }), base = `http://127.0.0.1:${server.address().port}`
+  const request = (family, method = 'GET') => fetch(`${base}/api/client/${family}-market?organizationId=central-root`, { method, headers: { Authorization: 'Bearer user-token' } })
+  try {
+    assert.equal((await request('skill')).status, 200); assert.deepEqual(await (await request('skill')).json(), { grantId: 'central-child' })
+    for (const family of ['mcp', 'agent']) assert.equal((await request(family)).status, 403)
+    keys = ['curated_skills.view']; assert.equal((await request('skill')).status, 403)
+    for (const family of ['mcp', 'agent']) { keys = [`curated_${family === 'mcp' ? 'mcps' : 'agents'}.distribute`]; assert.equal((await request(family, 'POST')).status, 200) }
+    organizationId = 'sibling'; assert.equal((await request('agent')).status, 403); organizationId = 'local-child'
+    parentStatus = 'disabled'; assert.equal((await request('agent')).status, 403); parentStatus = 'enabled'
+    level = 1; assert.equal((await request('agent')).status, 403)
+    assert(calls.every(id => id === 'central-child'))
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+})
+
+test('official protected leases and build mutations require their exact capability and service audience', async () => {
+  let keys = ['curated_skills.view'], audienceUsed
+  setAuthDependencies({ authorizeOfficialService: async (_token, audience) => { audienceUsed = audience; return { sub: 'child', rootId: 'root', root: {}, grant: { capabilities: keys.map(key => ({ key, enabled: true })) } } },
+    findCenterSupplierById: async id => ({ id }) })
+  const app = express(); app.use(express.json())
+  for (const path of ['/api/center/curated-skills/demo/versions/1.0.0/package', '/api/center/curated-skills/demo/versions/1.0.0/lease', '/api/center/builds/agent-skill-demo/retry', '/api/center/builds/agent-skill-demo/artifacts/cleanup']) {
+    app.post(path, requireCenterAuth, (req, res) => res.json({ id: req.centralAuthorization.sub, supplierId: req.body.supplierId }))
+  }
+  const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)) }), base = `http://127.0.0.1:${server.address().port}`
+  const request = path => fetch(base + path, { method: 'POST', headers: { Authorization: 'Bearer signed-token', 'Content-Type': 'application/json' }, body: JSON.stringify({ supplierId: 'forged' }) })
+  try {
+    const resource = '/api/center/curated-skills/demo/versions/1.0.0/'
+    assert.equal((await request(resource + 'package')).status, 200)
+    assert.equal((await request(resource + 'lease')).status, 403)
+    keys = ['curated_skills.distribute']; assert.deepEqual(await (await request(resource + 'lease')).json(), { id: 'child', supplierId: 'root' }); assert.equal(audienceUsed, 'official-resources')
+    for (const [suffix, permission] of [['retry', 'builds.create'], ['artifacts/cleanup', 'builds.publish']]) {
+      const path = `/api/center/builds/agent-skill-demo/${suffix}`
+      assert.equal((await request(path)).status, 403); assert.equal(audienceUsed, 'official-build')
+      keys = [permission]; assert.equal((await request(path)).status, 200)
+      assert.equal(officialServicePolicy(path).audience, 'official-build'); keys = []
+    }
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); setAuthDependencies({ authorizeOfficialService: null }) }
+})
 
 test('central organization grants are independent of parent menus and never fall back from an unmigrated child to root', async () => {
   const calls = [], repository = {

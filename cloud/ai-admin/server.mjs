@@ -111,6 +111,7 @@ import { cleanupRetiredBuiltinSkills } from '../../src/services/builtin-curated-
 import { createAccessControlPolicy } from '../../src/services/access-control.mjs'
 import { createSupplierLicenseService } from '../../src/services/supplier-license.mjs'
 import { deploymentRuntime, officialAuthorization } from '../../src/services/licensing/admin-runtime.mjs'
+import { createClientAuthorization, officialServicePolicy } from '../../src/services/licensing/resource-access.mjs'
 import { registerDeploymentAuthorizationRoutes } from '../../src/routes/deployment-authorization.mjs'
 import { agentCommerceRuntime } from '../../src/services/licensing/commerce-runtime.mjs'
 import { resourceRuntime, buildResourceIdentity, lockBuildProject, assertProjectUserRetention } from '../../src/services/licensing/resource-runtime.mjs'
@@ -273,7 +274,7 @@ function normalizeBuildCenterConfig(input = {}) {
   const token = String(input.token || input.buildCenterToken || '').trim()
   const supplierIdRaw = String(input.supplierId || input.buildCenterSupplierId || '').trim()
   const supplierId = supplierIdRaw ? safeCenterId(supplierIdRaw, '供应商 ID') : ''
-  return { url, token, supplierId, enabled: Boolean(url && token && supplierId) }
+  return { url, token, supplierId, enabled: Boolean(url && (authorizationClient || (token && supplierId))) }
 }
 
 async function getBuildCenterConfig() {
@@ -308,7 +309,7 @@ async function buildCenterApi(pathname, body = {}, config = null, organizationId
       organizationId = groups[0].grantId
     }
   }
-  const serviceToken = authorizationClient ? await authorizationClient.serviceToken(/skill|mcp|agent|model-service/.test(pathname) ? 'official-resources' : 'official-build', organizationId) : resolved.token
+  const serviceToken = authorizationClient ? await authorizationClient.serviceToken(officialServicePolicy(pathname).audience, organizationId) : resolved.token
   const response = await fetch(`${resolved.url}${pathname}`, {
     method: 'POST',
     headers: {
@@ -3911,13 +3912,7 @@ setAuthDependencies({
   findCenterSupplierById,
   authorizeOfficialService,
   ensureOfficialSupplierRegistration: root => ensureOfficialSupplierRegistration(db(), root),
-  getClientAuthorization: authorizationClient ? async user => {
-    const ownerId = await keyOwnerUserIdForEndUser(user.id)
-    const resolved = await organizationRepository.findOrganizationContextForUser(ownerId)
-    if (!resolved || resolved.organization.status !== 'enabled') return false
-    const license = await authorizationClient.license(resolved.organization.externalId || (resolved.organization.agentLevel === 2 ? resolved.organization.id : undefined))
-    return license.verified && license.status === 'enabled'
-  } : null,
+  getClientAuthorization: createClientAuthorization({ client: authorizationClient, repository: organizationRepository, ownerForUser: keyOwnerUserIdForEndUser }),
 })
 
 setRedeemCodeDependencies({
@@ -6799,7 +6794,7 @@ const curatedSkillSync = registerCuratedSkillRoutes(app, {
   centerMode: CENTER_SUPPLIER_MANAGEMENT_ENABLED,
   fetchCenterCatalog: () => buildCenterApi('/api/center/curated-skills/catalog'),
   fetchCenterPackage: (skillId, version) => buildCenterBinary(`/api/center/curated-skills/${encodeURIComponent(skillId)}/versions/${encodeURIComponent(version)}/package`),
-  fetchCenterLease: (skillId, version, body) => buildCenterApi(`/api/center/curated-skills/${encodeURIComponent(skillId)}/versions/${encodeURIComponent(version)}/lease`, body),
+  fetchCenterLease: (skillId, version, body, grantId) => buildCenterApi(`/api/center/curated-skills/${encodeURIComponent(skillId)}/versions/${encodeURIComponent(version)}/lease`, body, null, grantId),
   reportCenterSync: (body) => buildCenterApi('/api/center/curated-skills/sync-report', body),
 })
 const curatedMcpSync = registerCuratedMcpRoutes(app, {

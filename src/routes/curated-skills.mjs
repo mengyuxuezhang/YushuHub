@@ -305,7 +305,7 @@ export function registerCuratedSkillRoutes(app, {
             }
           }
         }
-        await db().query("UPDATE ai_curated_skill_distributions SET enabled=1,status='available' WHERE skill_id=? AND status IN ('revoked','disabled')", [item.id])
+        await db().query("UPDATE ai_curated_skill_distributions SET status=IF(enabled=1,'available','disabled') WHERE skill_id=? AND status='revoked'", [item.id])
         result[existing ? 'updated' : 'added'] += 1
       } catch (error) {
         result.failed.push({ skillId: item.id, error: error instanceof Error ? error.message : String(error) })
@@ -317,7 +317,7 @@ export function registerCuratedSkillRoutes(app, {
     for (const row of localOfficial) {
       if (remoteIds.has(row.id)) continue
       await db().query(`UPDATE ai_curated_skills SET status='disabled' WHERE id=?`, [row.id])
-      await db().query(`UPDATE ai_curated_skill_distributions SET enabled=0,status='revoked' WHERE skill_id=?`, [row.id])
+      await db().query(`UPDATE ai_curated_skill_distributions SET status='revoked' WHERE skill_id=?`, [row.id])
       result.removed += 1
     }
     onProgress({ stage: 'reporting', message: '正在上报同步结果…', percent: 96, current: remoteItems.length, total: remoteItems.length, currentSkill: '' })
@@ -652,7 +652,7 @@ export function registerCuratedSkillRoutes(app, {
         deviceIdHash: crypto.createHash('sha256').update(deviceId).digest('hex'),
         endUserHash: crypto.createHash('sha256').update(req.clientUser.id).digest('hex'),
         nonce: crypto.randomUUID(),
-      })
+      }, req.clientAuthorization?.grantId)
       contentKey = String(lease.contentKey || '')
       expiresAt = String(lease.expiresAt || '')
     } else {
@@ -713,9 +713,10 @@ export function registerCuratedSkillRoutes(app, {
       || (skill.source_type !== 'official_sync' && !version.encrypted_dek_json)) return res.status(403).json({ success: false, error: '技能租约不在当前供应商授权范围' })
     if (!String(req.body?.deviceIdHash || '').trim() || !String(req.body?.endUserHash || '').trim() || !String(req.body?.nonce || '').trim()) throw new Error('中心租约缺少设备、用户或随机数证明')
     const now = Date.now(); for (const [key, seenAt] of centerLeaseNonces) if (now - seenAt > 5 * 60_000) centerLeaseNonces.delete(key)
-    const nonceKey = `${req.centerSupplier.id}:${req.body.nonce}`; if (centerLeaseNonces.has(nonceKey)) return res.status(409).json({ success: false, error: '租约请求已使用' }); centerLeaseNonces.set(nonceKey, now)
+    const organizationId = req.centralAuthorization?.sub || req.centerSupplier.id
+    const nonceKey = JSON.stringify([organizationId, req.body.nonce]); if (centerLeaseNonces.has(nonceKey)) return res.status(409).json({ success: false, error: '租约请求已使用' }); centerLeaseNonces.set(nonceKey, now)
     const dek = await unwrapDek(parseJson(version.encrypted_dek_json, {})); const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString()
-    await event({ skillId: skill.id, versionId: version.id, ownerUserId: req.centerSupplier.id, actorType: 'supplier', actorId: req.centerSupplier.id, eventType: 'center_lease_issued', detail: { expiresAt, requestHash: crypto.createHash('sha256').update(`${req.body.endUserHash}:${req.body.deviceIdHash}:${req.body.nonce}`).digest('hex').slice(0, 12) } })
+    await event({ skillId: skill.id, versionId: version.id, ownerUserId: req.centerSupplier.id, actorType: 'supplier', actorId: organizationId, eventType: 'center_lease_issued', detail: { organizationId, expiresAt, requestHash: crypto.createHash('sha256').update(`${req.body.endUserHash}:${req.body.deviceIdHash}:${req.body.nonce}`).digest('hex').slice(0, 12) } })
     res.json({ success: true, data: { leaseId: crypto.randomUUID(), skillId: skill.id, version: version.version, contentKey: dek.toString('base64'), expiresAt } }); dek.fill(0)
   })
 

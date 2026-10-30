@@ -6,10 +6,10 @@
 
 | 既有权限 | 菜单 | 新路径/边界 | 模板：自定义/固定/二级 | API实现位置 | 验证入口 |
 | --- | --- | --- | --- | --- | --- |
-| `curated_agents.view` 查看精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；保护内容后续须做中心全链路 | 有/有/有 | `src/routes/curated-agents.mjs` | `npm run test:curated-agents` |
-| `curated_agents.manage` 管理精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；保护内容后续须做中心全链路 | 有/有/有 | `src/routes/curated-agents.mjs`<br>`src/routes/users.mjs` | `npm run test:curated-agents` |
-| `curated_agents.publish` 发布精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；保护内容后续须做中心全链路 | 有/有/有 | `src/routes/curated-agents.mjs` | `npm run test:curated-agents` |
-| `curated_agents.distribute` 分发精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；保护内容后续须做中心全链路 | 有/有/有 | `src/routes/curated-agents.mjs` | `npm run test:curated-agents` |
+| `curated_agents.view` 查看精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP链路已验，实际桌面另验 | 有/有/有 | `src/routes/curated-agents.mjs` | `npm run test:curated-agents` |
+| `curated_agents.manage` 管理精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP链路已验，实际桌面另验 | 有/有/有 | `src/routes/curated-agents.mjs`<br>`src/routes/users.mjs` | `npm run test:curated-agents` |
+| `curated_agents.publish` 发布精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP链路已验，实际桌面另验 | 有/有/有 | `src/routes/curated-agents.mjs` | `npm run test:curated-agents` |
+| `curated_agents.distribute` 分发精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP链路已验，实际桌面另验 | 有/有/有 | `src/routes/curated-agents.mjs` | `npm run test:curated-agents` |
 | `curated_mcps.view` 查看精选 MCP | /markets/mcps | MCP配置、版本、来源安全与分发；不等同于桌面执行验收 | 有/有/有 | `src/routes/curated-mcps.mjs` | `npm run test:curated-mcps` |
 | `curated_mcps.manage` 管理精选 MCP | /markets/mcps | MCP配置、版本、来源安全与分发；不等同于桌面执行验收 | 有/有/有 | `src/routes/curated-mcps.mjs`<br>`src/routes/users.mjs` | `npm run test:curated-mcps` |
 | `curated_mcps.publish` 发布精选 MCP | /markets/mcps | MCP配置、版本、来源安全与分发；不等同于桌面执行验收 | 有/有/有 | `src/routes/curated-mcps.mjs` | `npm run test:curated-mcps` |
@@ -67,7 +67,7 @@
 
 - 三类模板逐能力：启用/不授予/停用能力，界面与API同步；独立员工即使角色管理员也不能突破中心能力。模板发布拒绝重复、非布尔启用、转授以及固定模式密钥权限。
 - 组织隔离：伪造组织/owner/userId、兄弟组织、一级直接查看二级用户明细；默认拒绝，例外代操作尚未提供。员工停用不得借只读账单恢复权限。
-- 资源：目录、包、签名、受保护租约、安装、撤销、中心停用及重启；现有领域测试不替代真实中心→一级→二级→客户端的全部回归。
+- 资源：目录、包、签名、受保护租约、安装、撤销、中心停用及重启；`npm run test:licensing:mysql`已覆盖中心→官方→一级→二级→模拟终端HTTP链路，实际桌面执行另验。
 - 账务：原用户积分/会员/订单守恒，供货结算进入原报表但不把预占释放当消费；失败/未知不当成功消费，免费成功也计次。
 - 期限：失效禁止新业务，原角色有权的历史订单/积分流水/报表/导出保留；供货钱包已有不可变冲正；终端退款闭环仍待补齐，不把只读当成退款实现。
 - 模型：原文本/搜索/图像/语音逐调用路径；私有音色新建生命周期、自接异步、更多真实供应商与现有密钥池接入仍有缺口。视频/向量等原开发中能力不提升为上线承诺。

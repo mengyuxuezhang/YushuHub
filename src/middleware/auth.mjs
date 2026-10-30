@@ -8,6 +8,7 @@ import { hashSecretToken } from '../utils/crypto.mjs'
 import { supplierAuthorizationState } from '../services/supplier-license-contract.mjs'
 import { organizationAuthorizationExpired, expiredOrganizationRequestAllowed } from '../services/organization-expiry.mjs'
 import { expiredClientRequestAllowed } from '../services/licensing/remediation.mjs'
+import { clientResourcePermission, officialServicePolicy } from '../services/licensing/resource-access.mjs'
 
 const deps = {
   getUserBySession: null,
@@ -135,8 +136,16 @@ export async function requireClientAuth(req, res, next) {
       return
     }
     req.clientUser = user
-    if (deps.getClientAuthorization && !await deps.getClientAuthorization(user) && !expiredClientRequestAllowed(req.method, req.path)) {
+    const authorization = deps.getClientAuthorization ? await deps.getClientAuthorization(user) : true
+    const active = authorization === true || authorization?.active === true
+    if (!active && !expiredClientRequestAllowed(req.method, req.path)) {
       res.status(403).json({ success: false, code: 'LICENSE_INACTIVE', error: '所属代理授权或业务状态不可用' })
+      return
+    }
+    req.clientAuthorization = authorization && typeof authorization === 'object' ? authorization : null
+    const resourcePermission = clientResourcePermission(req.path)
+    if (active && resourcePermission && req.clientAuthorization && !authorization.capabilityKeys.includes(resourcePermission)) {
+      res.status(403).json({ success: false, code: 'CAPABILITY_DENIED', error: '所属代理未获此资源分发能力' })
       return
     }
     next()
@@ -205,11 +214,8 @@ export async function requireCenterAuth(req, res, next) {
     if (deps.authorizeOfficialService) {
       const header = String(req.headers.authorization || '')
       const token = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
-      const audience = /skill|mcp|agent|model-service/.test(req.path) ? 'official-resources' : 'official-build'
+      const { audience, permission } = officialServicePolicy(req.path)
       const claims = await deps.authorizeOfficialService(token, audience)
-      const permission = req.path.includes('/publish') ? 'builds.publish' : req.path === '/api/center/builds' ? 'builds.create'
-        : req.path.includes('/projects/') ? 'projects.manage' : req.path.includes('skills') ? 'curated_skills.view'
-          : req.path.includes('mcps') ? 'curated_mcps.view' : req.path.includes('agents') ? 'curated_agents.view' : null
       if (permission && !claims.grant.capabilities.some(cap => cap.enabled && cap.key === permission)) throw Object.assign(new Error('中心授权不包含所需能力'), { statusCode: 403 })
       const supplier = await deps.findCenterSupplierById(claims.rootId) || await deps.ensureOfficialSupplierRegistration?.(claims.root)
       if (!supplier) throw Object.assign(new Error('官方服务代理注册记录不存在'), { statusCode: 403 })
@@ -244,7 +250,7 @@ export async function requireCenterAuth(req, res, next) {
     req.centerSupplier = supplier
     next()
   } catch (err) {
-    res.status(401).json({ success: false, error: err instanceof Error ? err.message : String(err) })
+    res.status(err.statusCode === 403 ? 403 : 401).json({ success: false, error: err instanceof Error ? err.message : String(err) })
   }
 }
 

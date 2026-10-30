@@ -161,7 +161,7 @@ function matchesAudience(audience, userId, cardId) {
   return audience.length === 0 || audience.some((item) => item.audience_type === 'all' || (item.audience_type === 'membership_card' && item.audience_id === cardId) || (item.audience_type === 'user' && item.audience_id === userId))
 }
 
-async function authorizedAgent(agentId, user, keyOwnerUserIdForEndUser, marketType) {
+async function authorizedAgent(agentId, user, keyOwnerUserIdForEndUser, marketType, authorization) {
   marketType ||= await resolveClientContentMarket(user.id)
   const ownerUserId = await keyOwnerUserIdForEndUser(user.id)
   const [[row]] = await db().query("SELECT d.*,a.name,a.description,a.prompt,a.icon_url,a.publisher_name,a.profile_labels_json,a.usage_label,a.expertise_tags_json,a.starter_prompts_json,a.version,a.permission_mode FROM ai_curated_agent_distributions d JOIN ai_curated_agents a ON a.id=d.agent_id WHERE d.agent_id=? AND d.owner_user_id=? AND d.enabled=1 AND d.status='available' AND a.status='published' AND EXISTS (SELECT 1 FROM ai_curated_agent_market_placements p WHERE p.curated_agent_id=a.id AND p.market_type=? AND p.status='published') LIMIT 1", [agentId, ownerUserId, marketType])
@@ -171,6 +171,8 @@ async function authorizedAgent(agentId, user, keyOwnerUserIdForEndUser, marketTy
   if (!matchesAudience(audience, user.id, cardId)) return null
   const [deps] = await db().query('SELECT dependency_type,dependency_id,required FROM ai_curated_agent_dependencies WHERE agent_id=? ORDER BY dependency_type,dependency_id', [agentId])
   for (const dependency of deps.filter((item) => item.required)) {
+    const capability = dependency.dependency_type === 'skill' ? 'curated_skills.distribute' : 'curated_mcps.distribute'
+    if (authorization && !authorization.capabilityKeys.includes(capability)) return null
     const granted = await resourceDistribution(ownerUserId, { type: dependency.dependency_type, id: dependency.dependency_id })
     if (!granted || !granted.audience.some((item) => item.type === 'all' || (item.type === 'membership_card' && item.id === cardId) || (item.type === 'user' && item.id === user.id))) return null
   }
@@ -259,7 +261,7 @@ export function registerCuratedAgentRoutes(app, { keyOwnerUserIdForEndUser, cent
               VALUES (?,?,?,1,?,'available',?)`, [crypto.randomUUID(), id, ownerUserId, item.defaultDeliveryPolicy || 'market', ownerUserId])
           }
         }
-        await db().query("UPDATE ai_curated_agent_distributions SET enabled=1,status='available' WHERE agent_id=? AND status IN ('blocked','revoked')", [id])
+        await db().query("UPDATE ai_curated_agent_distributions SET status=IF(enabled=1,'available','disabled') WHERE agent_id=? AND status IN ('blocked','revoked')", [id])
         if (changed) result[existing ? 'updated' : 'added'] += 1
       } catch (error) {
         result.failed.push({ agentId: item.id, error: error instanceof Error ? error.message : String(error) })
@@ -271,7 +273,7 @@ export function registerCuratedAgentRoutes(app, { keyOwnerUserIdForEndUser, cent
     for (const row of localOfficial) {
       if (remoteIds.has(row.id)) continue
       await db().query("UPDATE ai_curated_agents SET status='disabled' WHERE id=?", [row.id])
-      await db().query("UPDATE ai_curated_agent_distributions SET enabled=0,status='blocked' WHERE agent_id=?", [row.id])
+      await db().query("UPDATE ai_curated_agent_distributions SET status='blocked' WHERE agent_id=?", [row.id])
       result.removed += 1
     }
     onProgress({ stage: 'reporting', message: '正在上报同步结果…', percent: 97, current: remoteItems.length, total: remoteItems.length, currentAgent: '' })
@@ -420,14 +422,14 @@ export function registerCuratedAgentRoutes(app, { keyOwnerUserIdForEndUser, cent
   }))
   app.get('/api/client/agent-market', requireClientAuth, wrap(async (req, res) => {
     const marketType = await resolveClientContentMarket(req.clientUser.id); const ownerUserId = await keyOwnerUserIdForEndUser(req.clientUser.id); const [rows] = await db().query("SELECT d.agent_id FROM ai_curated_agent_distributions d JOIN ai_curated_agent_market_placements p ON p.curated_agent_id=d.agent_id AND p.market_type=? AND p.status='published' WHERE d.owner_user_id=? AND d.enabled=1 AND d.status='available'", [marketType, ownerUserId]); const items = []
-    for (const entry of rows) { const row = await authorizedAgent(entry.agent_id, req.clientUser, keyOwnerUserIdForEndUser, marketType); if (!row) continue; items.push(marketItem(row, await clientInstallation(req, row.agent_id))) }
+    for (const entry of rows) { const row = await authorizedAgent(entry.agent_id, req.clientUser, keyOwnerUserIdForEndUser, marketType, req.clientAuthorization); if (!row) continue; items.push(marketItem(row, await clientInstallation(req, row.agent_id))) }
     res.setHeader('Cache-Control', 'private, no-store'); res.json({ success: true, data: { items, total: items.length } })
   }))
   app.get('/api/client/agent-market/:agentId', requireClientAuth, wrap(async (req, res) => {
-    const row = await authorizedAgent(req.params.agentId, req.clientUser, keyOwnerUserIdForEndUser); if (!row) return res.status(404).json({ success: false, error: '专家不可用或依赖权限不完整' }); res.json({ success: true, data: marketItem(row, await clientInstallation(req, row.agent_id)) })
+    const row = await authorizedAgent(req.params.agentId, req.clientUser, keyOwnerUserIdForEndUser, undefined, req.clientAuthorization); if (!row) return res.status(404).json({ success: false, error: '专家不可用或依赖权限不完整' }); res.json({ success: true, data: marketItem(row, await clientInstallation(req, row.agent_id)) })
   }))
   app.post('/api/client/agent-market/:agentId/installations', requireClientAuth, wrap(async (req, res) => {
-    const row = await authorizedAgent(req.params.agentId, req.clientUser, keyOwnerUserIdForEndUser); if (!row) return res.status(403).json({ success: false, error: '专家不可用或未授权' }); const deviceId = String(req.body?.deviceId || '').trim(); if (!deviceId || (req.clientUser.sessionDeviceId && req.clientUser.sessionDeviceId !== deviceId)) return res.status(403).json({ success: false, error: '当前登录会话与设备不匹配' })
+    const row = await authorizedAgent(req.params.agentId, req.clientUser, keyOwnerUserIdForEndUser, undefined, req.clientAuthorization); if (!row) return res.status(403).json({ success: false, error: '专家不可用或未授权' }); const deviceId = String(req.body?.deviceId || '').trim(); if (!deviceId || (req.clientUser.sessionDeviceId && req.clientUser.sessionDeviceId !== deviceId)) return res.status(403).json({ success: false, error: '当前登录会话与设备不匹配' })
     const status = ['installed','removed','blocked','failed'].includes(req.body?.status) ? req.body.status : 'installed'; const errorCode = status === 'failed' ? String(req.body?.errorCode || 'INSTALL_FAILED').replace(/[^A-Z0-9_]/g,'').slice(0,64) : ''
     await db().query("INSERT INTO ai_curated_agent_installations (id,agent_id,distribution_id,owner_user_id,end_user_id,device_id_hash,status,error_code,installed_at,last_seen_at) VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP(3),CURRENT_TIMESTAMP(3)) ON DUPLICATE KEY UPDATE distribution_id=VALUES(distribution_id),owner_user_id=VALUES(owner_user_id),status=VALUES(status),error_code=VALUES(error_code),last_seen_at=CURRENT_TIMESTAMP(3)", [crypto.randomUUID(), row.agent_id, row.id, row.owner_user_id, req.clientUser.id, crypto.createHash('sha256').update(deviceId).digest('hex'), status, errorCode])
     res.json({ success: true, data: { agentId: row.agent_id, version: row.version, status } })

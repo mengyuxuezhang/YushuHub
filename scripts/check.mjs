@@ -26,6 +26,7 @@ const targets = [
   'scripts/authorization-migration.mjs',
   'scripts/licensing-init.mjs',
   'scripts/test-licensing-mysql.mjs',
+  'scripts/test-authorization-resources.mjs',
   'scripts/e2e-newapi-settlement.mjs',
   'src/services/model-key-scope.mjs',
   'src/services/model-provider-keys.mjs',

@@ -32,6 +32,11 @@ try {
   })
   process.exitCode = await new Promise(resolve => { child.on('error', () => resolve(1)); child.on('exit', code => resolve(typeof code === 'number' ? code : 1)) })
   if (process.exitCode === 0) {
+    const resources = spawn(process.execPath, ['scripts/test-authorization-resources.mjs'], {
+      stdio: 'inherit', windowsHide: true, env: { ...process.env, LICENSING_TEST_DB: JSON.stringify(config) },
+    })
+    const resourceCode = await new Promise(resolve => { resources.on('error', () => resolve(1)); resources.on('exit', code => resolve(typeof code === 'number' ? code : 1)) })
+    if (resourceCode !== 0) throw new Error('Isolated authorization resource HTTP regression failed')
     // Backup/restore stays inside this disposable container; never print the dump.
     const env = { ...process.env, MYSQL_PWD: password }
     const dump = docker(['exec', '-e', 'MYSQL_PWD', name, 'mysqldump', '-uroot', '--single-transaction', '--set-gtid-purged=OFF', '--routines', '--triggers', 'yushu_gateway_test'], env)
