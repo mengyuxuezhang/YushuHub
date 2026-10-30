@@ -9,6 +9,7 @@ $ErrorActionPreference = "Stop"
 
 function Remove-WithRetry {
   param([string]$Path)
+  Assert-StageRoot $Path
   for ($i = 0; $i -lt 5; $i++) {
     try {
       Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
@@ -23,11 +24,19 @@ function Remove-WithRetry {
   }
 }
 
+function Assert-StageRoot {
+  param([string]$Path)
+  $resolved = [IO.Path]::GetFullPath($Path)
+  if ($resolved -ne [IO.Path]::GetFullPath((Join-Path $root '.pack'))) { throw 'Unexpected packaging cleanup path.' }
+  if ((Test-Path -LiteralPath $resolved) -and ((Get-Item -LiteralPath $resolved -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Packaging stage must not be a symbolic link.' }
+}
+
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $pkg = Get-Content -Raw (Join-Path $root "package.json") | ConvertFrom-Json
 if (-not $Version) {
   $Version = $pkg.version
 }
+if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?$' -or $Version -ne $pkg.version) { throw 'Version must match package.json and use a safe semantic version.' }
 
 $name = "agent-ai-admin-v$Version"
 $stageRoot = Join-Path $root ".pack"
@@ -40,6 +49,7 @@ if ([System.IO.Path]::IsPathRooted($OutputDir)) {
 $zipPath = Join-Path $outDir "$name.zip"
 $manifestPath = Join-Path $outDir "latest.json"
 
+Assert-StageRoot $stageRoot
 Remove-Item -LiteralPath $stageRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $stage | Out-Null
 New-Item -ItemType Directory -Force $outDir | Out-Null
@@ -81,13 +91,21 @@ $publicDocs = @(
   "AGENT_RELEASE_ARCHIVE.json"
 )
 
-Get-ChildItem -LiteralPath $root -Force | Where-Object {
-  if ($_.PSIsContainer) {
-    return $excludeDirs -notcontains $_.Name
-  }
-  return $excludeFiles -notcontains $_.Name
-} | ForEach-Object {
-  Copy-Item -LiteralPath $_.FullName -Destination $stage -Recurse -Force
+$allowedRoots = @('cloud', 'src', 'web', 'scripts', 'deploy')
+$allowedFiles = @('package.json', 'package-lock.json', '.env.example', '.gitignore', 'README.md', 'LICENSE', 'COMMERCIAL_LICENSE.md', 'SECURITY.md')
+$tracked = & git -C $root -c core.quotepath=false ls-files -- $allowedRoots $allowedFiles
+if ($LASTEXITCODE -ne 0) { throw 'Package from a Git source checkout; untracked local files must not enter a distribution.' }
+foreach ($relative in $tracked) {
+  $parts = $relative.Replace('\', '/').Split('/')
+  if ($parts -contains '..' -or [IO.Path]::IsPathRooted($relative)) { throw 'Unsafe tracked package path.' }
+  if ($parts | Where-Object { $excludeDirs -contains $_ }) { continue }
+  if ($excludeFiles -contains $parts[-1] -or $parts[-1] -match '\.log$') { continue }
+  $sourceFile = Join-Path $root $relative
+  if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) { continue }
+  if ((Get-Item -LiteralPath $sourceFile -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Tracked distribution files must not be symbolic links.' }
+  $targetFile = Join-Path $stage $relative
+  New-Item -ItemType Directory -Force (Split-Path -Parent $targetFile) | Out-Null
+  Copy-Item -LiteralPath $sourceFile -Destination $targetFile -Force
 }
 
 $stageDocs = Join-Path $stage "docs"
@@ -104,7 +122,13 @@ foreach ($doc in $publicDocs) {
 Get-ChildItem -LiteralPath $stage -Recurse -Directory -Force |
   Where-Object { $_.Name -eq 'node_modules' -or $_.Name -eq '__pycache__' } |
   Sort-Object { $_.FullName.Length } -Descending |
-  Remove-Item -Recurse -Force
+  ForEach-Object {
+    $nested = [IO.Path]::GetFullPath($_.FullName)
+    $prefix = [IO.Path]::GetFullPath($stage).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    if (-not $nested.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Nested cleanup escaped packaging stage.' }
+    if ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) { Remove-Item -LiteralPath $nested -Force }
+    else { Remove-Item -LiteralPath $nested -Recurse -Force }
+  }
 
 # Development-only tests and packaging tools are not required by a deployed Admin instance. Keeping
 # them out also prevents security-fixture strings from becoming part of the supplier distribution.
@@ -128,6 +152,8 @@ Get-ChildItem -LiteralPath $stage -Recurse -File | Where-Object {
   $_.FullName -eq (Join-Path $stage 'scripts\pack-zip.ps1')
 } | Remove-Item -Force
 
+& node (Join-Path $root 'src/services/self-update-package.mjs') $stage $Version
+if ($LASTEXITCODE -ne 0) { throw 'Admin update package completeness check failed.' }
 Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -142,6 +168,8 @@ try {
 } finally {
   $zip.Dispose()
 }
+& node (Join-Path $root 'src/services/self-update-package.mjs') --archive $zipPath
+if ($LASTEXITCODE -ne 0) { throw 'Admin update archive boundary check failed.' }
 Remove-WithRetry -Path $stageRoot
 & node (Join-Path $root "scripts\audit-distribution.mjs") $zipPath
 if ($LASTEXITCODE -ne 0) {

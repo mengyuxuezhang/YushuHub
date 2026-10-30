@@ -34,6 +34,7 @@ import { normalizeSecureBuildCenterUrl } from '../../src/utils/build-center-url.
 import { canonicalizePublicUploadUrl } from '../../src/utils/public-url.mjs'
 import { migrateOfficialUpdateDatabaseSettings, migrateOfficialUpdateEnvFile } from '../../src/services/official-update-source-migration.mjs'
 import { readSelfUpdateRestartStatus, resolveCurrentPm2Process, scheduleVerifiedSelfRestart } from '../../src/services/self-update-runtime.mjs'
+import { validateSelfUpdateArchive, validateSelfUpdatePackage } from '../../src/services/self-update-package.mjs'
 import { imageUsageEvents } from '../../src/services/media-billing.mjs'
 import { mergeReleaseHistory, readReleaseHistory, readAdminReleaseHistory } from '../../src/services/release-history.mjs'
 import { cleanupFailedBuildStorage } from '../../src/services/storage-retention.mjs'
@@ -675,6 +676,7 @@ async function performSelfUpdate() {
     throw new Error(`sha256 校验失败：expected ${manifest.sha256}, got ${actualSha256}`)
   }
   await appendSelfUpdateLog('sha256 verified')
+  await validateSelfUpdateArchive(zipPath)
 
   await fsp.mkdir(extractDir, { recursive: true })
   await runCommand('unzip', ['-q', zipPath, '-d', extractDir])
@@ -685,6 +687,7 @@ async function performSelfUpdate() {
   if (String(extractedPackage.version || '') !== manifest.version) {
     throw new Error(`更新包版本 ${extractedPackage.version || '-'} 与清单版本 ${manifest.version} 不一致`)
   }
+  await validateSelfUpdatePackage(extractDir, { expectedVersion: manifest.version })
 
   await appendSelfUpdateLog(`Backing up current app to ${backupDir}`)
   await fsp.mkdir(backupDir, { recursive: true })
