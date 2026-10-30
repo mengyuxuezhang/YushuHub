@@ -49,7 +49,9 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
         result.push({ id: model.id, clientId: model.clientId || model.id, name: model.name, taskType: model.taskType, version: model.version, adapter: model.adapter,
           contextWindow: model.contextWindow, maxOutputTokens: model.maxOutputTokens, maxImages: model.maxImages,
           supportsStreaming: model.supportsStreaming === true && model.adapter === 'newapi.chat' && model.settlementProtocol === 'okpa-v1',
-          allowedVoiceIds: model.allowedVoiceIds, price: await currentPrice(model) })
+          allowedVoiceIds: model.allowedVoiceIds,
+          publicVoices: (model.publicVoices || []).filter(voice => model.allowedVoiceIds?.includes(voice.id)).map(voice => ({ id: voice.id, name: String(voice.name || voice.id).slice(0, 120), description: String(voice.description || '').slice(0, 512) })),
+          price: await currentPrice(model) })
       }
       return result
     },

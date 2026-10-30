@@ -94,11 +94,49 @@
 - `/api/supply/catalog`、`/offers`、`/balance`：供货模型、逐项加价、积分换算、余额及价差报表。
 - `/api/supply/children/:id/credit`：一级审核直属二级线下充值。
 - `/api/client/supply/catalog`、`/requests`、`/requests/:id/recover`：终端供货调用及按原请求对账。
-- 现有文本、图片、搜索和通用任务入口接入供货桥接。文本 SSE 当前为完成后输出兼容事件，尚非逐Token实时转发。
+- 现有文本、图片、搜索和通用任务入口接入供货桥接。官方受控纯文本已支持真实增量SSE，配置及断连结算见[New API协议](NEWAPI_SETTLEMENT.md)；公共语音专用入口见下节。其他模型不能据此默认开启流式。
 
 用户积分预占、二级余额预占、本地请求和最终结算在同一MySQL事务完成；官方扣款通过持久化请求ID及事件对账衔接。30秒恢复任务只查询官方原请求，不重新发起推理。终端响应不包含上游成本、代理价差和内部价格快照。
 
 新授权模式下，本地新建二级、修改能力/授权期限、重置二级管理员和删除二级的旧入口被关闭，经营资料与业务停用保留。员工岗位仍受中心能力约束。本地二级默认自身数据范围，不从一级继承可浏览全平台数据的权限。
+
+### 公共音色专用入口（2026-10-30）
+
+中心模式下，旧`/api/client/voices`入口现由供货桥接接管，使用相同授权目录、一级/二级加价、用户积分和六位定点账本。MiniMax密钥仅由官方侧持有；一级自接仅允许自定义模型授权，二级不能替换连接或音色。本轮官方语音走`minimax.speech`直连适配器，未把New API纯文本回执扩展成音频回执，也未替换现网镜像。
+
+模型需配置`taskType: "speech_synthesis"`、`adapter: "minimax.speech"`、真实模型名、HTTPS地址及`keyEnv`，并显式批准公共音色。例如（虚构配置）：
+
+```json
+{
+  "allowedVoiceIds": ["approved-system-voice"],
+  "publicVoices": [{"id":"approved-system-voice","name":"公共男声","description":"演示目录"}],
+  "price": {"version":1,"components":[
+    {"meter":"request","phase":"request","unitSize":"1","amount":"0"},
+    {"meter":"billable_characters","phase":"usage","unitSize":"1000","amount":"1"}
+  ]}
+}
+```
+
+`publicVoices`仅为可选显示名/说明，不能扩大`allowedVoiceIds`范围；未提供时显示目录ID。官方维护者必须确认列表是供应商公共音色，不能把私有音色填入公共白名单。客户端只接收按模型生成的`pub-`稳定音色ID，不从客户端传入原始供应商音色、账号、密钥或连接。切换中心目录后须重新获取公共音色列表，旧`sys-`缓存ID不能直接使用；可用模型`clientId`保留已有客户端模型标识。
+
+| 入口 | 行为 |
+| --- | --- |
+| `GET /api/client/voices` | 只列本组织已启用的授权语音模型、公共音色、语速/长度限制、逐字符及按次价格；训练和激活价格为空，私有能力明确关闭 |
+| `POST /api/client/voices/synthesize` | 保留`modelId`、目录`voiceId`、`text`、`speed`、`includeTimings`、`timingGranularity`及`idempotencyKey`；支持同值的`Idempotency-Key`请求头，冲突拒绝 |
+| `GET /api/client/voices/tasks/:id` | 读取会话用户且同组织的原任务状态、预占/结算积分和音频摘要，不触发重新合成；原请求后台恢复继续按原编号执行 |
+| `GET /api/client/voices/tasks/:id/audio` | 仅成功且归属匹配的语音任务可下载MP3；`private, no-store`，摘要与任务一致，无公开音频URL |
+
+合成返回沿用`id/voiceId/operation/status/reservedPoints/settledPoints`及可选`speech`格式。成功响应不带上游成本、价差、供应商请求编号或Base64正文；音频从独立鉴权下载接口读取。音频当前保存在供货请求结果内，未新增对象存储和独立保留周期；大规模音频存储容量与清理策略仍需上线前验收。
+
+请求在用户积分、二级钱包和官方钱包分别预占后调用；文字最多10000个Unicode码点，语速为0.5至2。字符预占沿用保守两倍码点上限，最终只按供应商`usage_characters`结算并释放余量；调用受理时固定原价格和换算快照。非法音色、模型、语速和字幕选项在调用前拒绝。字幕使用已有受限下载及归一化逻辑，缺失或无效时返回`timingStatus: "unavailable"`，不把已成功付费的音频当失败重发。
+
+同编号相同请求不会再次合成；不同内容冲突拒绝。无实际用量、响应不完整或调用后断网保留`outcome_unknown`及预占，由运营核对，不能以缺少查询能力为免费依据。MiniMax同步合成没有本项目可用的按请求查询/自动重放协议；任务查询因此只读本地状态，已落官方账本的结果由现有后台工作器恢复一级结算。已结算原结果可重复下载；未落账的未知结果不承诺恢复音频。
+
+中心模式拦截私有音色训练、激活、删除和试听，防止回落旧账本；无私有音色历史无需迁移。未启用中心运行时的传统`legacy`部署不注册此桥接，原有语音流程保留。公共语音非流式、私有音色及音频流式不能混为同一已完成能力。
+
+本轮验收：后台159、语音57、模型代理41、模型管理50项通过；MySQL 8.4.10及测试服务器5.7.44独立库核对公共目录/显示名过滤、私有绕过拒绝、三层资金、重复/冲突、跨用户/组织读取、未知预占和原文本流回归。测试服务器另以真实`speech-2.8-turbo`合成一次“你好。”，返回5个计费字符、13236字节MP3、0.72秒、1段供应商字幕；重复未重发，官方预占0。虚构验算价对应官方0.005、二级0.035、用户0.055，不代表供应商实际账单。临时验收库已删除，既有服务和经营数据未修改。
+
+供应商字段参考[MiniMax同步语音合成官方说明](https://platform.minimax.cn/docs/api-reference/speech-t2a-http)；客户端参数仍以本项目已支持的白名单为准，不直接透传全部供应商功能。
 
 ## 配置与隔离环境运行
 

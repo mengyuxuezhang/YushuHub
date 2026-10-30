@@ -336,12 +336,12 @@ test('real MySQL: independent services, HTTP activation, concurrent accounting, 
   }
 })
 
-test('real MySQL streaming: first delta before completion, disconnect drain, restart recovery and unknown holds', { skip: !configured }, async () => {
+test('real MySQL client supply: streaming recovery, public speech, ownership and unknown holds', { skip: !configured }, async () => {
   const { gatewayDatabase = 'yushu_gateway_test', licenseDatabase: _licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
   if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable test database required')
   const pool = mysql.createPool({ ...config, database: gatewayDatabase, connectionLimit: 12 })
   let upstreamServer, localServer, runtime
-  const releases = new Map(), ready = new Set(); let submissions = 0
+  const releases = new Map(), ready = new Set(); let submissions = 0, speechCalls = 0
   process.env.STREAM_FIXTURE_INFERENCE = 'sk-fixture-only'; process.env.STREAM_FIXTURE_SETTLEMENT = `okpa_${'a'.repeat(64)}`
   try {
     await migrateAccounting({ pool, book: 'stream-official', kind: 'ledger', sourceId: 'stream-official-old' })
@@ -351,7 +351,7 @@ test('real MySQL streaming: first delta before completion, disconnect drain, res
     await pool.query('INSERT INTO ai_end_users VALUES (?,?,?)', ['stream-user', 'enabled', '100'])
     const keys = crypto.generateKeyPairSync('ed25519'), center = createLicenseCenter({ store: memoryStateStore(emptyCenterState()), privateKey: keys.privateKey,
       publicKeys: { test: keys.publicKey }, keyId: 'test', credentialKey: crypto.randomBytes(32) })
-    const issued = await center.issue({ id: 'stream-root', name: '测试一级', packageId: 'first-fixed', domain: 'https://stream.example.com', modelIds: ['stream-chat'], expiresAt: null }, 'operator')
+    const issued = await center.issue({ id: 'stream-root', name: '测试一级', packageId: 'first-fixed', domain: 'https://stream.example.com', modelIds: ['stream-chat', 'public-speech'], expiresAt: null }, 'operator')
     const activated = await center.activate({ code: issued.code, requestId: 'stream-activate', instanceId: 'stream-instance', domain: 'https://stream.example.com' })
     const child = await center.issue({ id: 'stream-child', name: '测试二级', packageId: 'second', parentId: 'stream-root', expiresAt: null }, 'operator')
     await center.activate({ code: child.code, requestId: 'stream-child-activate', instanceId: 'stream-instance', domain: 'https://stream.example.com' }, activated.credential)
@@ -361,7 +361,24 @@ test('real MySQL streaming: first delta before completion, disconnect drain, res
       ...['input_tokens', 'cached_tokens', 'output_tokens'].map(meter => ({ meter, amount: '0.1', unitSize: '1' }))] }
     const model = { id: 'stream-chat', name: '流式模型', model: 'stream-physical', adapter: 'newapi.chat', supportsStreaming: true, settlementProtocol: 'okpa-v1', status: 'enabled', version: 1,
       baseUrl: 'https://stream-provider.example.com/v1', keyEnv: 'STREAM_FIXTURE_INFERENCE', settlementKeyEnv: 'STREAM_FIXTURE_SETTLEMENT', contextWindow: 100, maxOutputTokens: 10, price }
+    const speech = { id: 'public-speech', clientId: 'public-speech-client', name: '公共语音', taskType: 'speech_synthesis', model: 'speech-02-turbo', adapter: 'minimax.speech', status: 'enabled', version: 1,
+      baseUrl: 'https://stream-provider.example.com', keyEnv: 'STREAM_FIXTURE_INFERENCE', allowedVoiceIds: ['approved-public-voice'],
+      publicVoices: [{ id: 'approved-public-voice', name: '公共男声', description: '验收音色' }, { id: 'private-secret-voice', name: '不得分发', secret: 'fixture-secret' }],
+      price: { version: 1, components: [{ meter: 'request', phase: 'request', amount: '1', unitSize: '1' }, { meter: 'billable_characters', amount: '0.1', unitSize: '1' }] } }
     const provider = async (url, options) => {
+      url = String(url)
+      if (url === 'https://minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com/fixture-subtitles.json') {
+        assert.equal(options.headers, undefined)
+        return new Response(JSON.stringify([{ text: '你好AI', time_begin: 0, time_end: 1100 }]))
+      }
+      if (url.endsWith('/v1/t2a_v2')) {
+        speechCalls++
+        const body = JSON.parse(options.body)
+        assert.equal(body.voice_setting.voice_id, 'approved-public-voice'); assert.equal(body.model, 'speech-02-turbo')
+        return new Response(JSON.stringify({ base_resp: { status_code: 0 }, data: { audio: '49443304000000000000', status: 2,
+          subtitle_file: 'https://minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com/fixture-subtitles.json' },
+          extra_info: { audio_length: 1100, ...(body.text === 'missing speech usage' ? {} : { usage_characters: 6 }) } }))
+      }
       if (url.endsWith('/chat/completions')) {
         submissions++
         const id = options.headers['X-OKPA-Request-ID'], body = JSON.parse(options.body)
@@ -388,7 +405,7 @@ test('real MySQL streaming: first delta before completion, disconnect drain, res
     }
     const officialStore = mysqlAccountingStore(pool, 'stream-official', 'ledger'), ledger = createSupplyLedger({ store: officialStore })
     await ledger.open(root.id, root.id); await ledger.credit(root.id, '100', 'stream-funds', 'operator', 'stream-funds-receipt')
-    const gateway = createModelGateway({ ledger, models: [model], adapters: httpGatewayAdapters(provider), authorize: (token, audience) => center.introspect(token, audience) })
+    const gateway = createModelGateway({ ledger, models: [model, speech], adapters: httpGatewayAdapters(provider), authorize: (token, audience) => center.introspect(token, audience) })
     const officialApp = serviceApp(); registerModelGatewayRoutes(officialApp, { gateway, ledger, operators: {} }); serviceErrors(officialApp)
     upstreamServer = await new Promise(resolve => { const server = officialApp.listen(0, '127.0.0.1', () => resolve(server)) })
     const upstreamUrl = `http://127.0.0.1:${upstreamServer.address().port}`
@@ -414,9 +431,12 @@ test('real MySQL streaming: first delta before completion, disconnect drain, res
     const service = await runtime.service()
     await service.configure(root, { modelId: model.id, enabled: true, saleMarkup: [], supplyMarkup: [{ meter: 'request', phase: 'request', amount: '0.3' }], pointsPerCny: '1', expectedVersion: 0 }, 'operator')
     await service.configure(second, { modelId: model.id, enabled: true, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.2' }], pointsPerCny: '1', expectedVersion: 0 }, 'child')
+    await service.configure(root, { modelId: speech.id, enabled: true, saleMarkup: [], supplyMarkup: [{ meter: 'request', phase: 'request', amount: '0.3' }], pointsPerCny: '1', expectedVersion: 0 }, 'operator')
+    await service.configure(second, { modelId: speech.id, enabled: true, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.2' }], pointsPerCny: '1', expectedVersion: 0 }, 'child')
     await service.credit(root, second.id, '100', 'stream-child-funds', 'stream-child-receipt', 'operator')
-    setAuthDependencies({ getEndUserByToken: async token => token === 'stream-client' ? { id: 'stream-user', status: 'enabled' } : null, getClientAuthorization: async () => true })
-    const localApp = serviceApp(); registerClientSupplyBridge(localApp, { runtime, tenantForUser: async () => second }); serviceErrors(localApp)
+    setAuthDependencies({ getEndUserByToken: async token => ['stream-client', 'other-client'].includes(token) ? { id: token === 'stream-client' ? 'stream-user' : 'other-user', status: 'enabled' } : null, getClientAuthorization: async () => true })
+    const localApp = serviceApp(); registerClientSupplyBridge(localApp, { runtime, tenantForUser: async req => req.headers['x-test-other-org'] ? { ...second, id: 'another-child' } : second }); serviceErrors(localApp)
+    localApp.use('/api/client/voices', (_req, res) => res.status(500).json({ legacyReached: true }))
     localServer = await new Promise(resolve => { const server = localApp.listen(0, '127.0.0.1', () => resolve(server)) })
     const localUrl = `http://127.0.0.1:${localServer.address().port}/api/client/model/v1/chat/completions`
     const call = id => fetch(localUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer stream-client', 'Idempotency-Key': id },
@@ -452,12 +472,48 @@ test('real MySQL streaming: first delta before completion, disconnect drain, res
     assert.equal(user.credit_balance, '94.800000')
     assert.equal((await service.balance(second)).wallet.balance, '95.200000')
     assert.equal((await ledger.view(root.id)).balance, '95.800000'); assert.equal((await ledger.view(root.id)).reserved, '0.000000')
+    const voiceUrl = `http://127.0.0.1:${localServer.address().port}/api/client/voices`
+    const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer stream-client' }
+    assert.equal((await fetch(voiceUrl)).status, 401)
+    const catalog = (await (await fetch(voiceUrl, { headers })).json()).data
+    assert.equal(catalog.models[0].prices.per1000Characters, 100); assert.equal(catalog.models[0].prices.pointsPerRequest, 1.5)
+    assert.equal(catalog.voices.length, 1); assert.match(catalog.voices[0].id, /^pub-/)
+    assert.equal(catalog.voices[0].name, '公共男声'); assert(!JSON.stringify(catalog).includes('fixture-secret'))
+    const speechBody = { modelId: 'public-speech-client', voiceId: catalog.voices[0].id, idempotencyKey: 'speech-success', text: '你好AI', includeTimings: true,
+      organizationId: root.id, baseUrl: 'https://attacker.example.com', voice_setting: { voice_id: 'private-voice' } }
+    const speak = body => fetch(`${voiceUrl}/synthesize`, { method: 'POST', headers, body: JSON.stringify(body) })
+    for (const invalid of [{ voiceId: 'private-voice' }, { modelId: 'stream-chat' }, { speed: 0 }, { includeTimings: 'true' }]) assert.equal((await speak({ ...speechBody, ...invalid })).ok, false)
+    assert.equal(speechCalls, 0)
+    const spoken = (await (await speak(speechBody)).json()).data
+    assert.equal(spoken.status, 'succeeded'); assert.equal(spoken.settledPoints, 2.1); assert.equal(spoken.speech.timingStatus, 'provider')
+    assert.deepEqual(spoken.speech.boundaries, [{ kind: 'sentence', text: '你好AI', startSec: 0, endSec: 1.1 }])
+    assert(!JSON.stringify(spoken).includes('audioBase64')); assert(!JSON.stringify(spoken).includes('upstreamAmount'))
+    assert.equal((await (await speak(speechBody)).json()).data.id, spoken.id); assert.equal(speechCalls, 1)
+    assert.equal((await speak({ ...speechBody, text: 'changed' })).status, 409)
+    const audioUrl = `${voiceUrl}/tasks/${spoken.id}/audio`, audio = await fetch(audioUrl, { headers })
+    assert.equal(crypto.createHash('sha256').update(Buffer.from(await audio.arrayBuffer())).digest('hex'), spoken.speech.audioSha256)
+    assert.equal(audio.headers.get('cache-control'), 'private, no-store')
+    assert.equal((await fetch(audioUrl)).status, 401)
+    for (const denied of [{ ...headers, Authorization: 'Bearer other-client' }, { ...headers, 'x-test-other-org': 'true' }]) assert.equal((await fetch(audioUrl, { headers: denied })).status, 404)
+    assert.equal((await fetch(`${voiceUrl}/tasks/stream-client-cut`, { headers })).status, 404)
+    assert.equal((await fetch(`${voiceUrl}/train`, { method: 'POST', headers })).status, 503)
+    assert.equal((await fetch(`${voiceUrl}/anything/preview`, { headers })).status, 503)
+    assert.equal((await ledger.view(root.id)).balance, '94.200000'); assert.equal((await ledger.view(root.id)).reserved, '0.000000')
+    const [[speechUser]] = await pool.query('SELECT credit_balance FROM ai_end_users WHERE id=?', ['stream-user'])
+    assert.equal(speechUser.credit_balance, '92.700000'); assert.equal((await service.balance(second)).wallet.balance, '93.300000')
+    const speechUnknown = (await (await speak({ ...speechBody, idempotencyKey: 'speech-unknown', text: 'missing speech usage' })).json()).data
+    assert.equal(speechUnknown.status, 'outcome_unknown'); assert.equal(speechCalls, 2)
+    assert.equal((await (await fetch(`${voiceUrl}/tasks/speech-unknown`, { headers })).json()).data.voiceId, speechBody.voiceId)
+    await speak({ ...speechBody, idempotencyKey: 'speech-unknown', text: 'missing speech usage' }); await runtime.flush()
+    assert.equal(speechCalls, 2, 'unknown speech must never be resent')
+    assert.equal((await fetch(`${voiceUrl}/tasks/speech-unknown/audio`, { headers })).status, 409)
+    const heldSpeech = (await ledger.view(root.id)).reserved
     const missing = await call('stream-missing'); await wait(() => releases.has('stream-missing'), 'missing-usage admission')
     releases.get('stream-missing')(); const missingText = await missing.text()
     assert(missingText.includes('SUPPLY_PENDING_RECONCILIATION')); assert(!missingText.includes('[DONE]'))
     await runtime.flush()
     assert.notEqual((await runtime.store.readRequest('stream-missing')).state, 'settled')
-    assert.equal((await ledger.view(root.id)).reserved, '22.000000')
+    assert.equal((await ledger.view(root.id)).reserved, (Number(heldSpeech) + 22).toFixed(6))
     assert.equal(submissions, 3)
   } finally {
     for (const release of releases.values()) release()

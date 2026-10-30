@@ -18,6 +18,7 @@ const targets = [
   'src/routes/deployment-authorization.mjs',
   'src/routes/agent-supply.mjs',
   'src/routes/client-supply-bridge.mjs',
+  'src/routes/client-voice-supply.mjs',
   'cloud/license-center/server.mjs',
   'cloud/model-gateway/server.mjs',
   'scripts/authorization-local-migrate.mjs',

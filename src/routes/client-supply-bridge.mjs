@@ -4,6 +4,7 @@ import { decimal, failure, identifier, micros } from '../services/licensing/prot
 import { sseWriter } from '../services/licensing/streaming.mjs'
 import { quoteSupply } from '../services/licensing/pricing.mjs'
 import { normalizeImageGenerationRequest, normalizeImageGenerationResponse } from '../services/image-generation.mjs'
+import { registerClientVoiceSupplyRoutes } from './client-voice-supply.mjs'
 
 function sendError(res, error) {
   res.status(error.statusCode || 503).json({ success: false, code: error.code || 'SUPPLY_UNAVAILABLE', error: error.statusCode ? error.message : '模型供货服务暂不可用' })
@@ -118,9 +119,5 @@ export function registerClientSupplyBridge(app, { runtime, tenantForUser }) {
     try { res.json({ success: true, data: publicTask(await (await runtime.service()).recover(await tenantForUser(req), req.clientUser.id, req.params.id)) }) }
     catch (error) { sendError(res, error) }
   })
-  // Private voice training/activation needs its own upstream resource contract.
-  // Until that migration is implemented, never let it bypass supply accounting.
-  app.use(['/api/client/voices/train', '/api/client/voices/activate', '/api/client/voices/synthesize'], (_req, res) => {
-    res.status(503).json({ success: false, code: 'VOICE_SUPPLY_MIGRATION_REQUIRED', error: '私有音色供货迁移尚未完成，请勿切换生产实例' })
-  })
+  registerClientVoiceSupplyRoutes(app, { runtime, tenantForUser })
 }

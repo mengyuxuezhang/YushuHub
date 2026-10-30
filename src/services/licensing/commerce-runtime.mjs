@@ -50,7 +50,8 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     const root = await client.claims(), official = gatewayUrl ? await gateway(tenant, '/catalog') : []
     const own = root.modelMode === 'custom' ? customModels.filter(model => tenant.modelIds.includes(model.id)).map(model => ({
       id: model.id, clientId: model.clientId || model.id, name: model.name, taskType: model.taskType, version: model.version, adapter: model.adapter,
-      contextWindow: model.contextWindow, maxOutputTokens: model.maxOutputTokens, maxImages: model.maxImages, allowedVoiceIds: model.allowedVoiceIds, price: model.price, source: 'custom',
+      contextWindow: model.contextWindow, maxOutputTokens: model.maxOutputTokens, maxImages: model.maxImages, allowedVoiceIds: model.allowedVoiceIds,
+      publicVoices: model.publicVoices, price: model.price, source: 'custom',
     })) : []
     return [...official.map(model => ({ ...model, source: 'official' })), ...own].map(model => ({ ...model,
       prepare: async request => {

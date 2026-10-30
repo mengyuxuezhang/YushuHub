@@ -87,12 +87,18 @@ export function httpGatewayAdapters(fetcher = fetch) {
       prepare(_model, request) {
         if (typeof request.text !== 'string' || !request.text.trim() || [...request.text].length > 10_000 || typeof request.voiceId !== 'string') throw failure('INVALID_SPEECH', '语音请求无效')
         if (!Array.isArray(_model.allowedVoiceIds) || !_model.allowedVoiceIds.includes(request.voiceId)) throw failure('VOICE_NOT_AUTHORIZED', '音色不在当前模型批准的公共音色目录', 403)
-        return { request: { model: _model.model, voiceId: request.voiceId, text: request.text, speed: request.speed || 1 },
+        if (!Number.isFinite(request.speed ?? 1) || (request.speed ?? 1) < 0.5 || (request.speed ?? 1) > 2
+          || (request.includeTimings !== undefined && typeof request.includeTimings !== 'boolean')
+          || (request.timingGranularity !== undefined && (!['sentence', 'word'].includes(request.timingGranularity) || (request.timingGranularity === 'word' && request.includeTimings !== true)))) throw failure('INVALID_SPEECH', '语速或字幕选项无效')
+        if (request.stream === true) throw failure('STREAM_UNAVAILABLE', '语音流式供货尚未接通')
+        return { request: { model: _model.model, voiceId: request.voiceId, text: request.text, speed: request.speed ?? 1,
+          includeTimings: request.includeTimings ?? false, timingGranularity: request.timingGranularity ?? 'sentence' },
           upperUsage: [requestEvent(), event('billable_characters', [...request.text].length * 2)] }
       },
       async submit(model, request) {
         const result = await new MiniMaxAdapter({ fetchImpl: fetcher }).invoke({ baseUrl: model.baseUrl, apiKey: process.env[model.keyEnv] }, request)
-        return { state: 'done', result: { audioBase64: result.bytes.toString('base64'), mimeType: 'audio/mpeg', durationSec: result.durationSec }, usage: [requestEvent(), event('billable_characters', result.characters)] }
+        return { state: 'done', result: { voiceId: request.voiceId, audioBase64: result.bytes.toString('base64'), mimeType: 'audio/mpeg', durationSec: result.durationSec,
+          ...(request.includeTimings ? { timingStatus: result.timingStatus, boundaries: result.boundaries || [] } : {}) }, usage: [requestEvent(), event('billable_characters', result.characters)] }
       },
     },
   }

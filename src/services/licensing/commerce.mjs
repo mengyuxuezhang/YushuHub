@@ -18,6 +18,11 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
   const transact = (scope, work) => store.scopeTransaction ? store.scopeTransaction(scope, work) : store.transaction(work)
   const configuration = () => store.readConfiguration ? store.readConfiguration() : store.read()
   const find = async id => store.readRequest ? store.readRequest(id) : (await store.read()).requests[id]
+  async function owned(tenant, userId, requestId) {
+    const operation = await find(identifier(requestId))
+    if (!operation || operation.userId !== userId || operation.organizationId !== tenant.id) throw failure('NOT_FOUND', '请求不存在', 404)
+    return operation
+  }
   async function selected(state, tenant, modelId) {
       const models = await catalog(tenant), model = models.find(item => item.id === modelId)
     if (!model) throw failure('MODEL_UNAVAILABLE', '模型不在可供货目录', 403)
@@ -126,6 +131,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       if (micros(snapshot.discount) < 0n) throw failure('INVALID_DISCOUNT', '折扣无效')
       // Trusted model adapters calculate bounds; client estimatedUsage is ignored.
       const prepared = await snapshot.model.prepare(input.request), upperUsage = prepared.upperUsage
+      if (snapshot.model.taskType === 'speech_synthesis') snapshot.speechVoiceId = prepared.request.voiceId
       if (prepared.request.stream === true && (snapshot.model.source !== 'official' || typeof onChunk !== 'function')) throw failure('STREAM_UNAVAILABLE', '实时流式供货需使用官方流式传输入口')
       if (!Array.isArray(upperUsage)) throw failure('UNBOUNDED_REQUEST', '缺少可执行计费上界')
       const reservedPoints = userPoints(quoteSupply(snapshot.sale, upperUsage), snapshot.pointsPerCny, snapshot.discount), reservedSupply = quoteSupply(snapshot.supply, upperUsage)
@@ -161,9 +167,9 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
         })
       }
     },
+    status: owned,
     async recover(tenant, userId, requestId) {
-      const operation = await find(identifier(requestId))
-      if (!operation || operation.userId !== userId || operation.organizationId !== tenant.id) throw failure('NOT_FOUND', '请求不存在', 404)
+      const operation = await owned(tenant, userId, requestId)
       if (operation.state === 'settled') return operation
       return complete(requestId, await lookup(tenant, operation))
     },

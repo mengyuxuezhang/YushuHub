@@ -228,6 +228,11 @@ test('speech rejects arbitrary private upstream voice identifiers before reserva
   assert.throws(() => adapter.prepare({ allowedVoiceIds: ['approved-system-voice'] }, { text: 'hello', voiceId: 'other-user-private-voice' }), { code: 'VOICE_NOT_AUTHORIZED' })
   const prepared = adapter.prepare({ model: 'speech-model', allowedVoiceIds: ['approved-system-voice'] }, { text: '你好', voiceId: 'approved-system-voice' })
   assert.equal(prepared.upperUsage.find(item => item.meter === 'billable_characters').quantity, '4')
+  for (const options of [{ speed: 0 }, { speed: '1' }, { speed: 3 }, { includeTimings: 'true' }, { timingGranularity: 'word' }, { stream: true }]) {
+    assert.throws(() => adapter.prepare({ model: 'speech-model', allowedVoiceIds: ['approved-system-voice'] }, { text: '你好', voiceId: 'approved-system-voice', ...options }))
+  }
+  const timed = adapter.prepare({ model: 'speech-model', allowedVoiceIds: ['approved-system-voice'] }, { text: 'hello', voiceId: 'approved-system-voice', includeTimings: true, timingGranularity: 'word' })
+  assert.equal(timed.request.includeTimings, true); assert.equal(timed.request.timingGranularity, 'word')
 })
 
 test('New API receipts survive response loss and repeated requests never resubmit inference', async t => {
