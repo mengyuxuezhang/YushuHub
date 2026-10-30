@@ -91,6 +91,13 @@ try{
  assert.equal(JSON.stringify(snapshot).includes('password_hash'),false);assert.equal(JSON.stringify(snapshot).includes('model_gateway_key'),false)
  const alternateDecoder=mysql.createPool({...config,database:names[0],timezone:'+08:00',decimalNumbers:true,supportBigNumbers:false})
  try{assert.deepEqual(await collectMigrationProofs(alternateDecoder),snapshot.proofs)}finally{await alternateDecoder.end()}
+ assert(snapshot.proofs.orders.tables.some(table=>table.table==='ai_payment_fulfillments'))
+ const receiptProbe=await localPool.getConnection()
+ try{
+  await receiptProbe.beginTransaction()
+  await receiptProbe.query('INSERT INTO ai_payment_fulfillments(order_id,owner_user_id,user_id,membership_id,points,fingerprint,payload) VALUES (?,?,?,?,?,?,?)',['fixture-order-proof','admin','fixture-user','fixture-membership','0','0'.repeat(64),'{}'])
+  assert.notEqual((await collectMigrationProofs(receiptProbe)).orders.hash,snapshot.proofs.orders.hash)
+ }finally{await receiptProbe.rollback();receiptProbe.release()}
  const transferManifest={batchId:'resource-legacy-import',snapshot,mapping:{oldOrganizationId:legacyOrganization.id,grantId:'resources-root',packageId:'first-custom',packageVersion:1,domain:profile.domain,instanceId:profile.instanceId,officialModelIds:[],unlimitedExpiryReview:'隔离历史无限期核验'}}
  const importPreview=await center.previewLegacyImport(transferManifest),imported=await center.importLegacy({...transferManifest,previewDigest:importPreview.previewDigest},'test')
  await localPool.query('UPDATE ai_organizations SET name=? WHERE id=?',['虚构采集后变更',legacyOrganization.id])

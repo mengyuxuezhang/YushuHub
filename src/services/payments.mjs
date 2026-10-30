@@ -5,6 +5,7 @@ import { db } from '../db/pool.mjs'
 import { grantMembershipBenefits } from './memberships.mjs'
 import { isPaginationRequested, pageResult, parsePagination } from '../utils/pagination.mjs'
 import { buildListSearch } from './list-search.mjs'
+import { capturePaymentMemberships, recordPaymentFulfillment } from '../repositories/payment-fulfillments.mjs'
 import {
   PaymentProviderError,
   closeAlipayOrder,
@@ -506,6 +507,7 @@ export async function fulfillPaidOrder(orderId, providerTradeNo = '', amountFen 
       }
     }
 
+    const previousMemberships = await capturePaymentMemberships(connection, order.user_id)
     const granted = await grantMembershipBenefits({
       userId: order.user_id,
       card: { id: order.card_id, name: order.card_name },
@@ -526,6 +528,7 @@ export async function fulfillPaidOrder(orderId, providerTradeNo = '', amountFen 
        WHERE id = ?`,
       [String(providerTradeNo || order.provider_trade_no || '').slice(0, 128), granted.id, order.id],
     )
+    await recordPaymentFulfillment(connection, { ...order, provider_trade_no: String(providerTradeNo || order.provider_trade_no || '').slice(0, 128) }, granted, previousMemberships)
     await connection.commit()
     return normalizeOrderRow(await findOrderById(order.id))
   } catch (err) {

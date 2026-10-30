@@ -50,9 +50,11 @@ async function tableProof(connection, table, onlyColumns) {
 }
 export async function collectMigrationProofs(connection) {
   const proofs = {}
+  const [[fulfillments]] = await connection.query("SELECT COUNT(*) AS present FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='ai_payment_fulfillments'")
   for (const [group, tables] of Object.entries(groups)) {
     const parts = []
-    for (const table of tables) parts.push(await tableProof(connection, table, group === 'balances' ? ['id', 'credit_balance', 'organization_id']
+    const included = group === 'orders' && Number(fulfillments.present) === 1 ? [...tables, 'ai_payment_fulfillments'] : tables
+    for (const table of included) parts.push(await tableProof(connection, table, group === 'balances' ? ['id', 'credit_balance', 'organization_id']
       : table === 'ai_model_provider_keys' ? ['id', 'owner_user_id', 'provider_id', 'upstream_account_id', 'provider_model_id', 'organization_id', 'status', 'weight', 'updated_at'] : null))
     proofs[group] = { count: parts.reduce((sum, part) => sum + part.count, 0), hash: migrationHash(parts), tables: parts }
   }

@@ -149,10 +149,16 @@ function paymentDatabase() {
     },
     membershipInserts: 0,
     ledgerInserts: 0,
+    ledgerRows: [],
+    fulfillmentInserts: 0,
     committed: 0,
     rolledBack: 0,
   }
   const query = async (sql, params = []) => {
+    if (sql.includes('AS startedAt') && sql.includes("status='active'")) return [[], []]
+    if (sql.includes('AS startedAt') && sql.includes('WHERE id=?')) return [[{ id: params[0], userId: 'end-user-1', cardId: 'vip-card', status: 'active', source: 'payment', createdBy: 'agent-a' }], []]
+    if (sql.includes('CAST(points_delta AS CHAR)')) return [state.ledgerRows, []]
+    if (sql.startsWith('INSERT INTO ai_payment_fulfillments')) { state.fulfillmentInserts++; state.fulfillment = JSON.parse(params[6]); return [{ affectedRows: 1 }, []] }
     if (sql.includes('SELECT * FROM ai_payment_orders WHERE id =')) return [[{ ...state.order }], []]
     if (sql.includes('SELECT * FROM ai_membership_cards')) return [[{ id: 'vip-card', name: '高级会员', created_by: 'agent-a' }], []]
     if (sql.includes('SELECT card_id, expires_at FROM ai_end_user_memberships')) return [[], []]
@@ -161,7 +167,7 @@ function paymentDatabase() {
     if (sql.startsWith('INSERT INTO ai_end_user_memberships')) { state.membershipInserts += 1; state.order.fulfillment_membership_id = params[0]; return [{ affectedRows: 1 }, []] }
     if (sql.startsWith('UPDATE ai_end_users SET credit_balance')) { state.balance += Number(params[0] || 0); return [{ affectedRows: 1 }, []] }
     if (sql.includes('SELECT credit_balance FROM ai_end_users')) return [[{ credit_balance: state.balance }], []]
-    if (sql.includes('INSERT INTO ai_credit_ledger')) { state.ledgerInserts += 1; return [{ affectedRows: 1 }, []] }
+    if (sql.includes('INSERT INTO ai_credit_ledger')) { state.ledgerInserts += 1; state.ledgerRows.push({ id: params[0], points: String(params[3]) }); return [{ affectedRows: 1 }, []] }
     if (sql.includes('UPDATE ai_payment_orders')) {
       state.order.status = 'paid'
       state.order.provider_trade_no = params[0]
@@ -188,6 +194,8 @@ await fulfillPaidOrder('payment-order-id', 'alipay-trade-1', 990)
 await fulfillPaidOrder('payment-order-id', 'alipay-trade-1', 990)
 assert.equal(fulfillment.state.membershipInserts, 1)
 assert.equal(fulfillment.state.ledgerInserts, 1)
+assert.equal(fulfillment.state.fulfillmentInserts, 1)
+assert.equal(fulfillment.state.fulfillment.points, '20.000000')
 assert.equal(fulfillment.state.balance, 20)
 assert.equal(fulfillment.state.committed, 2)
 assert.equal(fulfillment.state.rolledBack, 0)

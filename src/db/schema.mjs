@@ -2,6 +2,7 @@ import { consolidatePricingPlans } from '../services/pricing-current-plan-migrat
 import crypto from 'node:crypto'
 import mysql from 'mysql2/promise'
 import { migrateUserUsagePermissions } from '../services/user-usage-permissions.mjs'
+import { migratePaymentFulfillments } from '../repositories/payment-fulfillments.mjs'
 
 let pool
 let DB_NAME
@@ -1500,6 +1501,8 @@ export async function initDatabase(options = {}) {
       KEY idx_ai_payment_orders_provider_trade (provider, provider_trade_no)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `)
+
+  await migratePaymentFulfillments(pool)
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ai_payment_events (
