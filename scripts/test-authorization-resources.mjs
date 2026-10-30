@@ -23,6 +23,7 @@ import { hashPassword } from '../src/utils/crypto.mjs'
 import { readLegacyDeploymentSnapshot, collectMigrationProofs } from '../src/services/licensing/migration-snapshot.mjs'
 import { applyLocalLegacyBinding } from '../src/services/licensing/local-legacy-binding.mjs'
 import { shadowLegacyAuthorization, legacyRollbackStatus } from '../src/services/licensing/migration-safety.mjs'
+import { previewOfficialLegacyScope, applyOfficialLegacyScope } from '../src/services/licensing/official-legacy-scope.mjs'
 import { canonicalJson } from '../src/services/curated-skills.mjs'
 // Invoked by the disposable MySQL runner. Boot both real admin processes with
 // fictional resources; never inherit a deployment database or paid model route.
@@ -65,7 +66,7 @@ try{
  await fs.writeFile(dir+'/public-keys.json',JSON.stringify(publicKeys),{mode:0o600})
  const operatorLogin=await fetch(centerUrl+'/api/license-center/v1/operator/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'fixture-operator',password,code:totp('JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',Math.floor(Date.now()/30000))})})
  const operatorSession=await operatorLogin.json();assert(operatorSession.success);await fs.writeFile(dir+'/operator-token',operatorSession.data.token,{mode:0o600})
- const runTransfer=async(...args)=>{const out=await promisify(execFile)(process.execPath,['scripts/authorization-transfer.mjs',...args],{cwd:root,windowsHide:true,env:{...process.env,NODE_ENV:'test',AI_AUTH_TRANSFER_DB_HOST:config.host,AI_AUTH_TRANSFER_DB_PORT:String(config.port),AI_AUTH_TRANSFER_DB_USER:config.user,AI_AUTH_TRANSFER_DB_PASSWORD:config.password,AI_AUTH_TRANSFER_DB_NAME:names[0],AI_AUTHORIZATION_MIGRATION:'approved',AI_AUTH_TRANSFER_PUBLIC_KEYS_FILE:dir+'/public-keys.json',AI_AUTH_TRANSFER_MAINTENANCE:'1',AI_AUTH_TRANSFER_PUBLIC_URL:'https://resources-local.example.com',AI_AUTH_TRANSFER_INSTANCE_ID:'resource-instance',AI_AUTH_TRANSFER_CENTER_URL:centerUrl,AI_AUTH_TRANSFER_OPERATOR_TOKEN_FILE:dir+'/operator-token'}});assert(!out.stdout.includes(password));return out}
+ const runTransfer=async(...args)=>{const out=await promisify(execFile)(process.execPath,['scripts/authorization-transfer.mjs',...args],{cwd:root,windowsHide:true,env:{...process.env,NODE_ENV:'test',AI_AUTH_TRANSFER_DB_HOST:config.host,AI_AUTH_TRANSFER_DB_PORT:String(config.port),AI_AUTH_TRANSFER_DB_USER:config.user,AI_AUTH_TRANSFER_DB_PASSWORD:config.password,AI_AUTH_TRANSFER_DB_NAME:names[args[0].startsWith('official-')?1:0],AI_AUTHORIZATION_MIGRATION:'approved',AI_AUTH_TRANSFER_PUBLIC_KEYS_FILE:dir+'/public-keys.json',AI_AUTH_TRANSFER_MAINTENANCE:'1',AI_AUTH_TRANSFER_PUBLIC_URL:'https://resources-local.example.com',AI_AUTH_TRANSFER_INSTANCE_ID:'resource-instance',AI_AUTH_TRANSFER_CENTER_URL:centerUrl,AI_AUTH_TRANSFER_OPERATOR_TOKEN_FILE:dir+'/operator-token'}});assert(!out.stdout.includes(password));return out}
 
  await start('official','legacy',{AI_OFFICIAL_AUTHORIZATION_MODE:'center',AI_CENTER_SUPPLIER_MANAGEMENT:'1',AI_LICENSE_CENTER_URL:centerUrl})
  await start('local','legacy');await stop('local')
@@ -73,7 +74,11 @@ try{
  await mysqlStateStore(localPool,'local-resources-v1',emptyResourceIntents()).migrate();await mysqlStateStore(localPool,'commerce-v2-price-notifications',emptyPriceNotificationState()).migrate();await mysqlStateStore(localPool,'commerce-v2-custom-definitions',emptyCustomDefinitions()).migrate()
  envLocal={AI_LICENSE_CENTER_URL:centerUrl,AI_LICENSE_INSTANCE_ID:'resource-instance',AI_LICENSE_PUBLIC_KEYS_FILE:dir+'/public-keys.json',AI_BUILD_CENTER_URL:urls.official}
  const [[legacyOrganization]]=await localPool.query('SELECT id FROM ai_organizations WHERE agent_level=1')
- const profile={sourceId:'resource-legacy-source',oldOrganizationId:legacyOrganization.id,legacySupplierId:'resources-root',status:'enabled',expiresAt:null,allowCustomApiProviders:true,domain:'https://resources-local.example.com',instanceId:'resource-instance',cumulativeBuilds:0,
+ for(const [pool,id,organization]of [[localPool,'legacy-project',legacyOrganization.id],[officialPool,'resources-root-legacy-project','']])await pool.query("INSERT INTO ai_projects(id,owner_user_id,organization_id,app_name,brand_name,short_name,app_id,config_dir_name) VALUES (?,'admin',?,'虚构历史项目','虚构品牌','虚构',?,?)",[id,organization,`test.${id}`,`.${id}`])
+ await localPool.query("INSERT INTO ai_builds(id,project_id,owner_user_id,organization_id,status,remote_build_id) VALUES ('legacy-build','legacy-project','admin',?,'succeeded','legacy-remote')",[legacyOrganization.id])
+ await officialPool.query("INSERT INTO ai_center_suppliers(id,name,token_hash) VALUES ('resources-root','虚构历史供货','unusable-test-token')")
+ await officialPool.query("INSERT INTO ai_builds(id,project_id,owner_user_id,organization_id,status,center_supplier_id,center_local_build_id) VALUES ('legacy-remote','resources-root-legacy-project','admin','','succeeded','resources-root','legacy-build')")
+ const profile={sourceId:'resource-legacy-source',oldOrganizationId:legacyOrganization.id,legacySupplierId:'resources-root',status:'enabled',expiresAt:null,allowCustomApiProviders:true,domain:'https://resources-local.example.com',instanceId:'resource-instance',cumulativeBuilds:1,
  capabilities:BASE_PACKAGES['first-custom'].capabilities.map(cap=>({...cap,limitValue:cap.key==='projects.manage'?1:cap.key==='builds.create'?10:0}))}
  await fs.writeFile(dir+'/profile.json',JSON.stringify(profile),{mode:0o600});await runTransfer('export',dir+'/profile.json',dir+'/snapshot.json');const snapshot=JSON.parse(await fs.readFile(dir+'/snapshot.json','utf8'))
  assert.equal(JSON.stringify(snapshot).includes('password_hash'),false);assert.equal(JSON.stringify(snapshot).includes('model_gateway_key'),false)
@@ -92,6 +97,22 @@ try{
  assert.equal(shadow.authorizationAndRightsMatch,true,JSON.stringify(shadow));assert.equal(shadow.cutoverReady,false)
  await runTransfer('shadow',dir+'/transfer.json',dir+'/shadow.json');assert.equal(JSON.parse(await fs.readFile(dir+'/shadow.json','utf8')).authorizationAndRightsMatch,true)
  await runTransfer('rollback-check',dir+'/snapshot.json',dir+'/rollback.json');assert.equal(JSON.parse(await fs.readFile(dir+'/rollback.json','utf8')).databaseSnapshotRestoreAllowed,true)
+ const officialScopeInput={pool:officialPool,...transferManifest,result:imported,publicKeys}
+ await runTransfer('receipt',dir+'/transfer.json',dir+'/readonly-receipt.json');assert.equal(JSON.parse(await fs.readFile(dir+'/readonly-receipt.json','utf8')).activationCode,null)
+ await runTransfer('official-preview',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/official-preview.json')
+ const officialPreview=JSON.parse(await fs.readFile(dir+'/official-preview.json','utf8'));assert.equal(officialPreview.changes.length,2);assert.deepEqual(officialPreview.blockers,[])
+ await assert.rejects(applyOfficialLegacyScope({...officialScopeInput,previewDigest:officialPreview.previewDigest,maintenance:false}),{code:'MAINTENANCE_REQUIRED'})
+ await officialPool.query("UPDATE ai_projects SET organization_id='another-agent' WHERE id='resources-root-legacy-project'")
+ const conflict=await previewOfficialLegacyScope(officialScopeInput);assert(conflict.blockers.some(item=>item.code==='OTHER_ORGANIZATION'))
+ await assert.rejects(applyOfficialLegacyScope({...officialScopeInput,previewDigest:conflict.previewDigest,maintenance:true}),{code:'OFFICIAL_SCOPE_BLOCKED'})
+ assert.equal((await officialPool.query("SELECT organization_id FROM ai_builds WHERE id='legacy-remote'"))[0][0].organization_id,'')
+ await officialPool.query("UPDATE ai_projects SET organization_id='' WHERE id='resources-root-legacy-project'")
+ await officialPool.query("UPDATE ai_builds SET center_local_build_id='unreviewed-build' WHERE id='legacy-remote'")
+ await assert.rejects(applyOfficialLegacyScope({...officialScopeInput,previewDigest:officialPreview.previewDigest,maintenance:true}),{code:'OFFICIAL_SOURCE_CHANGED'})
+ await officialPool.query("UPDATE ai_builds SET center_local_build_id='legacy-build' WHERE id='legacy-remote'")
+ await Promise.all(['a','b'].map(label=>runTransfer('official-apply',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/official-preview.json',dir+`/official-result-${label}.json`)))
+ const officialResults=await Promise.all(['a','b'].map(async label=>JSON.parse(await fs.readFile(dir+`/official-result-${label}.json`,'utf8'))));assert.equal(officialResults.filter(item=>item.alreadyApplied).length,1)
+ assert.equal((await previewOfficialLegacyScope(officialScopeInput)).changes.length,0)
 
  const grant={code:imported.activationCode}
 
@@ -102,6 +123,8 @@ try{
  const childPwd=crypto.randomBytes(20).toString('hex');ok(await request('local','/api/authorization/invitation',{invitation,password:childPwd}));let childCookie=await login('local','resource_child',childPwd)
  const repeatedBinding=await applyLocalLegacyBinding({pool:localPool,...transferManifest,result:await center.legacyImportReceipt(transferManifest.batchId),publicKeys,maintenance:true,publicUrl:profile.domain,instanceId:profile.instanceId});assert.equal(repeatedBinding.alreadyApplied,true);assert.equal((await legacyRollbackStatus(localPool,snapshot)).databaseSnapshotRestoreAllowed,false)
  const [[childOwner]]=await localPool.query("SELECT legacy_owner_user_id FROM ai_organizations WHERE external_id='resources-child'");const [[rootOrg]]=await localPool.query("SELECT id,legacy_owner_user_id FROM ai_organizations WHERE external_id='resources-root'");assert(childOwner)
+ const oldBuilds=ok(await request('official','/api/center/builds/status',{buildIds:['legacy-remote']},'POST',`Bearer ${(await center.serviceToken(credential,'official-build')).token}`));assert.equal(oldBuilds.length,1)
+ const hiddenBuilds=ok(await request('official','/api/center/builds/status',{buildIds:['legacy-remote']},'POST',`Bearer ${(await center.serviceToken(credential,'official-build','resources-child')).token}`));assert.equal(hiddenBuilds.length,0)
  // Configure existing model/key management and review its new supply definition
  // through real HTTP, with no center preregistration of local model identities.
  const provider=ok(await request('local','/api/model-providers',{id:'review-provider',name:'虚构自接供应商',baseUrl:'https://review-provider.example/v1'},'POST',rootCookie))
@@ -171,7 +194,7 @@ try{
  await restartLocal()
  assert(ok(await request('local','/api/client/skill-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.skill))
  assert(ok(await request('local','/api/client/agent-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.agent))
- const report={actualOfficialAndLocalProcesses:true,legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,paidSupplierCalls:0,productionChanged:false}
+ const report={actualOfficialAndLocalProcesses:true,legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,officialScopeBackfillCli:true,oldBuildReadableByRootOnly:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,paidSupplierCalls:0,productionChanged:false}
  await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2),{mode:0o600});console.log('Resource HTTP regression: '+JSON.stringify(report));completed=true
 }finally{
  await stop('local');await stop('official');if(centerServer){centerServer.closeAllConnections();await new Promise(r=>centerServer.close(r))}

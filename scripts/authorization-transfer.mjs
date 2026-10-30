@@ -4,11 +4,12 @@ import { readLegacyDeploymentSnapshot, collectMigrationProofs } from '../src/ser
 import { applyLocalLegacyBinding } from '../src/services/licensing/local-legacy-binding.mjs'
 import { shadowLegacyAuthorization, legacyRollbackStatus } from '../src/services/licensing/migration-safety.mjs'
 import { writeMigrationArtifact } from '../src/services/licensing/migration-artifacts.mjs'
+import { previewOfficialLegacyScope, applyOfficialLegacyScope } from '../src/services/licensing/official-legacy-scope.mjs'
 
 const [command, ...args] = process.argv.slice(2), env = process.env
 const read = async file => JSON.parse(await fs.readFile(file, 'utf8'))
-const commands = { export: 2, manifest: 3, preview: 2, 'apply-center': 3, 'bind-local': 3, shadow: 2, 'rollback-check': 2 }
-if (!Object.hasOwn(commands, command) || args.length !== commands[command]) throw new Error('Usage: authorization-transfer.mjs export profile.json snapshot.json | manifest snapshot.json mapping.json manifest.json | preview manifest.json preview.json | apply-center manifest.json preview.json receipt.json | bind-local manifest.json receipt.json report.json | shadow manifest.json report.json | rollback-check snapshot.json report.json')
+const commands = { export: 2, manifest: 3, preview: 2, receipt: 2, 'apply-center': 3, 'bind-local': 3, 'official-preview': 3, 'official-apply': 4, shadow: 2, 'rollback-check': 2 }
+if (!Object.hasOwn(commands, command) || args.length !== commands[command]) throw new Error('Usage: authorization-transfer.mjs export profile.json snapshot.json | manifest snapshot.json mapping.json manifest.json | preview manifest.json preview.json | receipt manifest.json receipt.json | apply-center manifest.json preview.json receipt.json | bind-local manifest.json receipt.json report.json | official-preview manifest.json receipt.json preview.json | official-apply manifest.json receipt.json preview.json report.json | shadow manifest.json report.json | rollback-check snapshot.json report.json')
 
 function database() {
   const fields = ['HOST', 'USER', 'PASSWORD', 'NAME']
@@ -51,6 +52,7 @@ try {
     result = { batchId: reviewed.batchId, snapshot: await read(args[0]), mapping: reviewed.mapping }; output = args[2]
   }
   if (command === 'preview') { result = await center('legacy-imports/preview', await read(args[0])); output = args[1] }
+  if (command === 'receipt') { const manifest = await read(args[0]); result = await center(`legacy-imports/${encodeURIComponent(manifest.batchId)}/receipt`, {}); output = args[1] }
   if (command === 'apply-center') {
     if (env.AI_AUTHORIZATION_MIGRATION !== 'approved') throw new Error('After reviewing the preview, explicitly set AI_AUTHORIZATION_MIGRATION=approved')
     const manifest = await read(args[0]), preview = await read(args[1])
@@ -61,6 +63,14 @@ try {
     const manifest = await read(args[0]); pool = database()
     result = await applyLocalLegacyBinding({ pool, ...manifest, result: await read(args[1]), publicKeys: await publicKeys(),
       maintenance: env.AI_AUTH_TRANSFER_MAINTENANCE === '1', publicUrl: env.AI_AUTH_TRANSFER_PUBLIC_URL, instanceId: env.AI_AUTH_TRANSFER_INSTANCE_ID }); output = args[2]
+  }
+  if (command === 'official-preview' || command === 'official-apply') {
+    const manifest = await read(args[0]), imported = await read(args[1]); pool = database()
+    const input = { pool, ...manifest, result: imported, publicKeys: await publicKeys() }
+    if (command === 'official-apply') {
+      if (env.AI_AUTHORIZATION_MIGRATION !== 'approved') throw new Error('Explicit AI_AUTHORIZATION_MIGRATION=approved is required')
+      result = await applyOfficialLegacyScope({ ...input, previewDigest: (await read(args[2])).previewDigest, maintenance: env.AI_AUTH_TRANSFER_MAINTENANCE === '1' }); output = args[3]
+    } else { result = await previewOfficialLegacyScope(input); output = args[2]; if (result.blockers.length) process.exitCode = 2 }
   }
   if (command === 'shadow') {
     const manifest = await read(args[0]), imported = await center(`legacy-imports/${encodeURIComponent(manifest.batchId)}/receipt`, {})

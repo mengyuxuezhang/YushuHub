@@ -39,7 +39,7 @@ import { mergeReleaseHistory, readReleaseHistory, readAdminReleaseHistory } from
 import { cleanupFailedBuildStorage } from '../../src/services/storage-retention.mjs'
 import { migrateLegacyUploadStorage } from '../../src/services/upload-storage.mjs'
 import { ensureWorkerStagingDirectory, normalizeExistingWorkerStagingDirectories } from '../../src/services/worker-staging-permissions.mjs'
-import { hashPassword, verifyPassword, hashShort, createSecretToken, hashSecretToken, normalizeRedeemCode, createRedeemCode } from '../../src/utils/crypto.mjs'
+import { hashPassword, verifyPassword, createSecretToken, hashSecretToken, normalizeRedeemCode, createRedeemCode } from '../../src/utils/crypto.mjs'
 import { nowIso, toMysqlDateTime, parseOptionalDate, localDateString } from '../../src/utils/time.mjs'
 import { slugify, safeProjectId, safeUsername, safeCenterId, safeEndUsername } from '../../src/utils/slug.mjs'
 import { parseJson, parseLimit, parseFlag, parseCreditAmount, numberOrNull, pickFirstObject, stableStringify } from '../../src/utils/parse.mjs'
@@ -116,7 +116,7 @@ import { registerDeploymentAuthorizationRoutes } from '../../src/routes/deployme
 import { agentCommerceRuntime } from '../../src/services/licensing/commerce-runtime.mjs'
 import { resourceRuntime, buildResourceIdentity, lockBuildProject, assertProjectUserRetention } from '../../src/services/licensing/resource-runtime.mjs'
 import { officialResourceClient } from '../../src/services/licensing/official-resources.mjs'
-import { centerBuildScopes, assertRecordedOrganization } from '../../src/services/licensing/build-scopes.mjs'
+import { centerBuildScopes, assertRecordedOrganization, officialCenterProjectId as centerProjectId } from '../../src/services/licensing/build-scopes.mjs'
 import { ensureOfficialSupplierRegistration } from '../../src/services/licensing/official-registration.mjs'
 import { assertAccountingRuntime } from '../../src/services/licensing/accounting-mode.mjs'
 import { registerAgentSupplyRoutes } from '../../src/routes/agent-supply.mjs'
@@ -261,12 +261,6 @@ async function ensurePublicStaticAliases() {
   await fsp.mkdir(PUBLIC_PREVIEW_ROOT, { recursive: true })
   await ensureStaticAliasForPublicUrl(PUBLIC_UPDATE_BASE_URL, PUBLIC_UPDATE_ROOT)
   await ensureStaticAliasForPublicUrl(PUBLIC_PREVIEW_BASE_URL, PUBLIC_PREVIEW_ROOT)
-}
-
-function centerProjectId(supplierId, projectId) {
-  const base = slugify(`${supplierId}-${projectId}`, 'center-project')
-  if (base.length <= 63) return base
-  return `${base.slice(0, 52)}-${hashShort(base)}`
 }
 
 function normalizeBuildCenterConfig(input = {}) {

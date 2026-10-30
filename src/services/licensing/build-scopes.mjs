@@ -1,4 +1,11 @@
 import { failure } from './protocol.mjs'
+import { slugify } from '../../utils/slug.mjs'
+import { hashShort } from '../../utils/crypto.mjs'
+
+export function officialCenterProjectId(supplierId, projectId) {
+  const base = slugify(`${supplierId}-${projectId}`, 'center-project')
+  return base.length <= 63 ? base : `${base.slice(0, 52)}-${hashShort(base)}`
+}
 
 export function assertRecordedOrganization(record, organizationId) {
   if (record && organizationId && (record.organizationId || record.organization_id) !== organizationId) throw failure('BUILD_SCOPE_CHANGED', '资源不属于当前授权组织', 404)
