@@ -5,6 +5,7 @@ import { emitChunk } from './streaming.mjs'
 import { benefitFactor, consumptionFactor } from './benefits.mjs'
 import { assertSafeTaskRequest } from '../model-task-service.mjs'
 import { activeOffer, offerFor, offerKey, offerPriceNotices, reviseOffer } from './offer-pricing.mjs'
+import { createTerminalRefunds } from './terminal-refunds.mjs'
 
 function userPoints(amount, pointsPerCny, discount, multiplier = '1') {
   const numerator = micros(amount) * micros(pointsPerCny) * micros(discount) * micros(multiplier)
@@ -75,6 +76,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
     })
   }
   return {
+    refundPoints: createTerminalRefunds({ store, userBank, now }),
     async configure(tenant, input, actor) {
       const modelId = identifier(input.modelId), models = await catalog(tenant), model = models.find(m => m.id === modelId)
       if (!model) throw failure('MODEL_UNAVAILABLE', '模型不在授权范围', 403)
@@ -156,6 +158,8 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
         totals,
         entries: state.entries.filter(e => tenant.level === 1 || e.organizationId === tenant.id).slice(-200).reverse(),
         usage: operations.slice(-100).map(operation => ({ requestId: operation.requestId, state: operation.state,
+          points: operation.points || null, canRefundPoints: operation.organizationId === tenant.id && operation.state === 'settled' && Boolean(operation.points) && micros(operation.points) > 0n
+            && !(state.refundedRequests || []).includes(operation.requestId) && !state.entries.some(entry => entry.reverses === `terminal:${digest(operation.requestId)}`),
           salesAmount: operation.salesAmount, listSalesAmount: operation.listSalesAmount || operation.salesAmount, marketingSubsidy: operation.marketingSubsidy || '0.000000', supplyAmount: operation.supplyAmount,
           ...(tenant.level === 1 ? { upstreamAmount: operation.upstreamAmount, firstMargin: operation.firstMargin, secondMargin: operation.secondMargin } : { secondMargin: operation.secondMargin }) })),
         unsettled: state.unsettledCount ?? operations.filter(op => op.state !== 'settled').length }
@@ -239,5 +243,15 @@ export function sqlUserBank() {
   return {
     reserve: (connection, userId, points, id, model) => move(connection, userId, decimal(-micros(points)), id, model, 'supply_reserve'),
     settle: (connection, userId, reserved, actual, id, model) => move(connection, userId, decimal(micros(reserved) - micros(actual)), id, model, 'supply_settle'),
+    async refund(connection, tenant, userId, points, requestId, modelId, reason) {
+      if (!connection) throw new Error('Refund requires a database transaction')
+      const [[user]] = await connection.query('SELECT credit_balance,organization_id FROM ai_end_users WHERE id=? FOR UPDATE', [userId])
+      if (!user || user.organization_id !== tenant.localOrganizationId) throw failure('REFUND_SCOPE_CHANGED', '原终端用户已不属于本组织，不能退入其他组织', 409)
+      const balanceAfter = decimal(micros(String(user.credit_balance)) + micros(points))
+      await connection.query('UPDATE ai_end_users SET credit_balance=? WHERE id=?', [balanceAfter, userId])
+      await connection.query('INSERT INTO ai_credit_ledger (id,user_id,change_type,points_delta,balance_after,model_name,note,request_id) VALUES (?,?,?,?,?,?,?,?)',
+        [crypto.randomUUID(), userId, 'supply_refund', points, balanceAfter, modelId, `分级调用全额退积分：${reason}`.slice(0, 255), requestId])
+      return { balanceAfter }
+    },
   }
 }

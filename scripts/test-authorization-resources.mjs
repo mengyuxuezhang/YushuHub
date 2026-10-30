@@ -20,6 +20,8 @@ import { emptyPriceNotificationState } from '../src/services/licensing/price-not
 import { registerLicenseCenterRoutes } from '../src/routes/license-center.mjs'
 import { serviceApp, serviceErrors } from '../src/services/licensing/runtime.mjs'
 import { hashPassword } from '../src/utils/crypto.mjs'
+import { mysqlAccountingStore } from '../src/repositories/accounting.mjs'
+import { createAgentCommerce, sqlUserBank } from '../src/services/licensing/commerce.mjs'
 import { readLegacyDeploymentSnapshot, collectMigrationProofs } from '../src/services/licensing/migration-snapshot.mjs'
 import { applyLocalLegacyBinding } from '../src/services/licensing/local-legacy-binding.mjs'
 import { shadowLegacyAuthorization, legacyRollbackStatus } from '../src/services/licensing/migration-safety.mjs'
@@ -198,18 +200,35 @@ try{
  const [[pausedRoot]]=await localPool.query('SELECT status FROM ai_organizations WHERE id=?',[rootOrg.id]);assert.equal(pausedRoot.status,'disabled')
  assert.equal((await request('local','/api/client/mcp-market',undefined,'GET',childUser.auth)).status,403)
  await localPool.query("UPDATE ai_organizations SET status='enabled' WHERE id=?",[rootOrg.id])
+ const [[refundUser]]=await localPool.query('SELECT id,organization_id FROM ai_end_users WHERE id=?',[`child-user-${suffix}`])
+ assert(refundUser)
+ await localPool.query('UPDATE ai_end_users SET credit_balance=10 WHERE id=?',[refundUser.id])
+ const refundStore=mysqlAccountingStore(localPool,'commerce-v2','commerce'), refundPrice={version:1,components:[{meter:'request',phase:'request',amount:'1',unitSize:'1'}]},refundUsage=[{meter:'request',phase:'request',quantity:'1'}]
+ const fakeCommerce=createAgentCommerce({store:refundStore,rootId:'resources-root',userBank:sqlUserBank(),catalog:async()=>[{id:'fictional-refund-model',source:'custom',price:refundPrice,supplierCost:refundPrice,prepare:async request=>({request,upperUsage:refundUsage})}],invoke:async()=>({state:'done',usage:refundUsage})})
+ await fakeCommerce.configure({id:'resources-root',level:1},{modelId:'fictional-refund-model',expectedVersion:0,enabled:true,pointsPerCny:'1',saleMarkup:[],supplyMarkup:[]},'fixture')
+ await fakeCommerce.configure({id:'resources-child',level:2},{modelId:'fictional-refund-model',expectedVersion:0,enabled:true,pointsPerCny:'1',saleMarkup:[]},'fixture')
+ await fakeCommerce.credit({id:'resources-root',level:1},'resources-child','10','fixture-refund-funds','fictional-refund-receipt','fixture')
+ await fakeCommerce.submit({id:'resources-child',level:2},refundUser.id,{requestId:'inactive-refund-call',modelId:'fictional-refund-model',request:{}})
  await center.update('resources-child',{expectedVersion:2,status:'suspended'},'test')
  async function restartLocal(){await stop('local');const state=JSON.parse(await fs.readFile(dir+'/local-deployment.json','utf8'));state.checkedAt=0;await fs.writeFile(dir+'/local-deployment.json',JSON.stringify(state),{mode:0o600});await start('local','center',envLocal)}
  await restartLocal()
  assert.equal((await request('local','/api/client/mcp-market',undefined,'GET',childUser.auth)).status,403)
  assert.equal((await request('local','/api/client/mcp-market',undefined,'GET',rootUser.auth)).status,200)
+ childCookie=await login('local','resource_child',childPwd)
+ const refundInput={commandId:'inactive-refund-command',reason:'虚构暂停后退积分验收',organizationId:rootOrg.id}
+ const refunded=ok(await request('local','/api/supply/requests/inactive-refund-call/refund-points',refundInput,'POST',childCookie));assert.equal(refunded.points,'1.000000');assert.equal(refunded.cashRefunded,false)
+ assert.equal(ok(await request('local','/api/supply/requests/inactive-refund-call/refund-points',refundInput,'POST',childCookie)).entry.id,refunded.entry.id)
+ rootCookie=await login('local')
+ assert.equal((await request('local','/api/supply/requests/inactive-refund-call/refund-points',{...refundInput,commandId:'root-cannot-refund-child'},'POST',rootCookie)).status,404)
+ assert.equal(String((await localPool.query('SELECT credit_balance FROM ai_end_users WHERE id=?',[refundUser.id]))[0][0].credit_balance),'10.000000')
+ assert.equal((await refundStore.read()).wallets['resources-child'].balance,'9.000000')
  await center.update('resources-child',{expectedVersion:3,status:'enabled'},'test')
  const restore={expectedVersion:4,packageId:'second',packageVersion:1}, restorePreview=await center.preview('resources-child',restore)
  await center.update('resources-child',{...restore,previewDigest:restorePreview.previewDigest},'test')
  await restartLocal()
  assert(ok(await request('local','/api/client/skill-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.skill))
  assert(ok(await request('local','/api/client/agent-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.agent))
- const report={actualOfficialAndLocalProcesses:true,legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,officialScopeBackfillCli:true,oldBuildReadableByRootOnly:true,legacyPriceReviewCli:true,cachedLegacyPricePreserved:true,sourcePriceMutationRejected:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,paidSupplierCalls:0,productionChanged:false}
+ const report={actualOfficialAndLocalProcesses:true,legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,officialScopeBackfillCli:true,oldBuildReadableByRootOnly:true,legacyPriceReviewCli:true,cachedLegacyPricePreserved:true,sourcePriceMutationRejected:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,inactiveTerminalRefundHttp:true,terminalRefundDoesNotCreditSupply:true,paidSupplierCalls:0,productionChanged:false}
  await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2),{mode:0o600});console.log('Resource HTTP regression: '+JSON.stringify(report));completed=true
 }finally{
  await stop('local');await stop('official');if(centerServer){centerServer.closeAllConnections();await new Promise(r=>centerServer.close(r))}

@@ -958,3 +958,12 @@ test('legacy price review refuses lossy conversion, missing costs and unsupporte
   assert.throws(() => legacyPriceProposal({ ...plan, components: [{ ...component, salePoints: '0.00000001' }] }, { ...review, pointsPerCny: '1' }), { code: 'LEGACY_PRECISION_REVIEW_REQUIRED' })
   assert.equal(legacyPriceProposal({ ...plan, components: [{ ...component, salePoints: '1.00000000', unitSize: '1.00000000' }] }, { ...review, pointsPerCny: '1' }).sale.components[0].amount, '1.000000')
 })
+test('terminal refunds reject unknown, free and incomplete settlements without touching user points', async () => {
+  const { createTerminalRefunds } = await import('./terminal-refunds.mjs')
+  const state = emptyCommerceState()
+  state.requests = Object.fromEntries([['unknown', { state: 'unknown', points: '1', salesAmount: '1' }], ['free', { state: 'settled', points: '0', salesAmount: '0' }], ['incomplete', { state: 'settled', points: '1' }]].map(([id, fields]) => [id, { organizationId: 'child', userId: 'user', snapshot: { model: { id: 'model' } }, ...fields }]))
+  const store = memoryStateStore(state), refund = createTerminalRefunds({ store, userBank: { refund: () => { throw new Error('must not credit points') } } })
+  for (const id of ['unknown', 'free']) await assert.rejects(refund({ id: 'child', level: 2, localOrganizationId: 'local-child' }, { requestId: id, commandId: `refund-${id}`, reason: '虚构测试依据' }, 'owner'), { code: 'REQUEST_NOT_REFUNDABLE' })
+  await assert.rejects(refund({ id: 'child', level: 2, localOrganizationId: 'local-child' }, { requestId: 'incomplete', commandId: 'refund-incomplete', reason: '虚构测试依据' }, 'owner'), { code: 'REFUND_NOT_AUDITABLE' })
+  assert.deepEqual(await store.read(), state)
+})

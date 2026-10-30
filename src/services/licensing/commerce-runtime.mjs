@@ -112,7 +112,7 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
       const root = await client.recoveryIdentity()
       if (context.authorizationSource !== 'license-center' || context.memberStatus !== 'enabled' || ![1, 2].includes(context.organizationLevel)
         || (context.organizationLevel === 1 && context.externalId !== root.id)) throw failure('BINDING_MISMATCH', '历史账务主体与本地授权身份不匹配', 403)
-      return { id: context.externalId || context.organizationId, level: context.organizationLevel }
+      return { id: context.externalId || context.organizationId, level: context.organizationLevel, localOrganizationId: context.organizationId }
     },
     async service({ recovery = false } = {}) {
       const root = recovery ? await client.recoveryIdentity() : await client.claims()

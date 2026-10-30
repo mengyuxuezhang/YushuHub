@@ -37,6 +37,12 @@ export function registerAgentSupplyRoutes(app, { runtime, resolveUserContext, cl
   }))
   app.post('/api/supply/offers', requireAuth, requirePermission('pricing_rules.manage'), endpoint(async req => (await runtime.service()).configure(await context(req), req.body, req.user.id)))
   app.get('/api/supply/balance', requireAuth, requireAnyPermission(['pricing_rules.manage', 'credits.manage']), endpoint(async req => (await runtime.service({ recovery: true })).balance(await runtime.recordTenant(req.organizationContext))))
+  app.post('/api/supply/requests/:id/refund-points', requireAuth, requirePermission('credits.manage'), endpoint(async req => {
+    const local = req.organizationContext
+    if (!local.isOwner || local.memberStatus !== 'enabled') throw failure('OWNER_REQUIRED', '退积分须由所属组织的启用所有者处理', 403)
+    const tenant = await runtime.recordTenant(local)
+    return (await runtime.service({ recovery: true })).refundPoints(tenant, { requestId: req.params.id, commandId: req.body.commandId, reason: req.body.reason }, req.user.id)
+  }))
   app.post('/api/supply/children/:id/reverse', requireAuth, requirePermission('credits.manage'), endpoint(async req => {
     const local = req.organizationContext
     if (local.organizationLevel !== 1 || !local.isOwner || local.memberStatus !== 'enabled') throw failure('OWNER_REQUIRED', '供货冲正须由所属一级组织所有者操作', 403)

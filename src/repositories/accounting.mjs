@@ -181,6 +181,11 @@ export function mysqlAccountingStore(pool, book, kind) {
         if (account) state.wallets[walletId] = { ...decode(account.payload), balance: String(account.balance), reserved: String(account.reserved) }
         state.entries = entries.reverse().map(r => decode(r.payload))
         state[requestKey] = Object.fromEntries(requests.reverse().map(r => { const v = decode(r.payload); return [v.requestId, v] }))
+        if (kind === 'commerce' && requests.length) {
+          const [refunds] = await connection.query(`SELECT request_id FROM accounting_entries WHERE book=? AND kind='terminal_refund' AND request_id IN (?)${all ? '' : ' AND wallet_id=?'}`,
+            [book, Object.keys(state.requests), ...(all ? [] : [walletId])])
+          state.refundedRequests = refunds.map(row => row.request_id)
+        }
         state.unsettledCount = Number(count.n)
         return state
       })
@@ -200,9 +205,18 @@ export function mysqlAccountingStore(pool, book, kind) {
         COALESCE(SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(payload,'$.reversalOfKind'))='supply_debit' THEN amount ELSE 0 END),0) AS supplyRefunds,
         COALESCE(SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(payload,'$.reversalOfKind'))='credit' THEN amount ELSE 0 END),0) AS prepaymentCorrections
         FROM accounting_entries WHERE book=? AND kind='reversal'${all ? '' : ' AND wallet_id=?'}`, all ? [book] : [book, walletId])
+      const [[terminal]] = await connection.query(`SELECT
+        COALESCE(SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.points')) AS DECIMAL(32,6))),0) AS refundedPoints,
+        COALESCE(SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.salesAmount')) AS DECIMAL(32,6))),0) AS terminalRefunds,
+        COALESCE(SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(payload,'$.level'))='1' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.salesAmount')) AS DECIMAL(32,6)) ELSE 0 END),0) AS firstLevelTerminalRefunds
+        FROM accounting_entries WHERE book=? AND kind='terminal_refund'${all ? '' : ' AND wallet_id=?'}`, all ? [book] : [book, walletId])
       return { requestCount: Number(row.requestCount), pendingCount: Number(row.pendingCount || 0), ...Object.fromEntries(names.map(key => [key, String(row[key])])),
         supplyRefunds: String(adjustments.supplyRefunds), prepaymentCorrections: String(adjustments.prepaymentCorrections),
-        netMargin: decimal(micros(String(all ? row.firstMargin : row.secondMargin)) + (all ? -1n : 1n) * micros(String(adjustments.supplyRefunds))) }
+        refundedPoints: String(terminal.refundedPoints), terminalRefunds: String(terminal.terminalRefunds),
+        netSalesAmount: decimal(micros(String(row.salesAmount)) - micros(String(terminal.terminalRefunds))),
+        netPoints: decimal(micros(String(row.points)) - micros(String(terminal.refundedPoints))),
+        netMargin: decimal(micros(String(all ? row.firstMargin : row.secondMargin)) + (all ? -1n : 1n) * micros(String(adjustments.supplyRefunds))
+          - micros(String(all ? terminal.firstLevelTerminalRefunds : terminal.terminalRefunds))) }
       })
     },
     async pending() {

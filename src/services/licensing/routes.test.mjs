@@ -254,3 +254,22 @@ test('custom supply review is restricted to the active custom first owner and de
     keys = ['pricing_rules.manage']; assert.equal((await fetch(url)).status, 403); assert.equal(called, 2)
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
 })
+test('inactive owners refund only server-resolved terminal requests and staff or disabled members cannot use the route', async () => {
+  let context = { organizationId: 'local-child', externalId: 'child', organizationLevel: 2, authorizationSource: 'license-center', centralLicenseActive: false, memberStatus: 'enabled', organizationStatus: 'enabled', isOwner: true }
+  let permissions = ['credits.manage']
+  const calls = [], runtime = { recordTenant: async value => ({ id: value.externalId, localOrganizationId: value.organizationId, level: value.organizationLevel }),
+    service: async options => { assert.equal(options.recovery, true); return { refundPoints: async (...args) => { calls.push(args); return { cashRefunded: false } } } } }
+  setAuthDependencies({ getUserBySession: async () => ({ id: 'child-owner', organizationContext: context }), getEffectivePermissionKeys: async () => permissions, permissionByKey: () => null })
+  const app = express(); app.use(express.json()); registerAgentSupplyRoutes(app, { runtime })
+  app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ code: error.code }))
+  const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)) }), url = `http://127.0.0.1:${server.address().port}`
+  const refund = () => fetch(url + '/api/supply/requests/original-call/refund-points', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ organizationId: 'forged-root', requestId: 'forged-call', commandId: 'refund-command', reason: '虚构退回依据' }) })
+  try {
+    assert.equal((await refund()).status, 200)
+    assert.deepEqual(calls[0], [{ id: 'child', localOrganizationId: 'local-child', level: 2 }, { requestId: 'original-call', commandId: 'refund-command', reason: '虚构退回依据' }, 'child-owner'])
+    context = { ...context, isOwner: false }; assert.equal((await refund()).status, 403)
+    context = { ...context, isOwner: true, memberStatus: 'disabled' }; assert.equal((await refund()).status, 403)
+    context = { ...context, memberStatus: 'enabled' }; permissions = []; assert.equal((await refund()).status, 403)
+    assert.equal(calls.length, 1)
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+})

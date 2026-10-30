@@ -1113,3 +1113,50 @@ test('real MySQL legacy import CLI enforces MFA preview, concurrent idempotency,
     await pool.end(); if (path.resolve(dir).startsWith(path.join(os.tmpdir(), 'legacy-import-'))) await fs.rm(dir, { recursive: true, force: true })
   }
 })
+test('real MySQL terminal refunds preserve upstream balances, serialize duplicates and roll back user points atomically', { skip: !configured }, async () => {
+  const { gatewayDatabase = 'yushu_gateway_test', licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable test database required')
+  const pool = mysql.createPool({ ...config, database: gatewayDatabase, connectionLimit: 12 })
+  try {
+    await migrateAccounting({ pool, book: 'terminal-refunds', kind: 'commerce', sourceId: 'terminal-empty' })
+    const root = { id: 'refund-root', level: 1, localOrganizationId: 'local-refund-root' }, child = { id: 'refund-child', level: 2, localOrganizationId: 'local-refund-child' }
+    for (const tenant of [root, child]) await pool.query('INSERT INTO ai_end_users(id,status,credit_balance,organization_id,username) VALUES (?,\'enabled\',10,?,?)', [`${tenant.id}-user`, tenant.localOrganizationId, `${tenant.id}-user`])
+    const store = mysqlAccountingStore(pool, 'terminal-refunds', 'commerce'), bank = sqlUserBank()
+    const price = { version: 1, components: [{ meter: 'request', phase: 'request', amount: '1', unitSize: '1' }] }, usage = [{ meter: 'request', phase: 'request', quantity: '1' }]
+    const model = { id: 'refund-model', source: 'official', price, prepare: async request => ({ request, upperUsage: usage }) }
+    let calls = 0
+    const make = userBank => createAgentCommerce({ store, rootId: root.id, userBank, catalog: async () => [model], invoke: async () => { calls++; return { state: 'done', usage } } })
+    let service = make(bank)
+    await service.configure(root, { modelId: model.id, enabled: true, expectedVersion: 0, pointsPerCny: '1', saleMarkup: [{ meter: 'request', phase: 'request', amount: '1' }], supplyMarkup: [{ meter: 'request', phase: 'request', amount: '0.5' }] }, 'root-owner')
+    await service.configure(child, { modelId: model.id, enabled: true, expectedVersion: 0, pointsPerCny: '1', saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.5' }] }, 'child-owner')
+    await service.credit(root, child.id, '10', 'terminal-credit', 'virtual-terminal-receipt', 'root-owner')
+    const originals = []
+    for (const tenant of [root, child]) originals.push(await service.submit(tenant, `${tenant.id}-user`, { requestId: `${tenant.id}-request`, modelId: model.id, request: {} }))
+    const frozenRequests = (await store.read()).requests
+    const input = { requestId: 'refund-child-request', commandId: 'refund-command', reason: '虚构已结算调用全额退积分' }
+    await assert.rejects(service.refundPoints(root, input, 'root-owner'), { code: 'NOT_FOUND' })
+    await assert.rejects(service.refundPoints({ ...child, localOrganizationId: root.localOrganizationId }, input, 'child-owner'), { code: 'REFUND_SCOPE_CHANGED' })
+    service = make({ ...bank, refund: async (...args) => { await bank.refund(...args); throw new Error('simulated refund transaction failure') } })
+    await assert.rejects(service.refundPoints(child, input, 'child-owner'), /simulated refund transaction failure/)
+    assert.equal(String((await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='refund-child-user'"))[0][0].credit_balance), '8.000000')
+    assert.equal((await store.read()).entries.some(entry => entry.kind === 'terminal_refund'), false)
+    await pool.query("UPDATE ai_end_users SET status='disabled' WHERE id='refund-child-user'")
+    service = make(bank)
+    const [one, duplicate] = await Promise.all([service.refundPoints(child, input, 'child-owner'), service.refundPoints(child, input, 'child-owner')])
+    assert.equal(one.entry.id, duplicate.entry.id); assert.equal(one.points, '2.000000'); assert.equal(one.cashRefunded, false); assert.equal(one.upstreamBalancesChanged, false)
+    await assert.rejects(service.refundPoints(child, { ...input, commandId: 'another-refund' }, 'child-owner'), { code: 'REFUND_ALREADY_EXISTS' })
+    await assert.rejects(service.refundPoints(child, { ...input, reason: '重复编号不同原因' }, 'child-owner'), { code: 'IDEMPOTENCY_CONFLICT' })
+    await service.refundPoints(root, { requestId: 'refund-root-request', commandId: 'root-refund', reason: '虚构一级用户全额退积分' }, 'root-owner')
+    service = make({ ...bank, refund: () => { throw new Error('retry must not credit again') } })
+    assert.equal((await service.refundPoints(child, input, 'child-owner')).entry.id, one.entry.id)
+    assert.equal(calls, 2)
+    const state = await store.read(); assert.equal(state.wallets[child.id].balance, '8.500000'); assert.equal(state.wallets[child.id].reserved, '0.000000')
+    for (const original of originals) assert.deepEqual(state.requests[original.requestId], frozenRequests[original.requestId])
+    const [[count]] = await pool.query("SELECT COUNT(*) AS n FROM ai_credit_ledger WHERE change_type='supply_refund' AND request_id IN ('refund-root-request','refund-child-request')")
+    assert.equal(Number(count.n), 2)
+    const rootReport = await service.balance(root), childReport = await service.balance(child)
+    assert.equal(rootReport.totals.terminalRefunds, '4.000000'); assert.equal(rootReport.totals.netSalesAmount, '0.000000'); assert.equal(rootReport.totals.netMargin, '-0.500000')
+    assert.equal(childReport.totals.refundedPoints, '2.000000'); assert.equal(childReport.totals.netMargin, '-1.500000'); assert.equal(childReport.usage[0].canRefundPoints, false)
+    auditAccounting(state, 'commerce')
+  } finally { await pool.end() }
+})
