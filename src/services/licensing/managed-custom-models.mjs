@@ -1,12 +1,24 @@
 import { selectEligibleModelKeys } from '../model-key-scope.mjs'
 import { digest, failure, identifier, micros } from './protocol.mjs'
 import { validateSupplyPrice } from './pricing.mjs'
+import { IMAGE_RESOLUTION_TIERS } from '../image-generation.mjs'
 
 const types = { 'openai.chat': 'text', 'openai.images': 'image', 'bocha.search': 'search', 'minimax.speech': 'audio', 'minimax.speech_async': 'audio' }
 const tasks = { text: 'chat', image: 'image_generation', search: 'web_search', audio: 'speech_synthesis' }
+function costTemplate(type) {
+  const item = (meter, unitSize = '1', dimensions) => ({ meter, phase: meter === 'request' ? 'request' : 'usage', unitSize, amount: '', ...(dimensions ? { dimensions } : {}) })
+  return [item('request'), ...(type === 'text' ? ['input_tokens', 'cached_tokens', 'output_tokens'].map(meter => item(meter, '1000000'))
+    : type === 'image' ? IMAGE_RESOLUTION_TIERS.map(resolution => item('image', '1', { resolution })) : type === 'audio' ? [item('billable_characters', '1000')] : [])]
+}
 // A reviewed supply definition references an existing model identity. Credentials
 // stay in the original encrypted key pool; they never enter the public catalog.
 export function managedCustomModels({ pool, materializeKey }) {
+  async function organizationFor(root, recovery = false) {
+    if (!recovery && (root.level !== 1 || root.modelMode !== 'custom')) throw failure('MODEL_FIXED', '只有自定义一级可以使用本地模型配置', 403)
+    const [rows] = await pool.query(`SELECT id,legacy_owner_user_id FROM ai_organizations WHERE external_id=? AND agent_level=1${recovery ? '' : " AND status='enabled'"}`, [root.id])
+    if (rows.length !== 1 || !rows[0].legacy_owner_user_id) throw failure('MODEL_SCOPE_UNRESOLVED', '一级模型归属需先核对迁入', 409)
+    return rows[0]
+  }
   async function resolve(definition, root, { credentials = false, credentialId, recovery = false } = {}) {
     if (!definition.providerModelId) return definition
     if (!recovery && (root.level !== 1 || root.modelMode !== 'custom')) throw failure('MODEL_FIXED', '只有自定义一级可以使用本地模型配置', 403)
@@ -17,9 +29,7 @@ export function managedCustomModels({ pool, materializeKey }) {
     // changing a connection file cannot silently raise a downstream base price.
     if (validateSupplyPrice(definition.price).components.some(item => micros(item.amount) !== 0n)) throw failure('MANAGED_PRICE_REQUIRED', '密钥池模型基准金额须为0，实际售价和供货价在分级定价界面配置')
     if (!types[definition.adapter] || definition.taskType !== tasks[types[definition.adapter]] || definition.keyEnv || definition.baseUrl || definition.model || definition.apiKey) throw failure('INVALID_MODEL_BINDING', '密钥池模型须使用本地定义的模型和连接，不能同时覆盖连接或凭据')
-    const [organizations] = await pool.query(`SELECT id,legacy_owner_user_id FROM ai_organizations WHERE external_id=? AND agent_level=1${recovery ? '' : " AND status='enabled'"}`, [root.id])
-    if (organizations.length !== 1 || !organizations[0].legacy_owner_user_id) throw failure('MODEL_SCOPE_UNRESOLVED', '一级模型归属需先核对迁入', 409)
-    const organization = organizations[0]
+    const organization = await organizationFor(root, recovery)
     const [[row]] = await pool.query(`SELECT m.id,m.model_id,m.display_name,m.model_type,m.endpoint_path,m.context_window,p.id AS provider_id,p.base_url
       FROM ai_provider_models m JOIN ai_model_providers p ON p.id=m.provider_id
       WHERE m.id=? AND m.organization_id=? AND p.organization_id=?${recovery ? '' : " AND m.archived_at IS NULL AND m.status='enabled' AND p.status='enabled'"}`,
@@ -51,6 +61,20 @@ export function managedCustomModels({ pool, materializeKey }) {
     return { ...result, credentialId: key.id, apiKey: materialized.api_key }
   }
   return { resolve,
+    async candidates(root) {
+      const organization = await organizationFor(root)
+      const [rows] = await pool.query(`SELECT m.id,m.model_id,m.display_name,m.model_type,m.context_window,m.provider_id FROM ai_provider_models m
+        JOIN ai_model_providers p ON p.id=m.provider_id WHERE m.organization_id=? AND p.organization_id=?
+        AND m.status='enabled' AND m.archived_at IS NULL AND p.status='enabled' ORDER BY m.id`, [organization.id, organization.id])
+      const [voices] = rows.some(row => row.model_type === 'audio') ? await pool.query(`SELECT v.provider_model_id,v.provider_voice_id,v.display_name FROM ai_system_voices v
+        JOIN ai_model_upstream_accounts a ON a.id=v.upstream_account_id
+        JOIN ai_provider_models m ON m.id=v.provider_model_id AND m.provider_id=a.provider_id AND m.organization_id=v.organization_id WHERE v.organization_id=? AND v.status='enabled'
+        AND a.organization_id=v.organization_id AND a.status='enabled' ORDER BY v.id`, [organization.id]) : [[]]
+      return rows.filter(row => Object.values(types).includes(row.model_type || 'text')).map(row => ({ id: row.id, clientId: row.model_id, name: row.display_name, modelType: row.model_type || 'text', contextWindow: Number(row.context_window), providerId: row.provider_id, costComponents: costTemplate(row.model_type || 'text'),
+        adapters: Object.keys(types).filter(adapter => types[adapter] === (row.model_type || 'text')),
+        voices: [...new Map(voices.filter(voice => voice.provider_model_id === row.id).map(voice => [voice.provider_voice_id, { id: voice.provider_voice_id, name: voice.display_name }])).values()],
+      }))
+    },
     async used(id) { await pool.query('UPDATE ai_model_provider_keys SET last_used_at=CURRENT_TIMESTAMP(3) WHERE id=?', [identifier(id)]) },
   }
 }

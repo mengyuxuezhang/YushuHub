@@ -13,6 +13,7 @@ import { BASE_PACKAGES } from '../src/services/licensing/packages.mjs'
 import { createLicenseCenter, emptyCenterState } from '../src/services/licensing/center.mjs'
 import { migrateAccounting } from '../src/services/licensing/accounting-migration.mjs'
 import { emptyResourceIntents } from '../src/services/licensing/resource-runtime.mjs'
+import { emptyCustomDefinitions } from '../src/services/licensing/custom-definitions.mjs'
 import { emptyPriceNotificationState } from '../src/services/licensing/price-notifications.mjs'
 import { registerLicenseCenterRoutes } from '../src/routes/license-center.mjs'
 import { serviceApp, serviceErrors } from '../src/services/licensing/runtime.mjs'
@@ -34,7 +35,7 @@ const ports={local:await freePort(),official:await freePort()}, urls=Object.from
 let centerUrl, envLocal
 async function stop(n){const p=processes[n];if(p&&p.exitCode===null){p.kill('SIGTERM');await new Promise(r=>p.once('exit',r))}delete processes[n];if(logs[n])await fs.writeFile(`${dir}/${n}.log`,logs[n],{mode:0o600})}
 async function start(n,mode,extra={}){
- logs[n]='';const p=spawn(process.execPath,['cloud/ai-admin/server.mjs'],{cwd:root,env:{...process.env,NODE_ENV:'test',AI_AUTHORIZATION_MODE:mode,AI_OFFICIAL_AUTHORIZATION_MODE:'legacy',AI_CENTER_SUPPLIER_MANAGEMENT:'0',AI_AGENT_CUSTOM_MODELS_FILE:'',AI_MODEL_GATEWAY_URL:'',AI_ADMIN_PORT:String(ports[n]),AI_ADMIN_HOST:'127.0.0.1',AI_ADMIN_PUBLIC_URL:`https://resources-${n}.example.com`,AI_ADMIN_PASSWORD:password,AI_DB_HOST:config.host,AI_DB_PORT:String(config.port),AI_DB_USER:config.user,AI_DB_PASSWORD:config.password,AI_DB_NAME:names[n==='local'?0:1],AI_BUILD_CENTER_URL:'',AI_BUILD_CENTER_TOKEN:'',AI_BUILD_CENTER_SUPPLIER_ID:'',AI_LICENSE_STATE_FILE:`${dir}/${n}-deployment.json`,AI_CURATED_SKILL_ROOT:`${dir}/${n}-skills`,AI_CURATED_SKILL_KEK_PATH:`${dir}/${n}-kek`,AI_CURATED_SKILL_SIGNING_PRIVATE_PATH:`${dir}/${n}-signing-private.pem`,AI_CURATED_SKILL_SIGNING_PUBLIC_PATH:`${dir}/${n}-signing-public.pem`,AI_UPLOAD_DIR:`${dir}/${n}-uploads`,AI_PRICE_NOTIFICATIONS_KEY_FILE:`${dir}/${n}-notifications.key`,...extra},stdio:['ignore','pipe','pipe'],windowsHide:true})
+ logs[n]='';const p=spawn(process.execPath,['cloud/ai-admin/server.mjs'],{cwd:root,env:{...process.env,NODE_ENV:'test',AI_AUTHORIZATION_MODE:mode,AI_OFFICIAL_AUTHORIZATION_MODE:'legacy',AI_CENTER_SUPPLIER_MANAGEMENT:'0',AI_AGENT_CUSTOM_MODELS_FILE:'',AI_MODEL_GATEWAY_URL:'',AI_ADMIN_PORT:String(ports[n]),AI_ADMIN_HOST:'127.0.0.1',AI_ADMIN_PUBLIC_URL:`https://resources-${n}.example.com`,AI_ADMIN_PASSWORD:password,AI_DB_HOST:config.host,AI_DB_PORT:String(config.port),AI_DB_USER:config.user,AI_DB_PASSWORD:config.password,AI_DB_NAME:names[n==='local'?0:1],AI_BUILD_CENTER_URL:'',AI_BUILD_CENTER_TOKEN:'',AI_BUILD_CENTER_SUPPLIER_ID:'',AI_LICENSE_STATE_FILE:`${dir}/${n}-deployment.json`,AI_CURATED_SKILL_ROOT:`${dir}/${n}-skills`,AI_CURATED_SKILL_KEK_PATH:`${dir}/${n}-kek`,AI_CURATED_SKILL_SIGNING_PRIVATE_PATH:`${dir}/${n}-signing-private.pem`,AI_CURATED_SKILL_SIGNING_PUBLIC_PATH:`${dir}/${n}-signing-public.pem`,AI_UPLOAD_DIR:`${dir}/${n}-uploads`,AI_MODEL_CREDENTIAL_KEY_PATH:`${dir}/${n}-model-credentials.key`,AI_PRICE_NOTIFICATIONS_KEY_FILE:`${dir}/${n}-notifications.key`,...extra},stdio:['ignore','pipe','pipe'],windowsHide:true})
  processes[n]=p;p.stdout.on('data',b=>logs[n]+=String(b));p.stderr.on('data',b=>logs[n]+=String(b))
  for(let i=0;i<120;i++){if(p.exitCode!==null){await stop(n);throw Error(`${n} stopped; protected log retained`)}try{if((await fetch(urls[n]+'/api/runtime-info')).ok)return}catch{}await new Promise(r=>setTimeout(r,500))}throw Error('startup timed out')
 }
@@ -60,15 +61,29 @@ try{
  await start('official','legacy',{AI_OFFICIAL_AUTHORIZATION_MODE:'center',AI_CENTER_SUPPLIER_MANAGEMENT:'1',AI_LICENSE_CENTER_URL:centerUrl})
  await start('local','legacy');await stop('local')
  await localPool.query(await fs.readFile(root+'/src/db/authorization-local.sql','utf8'));await migrateAccounting({pool:localPool,book:'commerce-v2',kind:'commerce',sourceId:'commerce-v1'})
- await mysqlStateStore(localPool,'local-resources-v1',emptyResourceIntents()).migrate();await mysqlStateStore(localPool,'commerce-v2-price-notifications',emptyPriceNotificationState()).migrate()
+ await mysqlStateStore(localPool,'local-resources-v1',emptyResourceIntents()).migrate();await mysqlStateStore(localPool,'commerce-v2-price-notifications',emptyPriceNotificationState()).migrate();await mysqlStateStore(localPool,'commerce-v2-custom-definitions',emptyCustomDefinitions()).migrate()
  envLocal={AI_LICENSE_CENTER_URL:centerUrl,AI_LICENSE_INSTANCE_ID:'resource-instance',AI_LICENSE_PUBLIC_KEYS_FILE:dir+'/public-keys.json',AI_BUILD_CENTER_URL:urls.official}
- const grant=await center.issue({id:'resources-root',name:'虚构资源一级',packageId:'first-fixed',domain:'https://resources-local.example.com',expiresAt:null},'test')
+ const grant=await center.issue({id:'resources-root',name:'虚构资源一级',packageId:'first-custom',domain:'https://resources-local.example.com',expiresAt:null},'test')
  await start('local','center',envLocal);let rootCookie=await login('local');ok(await request('local','/api/authorization/activate',{code:grant.code},'POST',rootCookie));rootCookie=await login('local')
  credential=JSON.parse(await fs.readFile(dir+'/local-deployment.json','utf8')).credential
  const sub=await center.issue({id:'resources-child',name:'虚构资源二级',packageId:'second',parentId:'resources-root',expiresAt:null},'test')
  const invitation=ok(await request('local','/api/authorization/children/activate',{code:sub.code,username:'resource_child'},'POST',rootCookie)).invitation
  const childPwd=crypto.randomBytes(20).toString('hex');ok(await request('local','/api/authorization/invitation',{invitation,password:childPwd}));let childCookie=await login('local','resource_child',childPwd)
  const [[childOwner]]=await localPool.query("SELECT legacy_owner_user_id FROM ai_organizations WHERE external_id='resources-child'");const [[rootOrg]]=await localPool.query("SELECT id,legacy_owner_user_id FROM ai_organizations WHERE external_id='resources-root'");assert(childOwner)
+ // Configure existing model/key management and review its new supply definition
+ // through real HTTP, with no center preregistration of local model identities.
+ const provider=ok(await request('local','/api/model-providers',{id:'review-provider',name:'虚构自接供应商',baseUrl:'https://review-provider.example/v1'},'POST',rootCookie))
+ const localModel=ok(await request('local','/api/provider-models',{providerId:provider.id,modelId:'vendor-reviewed',displayName:'虚构审核文本',modelType:'text',contextWindow:100},'POST',rootCookie))
+ ok(await request('local',`/api/model-providers/${provider.id}/keys`,{apiKey:'fictional-review-key',providerModelId:localModel.id},'POST',rootCookie))
+ const review=ok(await request('local','/api/supply/custom-models',undefined,'GET',rootCookie)), candidate=review.candidates.find(item=>item.id===localModel.id)
+ assert(candidate);assert.equal(JSON.stringify(review).includes('fictional-review-key'),false);assert.equal(JSON.stringify(review).includes('review-provider.example'),false)
+ const reviewInput={providerModelId:localModel.id,expectedRevision:0,adapter:'openai.chat',status:'enabled',currency:'CNY',memo:'虚构报价审核',contextWindow:100,maxOutputTokens:5,clientId:'vendor-reviewed',costComponents:candidate.costComponents.map(item=>({...item,amount:'0.1'})),organizationId:'forged-child'}
+ assert.equal(ok(await request('local','/api/supply/custom-models',reviewInput,'PUT',rootCookie)).revision,1)
+ assert.equal((await request('local','/api/supply/custom-models',reviewInput,'PUT',rootCookie)).status,409)
+ assert.equal((await request('local','/api/supply/custom-models',undefined,'GET',childCookie)).status,403)
+ ok(await request('local','/api/supply/offers',{modelId:localModel.id,expectedVersion:0,enabled:true,pointsPerCny:'1',saleMarkup:[{meter:'request',phase:'request',amount:'1'}],supplyMarkup:[{meter:'request',phase:'request',amount:'0.5'}]},'POST',rootCookie))
+ const inherited=ok(await request('local','/api/supply/catalog',undefined,'GET',childCookie));assert(inherited.some(row=>row.model.id===localModel.id))
+ assert.equal(JSON.stringify(inherited).includes('supplierCost'),false);assert.equal(JSON.stringify(inherited).includes('review-provider.example'),false)
  const officialCookie=await login('official')
  ok(await request('official','/api/curated-skills',{id:ids.skill,name:'隔离保护技能',distributionType:'protected'},'POST',officialCookie));await uploadSkill(officialCookie,'1.0.0')
  ok(await request('official','/api/curated-mcps',{id:ids.mcp,name:'隔离MCP'},'POST',officialCookie));const mcpVersion=ok(await request('official',`/api/curated-mcps/${ids.mcp}/versions`,{version:'1.0.0',config:{transport:'remote',url:'https://example.com/mcp'}},'POST',officialCookie));ok(await request('official',`/api/curated-mcps/${ids.mcp}/versions/${mcpVersion.id}/publish`,{},'POST',officialCookie))
@@ -122,7 +137,7 @@ try{
  await restartLocal()
  assert(ok(await request('local','/api/client/skill-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.skill))
  assert(ok(await request('local','/api/client/agent-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.agent))
- const report={actualOfficialAndLocalProcesses:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,paidSupplierCalls:0,productionChanged:false}
+ const report={actualOfficialAndLocalProcesses:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,paidSupplierCalls:0,productionChanged:false}
  await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2),{mode:0o600});console.log('Resource HTTP regression: '+JSON.stringify(report));completed=true
 }finally{
  await stop('local');await stop('official');if(centerServer){centerServer.closeAllConnections();await new Promise(r=>centerServer.close(r))}

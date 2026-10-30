@@ -23,6 +23,14 @@ export function registerAgentSupplyRoutes(app, { runtime, resolveUserContext, cl
   app.get('/api/supply/notifications', requireAuth, endpoint(async req => (await notificationOwner(req)).state()))
   app.put('/api/supply/notifications/config', requireAuth, endpoint(async req => (await notificationOwner(req)).configure(req.body, req.user.id)))
   app.post('/api/supply/notifications/test', requireAuth, endpoint(async req => (await notificationOwner(req)).test(req.body.requestId, req.user.id)))
+  const customOwner = async req => {
+    if (!req.organizationContext?.isOwner || req.organizationContext.memberStatus !== 'enabled') throw failure('OWNER_REQUIRED', '供货定义须由启用的一级所有者审核', 403)
+    const tenant = await context(req)
+    if (tenant.level !== 1 || tenant.modelMode !== 'custom') throw failure('MODEL_FIXED', '仅自定义一级可审核自接模型', 403)
+    return tenant
+  }
+  app.get('/api/supply/custom-models', requireAuth, requirePermission('pricing_rules.manage'), requirePermission('model_providers.manage'), endpoint(async req => runtime.customReview.list(await customOwner(req))))
+  app.put('/api/supply/custom-models', requireAuth, requirePermission('pricing_rules.manage'), requirePermission('model_providers.manage'), endpoint(async req => runtime.customReview.save(await customOwner(req), req.body, req.user.id)))
   app.get('/api/supply/catalog', requireAuth, requirePermission('pricing_rules.manage'), endpoint(async req => {
     const tenant = await context(req), rows = await (await runtime.service()).list(tenant)
     return rows.map(row => publicSupplyCatalogRow(row, tenant.level))

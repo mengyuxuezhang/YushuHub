@@ -6,6 +6,7 @@ import { createLicenseCenter, emptyCenterState } from './center.mjs'
 import { createAgentCommerce, emptyCommerceState } from './commerce.mjs'
 import { createPriceNotifications, emptyPriceNotificationState } from './price-notifications.mjs'
 import { managedCustomModels } from './managed-custom-models.mjs'
+import { customDefinitionService, emptyCustomDefinitions } from './custom-definitions.mjs'
 import { modelPriceAt, offerFor, offerKey } from './offer-pricing.mjs'
 import { createSupplyLedger, emptyLedgerState } from './ledger.mjs'
 import { createModelGateway } from './gateway.mjs'
@@ -800,4 +801,34 @@ test('managed custom models bind root ownership and active scoped keys without e
   const received = [], adapter = httpGatewayAdapters(async (_url, options) => { received.push(options.headers.Authorization); return new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1 } })) })['openai.chat']
   await Promise.all(['one', 'two'].map(apiKey => adapter.submit({ adapter: 'openai.chat', model: 'vendor-chat', baseUrl: row.base_url, apiKey }, { messages: ['test'] })))
   assert.deepEqual(received.sort(), ['Bearer one', 'Bearer two'])
+})
+
+
+test('reviewed custom definitions preserve immutable history, decimal costs and metering with explicit owner review', async () => {
+  const root = { id: 'root', level: 1, modelMode: 'custom' }, store = memoryStateStore(emptyCustomDefinitions()), inspected = []
+  const managed = { candidates: async () => [{ id: 'voice', voices: [{ id: 'public-voice', name: '公共音色' }] }], resolve: async (definition, owner) => { inspected.push(structuredClone(definition)); assert.equal(owner.id, root.id); return { clientId: definition.id } } }
+  const review = customDefinitionService({ store, managed, fileIds: ['file-model'], now: () => 123 })
+  const costComponents = ['request', 'input_tokens', 'cached_tokens', 'output_tokens'].map(meter => ({ meter, phase: meter === 'request' ? 'request' : 'usage', amount: '0.000001', unitSize: '1000000' }))
+  const input = { providerModelId: 'chat', expectedRevision: 0, status: 'enabled', adapter: 'openai.chat', currency: 'CNY', costComponents, memo: '虚构报价核定', contextWindow: 100, maxOutputTokens: 5, clientId: 'vendor/chat' }
+  const first = await review.save(root, { ...input, organizationId: 'forged', apiKey: 'never-store' }, 'owner')
+  assert.equal(first.revision, 1); assert.equal(first.definition.clientId, 'vendor/chat')
+  assert.equal(first.definition.supplierCost.components[0].amount, '0.000001'); assert(first.definition.price.components.every(item => item.amount === '0.000000'))
+  assert.equal(JSON.stringify(await store.read()).includes('never-store'), false)
+  assert.equal(JSON.stringify(inspected).includes('forged'), false)
+  await assert.rejects(review.save(root, input, 'owner'), { code: 'VERSION_CONFLICT' })
+  await review.save(root, { ...input, expectedRevision: 1, costComponents: costComponents.map(item => ({ ...item, amount: '0.000002' })) }, 'owner')
+  assert.equal((await review.version('root', 'chat', 1)).supplierCost.components[0].amount, '0.000001')
+  assert.equal((await review.version('root', 'chat', 2)).supplierCost.components[0].amount, '0.000002')
+  await assert.rejects(review.save(root, { ...input, expectedRevision: 2, costComponents: costComponents.map(item => ({ ...item, unitSize: '1' })) }, 'owner'), { code: 'METERING_IMMUTABLE' })
+  await assert.rejects(review.save(root, { ...input, expectedRevision: 2, costComponents: costComponents.slice(0, 1) }, 'owner'), { code: 'UNPRICED_USAGE' })
+  await assert.rejects(review.save(root, { ...input, providerModelId: 'other' }, 'owner'), { code: 'MODEL_ID_CONFLICT' })
+  await assert.rejects(review.save(root, { ...input, currency: 'USD' }, 'owner'), { code: 'COST_REVIEW_REQUIRED' })
+  await assert.rejects(review.save(root, { ...input, providerModelId: 'file-model' }, 'owner'), { code: 'FILE_MODEL_CONFLICT' })
+  await assert.rejects(review.save({ ...root, level: 2 }, input, 'owner'), { code: 'MODEL_FIXED' })
+  assert.equal((await review.definitions('sibling')).length, 0)
+  const voice = { ...input, providerModelId: 'voice', adapter: 'minimax.speech_async', costComponents: [{ meter: 'request', phase: 'request', amount: '0', unitSize: '1' }, { meter: 'billable_characters', amount: '1', unitSize: '1000' }], clientId: 'voice-client', allowedVoiceIds: ['private-voice'] }
+  await assert.rejects(review.save(root, voice, 'owner'), { code: 'VOICE_NOT_AUTHORIZED' })
+  const saved = await review.save(root, { ...voice, allowedVoiceIds: ['public-voice'] }, 'owner')
+  assert.deepEqual(saved.definition.publicVoices, [{ id: 'public-voice', name: '公共音色' }])
+  assert.equal((await review.list(root)).records.length, 2)
 })

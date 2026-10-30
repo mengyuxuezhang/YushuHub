@@ -12,6 +12,7 @@ import { supplyMembershipBenefit } from './benefits.mjs'
 import { validateSupplyPrice } from './pricing.mjs'
 import { createPriceNotifications, emptyPriceNotificationState, priceAnnouncementEvents } from './price-notifications.mjs'
 import { managedCustomModels } from './managed-custom-models.mjs'
+import { customDefinitionService, emptyCustomDefinitions } from './custom-definitions.mjs'
 
 export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch, benefits = supplyMembershipBenefit, now = Date.now }) {
   if (!client) return null
@@ -26,6 +27,17 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
   if (!Array.isArray(customModels) || new Set(customModels.map(model => model.id)).size !== customModels.length) throw failure('DUPLICATE_MODEL_ID', '自接模型定义必须为数组且模型ID唯一')
   const keyVault = new ModelCredentialVault(env.AI_MODEL_CREDENTIAL_KEY_PATH || path.resolve('data/model-credentials.key'))
   const managed = managedCustomModels({ pool, materializeKey: async key => ({ api_key: key.secret_ciphertext ? await keyVault.unseal(key.secret_ciphertext, key.upstream_account_id) : key.api_key }) })
+  const definitionStore = mysqlStateStore(pool, 'commerce-v2-custom-definitions', emptyCustomDefinitions())
+  const customReview = customDefinitionService({ store: definitionStore, managed, fileIds: customModels.map(model => model.id), now })
+  async function customDefinitions(rootId) {
+    const models = [...customModels.map(model => ({ ...model, definitionSource: 'file' })), ...(await customReview.definitions(rootId)).map(model => ({ ...model, definitionSource: 'reviewed-db' }))]
+    if (new Set(models.map(model => model.id)).size !== models.length) throw failure('MODEL_ID_CONFLICT', '受控文件和审核定义重复，须先核对迁入', 409)
+    return models
+  }
+  async function definitionFor(rootId, model, recovery = false) {
+    if (model.definitionSource === 'reviewed-db') return recovery ? customReview.version(rootId, model.id, model.version) : (await customReview.definitions(rootId)).find(item => item.id === model.id)
+    return customModels.find(item => item.id === model.id)
+  }
   const customExecution = (definition, root, options) => definition?.providerModelId ? managed.resolve(definition, root, options) : Promise.resolve(definition)
   const gatewayUrl = env.AI_MODEL_GATEWAY_URL ? new URL(env.AI_MODEL_GATEWAY_URL) : null
   if (gatewayUrl && gatewayUrl.protocol !== 'https:') throw new Error('Official gateway requires HTTPS')
@@ -58,8 +70,9 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
   }
   async function catalog(tenant) {
     const root = await client.claims(), official = gatewayUrl ? await gateway(tenant, '/catalog') : []
-    const definitions = []
-    if (root.modelMode === 'custom') for (const definition of customModels.filter(model => model.status === 'enabled' && tenant.modelIds.includes(model.id))) {
+    const definitions = [], availableDefinitions = root.modelMode === 'custom' ? await customDefinitions(root.id) : []
+    if (root.modelMode === 'custom') for (const definition of availableDefinitions.filter(model => model.status === 'enabled'
+      && (!tenant.allowedModelIds || tenant.allowedModelIds.includes(model.id)))) {
       try { definitions.push(await customExecution(definition, root)) } catch (error) { if (error.code !== 'MODEL_UNAVAILABLE') throw error }
     }
     const own = definitions.map(model => ({
@@ -67,6 +80,7 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
       contextWindow: model.contextWindow, maxOutputTokens: model.maxOutputTokens, maxImages: model.maxImages, allowedVoiceIds: model.allowedVoiceIds,
       supportsStreaming: model.supportsStreaming === true,
       ...(model.providerModelId ? { providerModelId: model.providerModelId, bindingHash: model.bindingHash } : {}),
+      definitionSource: model.definitionSource,
       executor: model.adapter === 'minimax.speech_async' ? 'async_job' : 'sync',
       supplierCost: model.supplierCost ? validateSupplyPrice(model.supplierCost) : null,
       publicVoices: (model.publicVoices || []).filter(voice => model.allowedVoiceIds?.includes(voice.id)).map(voice => ({ id: voice.id, name: String(voice.name || voice.id).slice(0, 120), description: String(voice.description || '').slice(0, 512) })), price: model.price, source: 'custom',
@@ -77,22 +91,22 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
       prepare: async request => {
         const adapter = adapters[model.adapter]
         if (!adapter) throw failure('ADAPTER_UNAVAILABLE', '该模型尚未接入供货计费上界', 503)
-        const execution = model.source === 'custom' ? await customExecution(customModels.find(config => config.id === model.id), root, { credentials: Boolean(model.providerModelId) || model.adapter === 'minimax.speech_async' }) : { ...model, model: model.id }
+        const execution = model.source === 'custom' ? await customExecution(availableDefinitions.find(config => config.id === model.id), root, { credentials: Boolean(model.providerModelId) || model.adapter === 'minimax.speech_async' }) : { ...model, model: model.id }
         const prepared = await adapter.prepare(execution, request)
         return { upperUsage: prepared.upperUsage, request }
       },
     }))
   }
   const runtime = {
-    store, monitor, notifications,
+    store, monitor, notifications, customReview,
     async startMonitoring() {
-      await store.assertReady(); await monitorStore.read(); await priceStore.read(); monitor.start()
+      await store.assertReady(); await monitorStore.read(); await priceStore.read(); await definitionStore.read(); monitor.start()
       if (!priceTimer) { priceTimer = setInterval(() => runtime.scanPrices().catch(() => {}), 60_000); priceTimer.unref(); void runtime.scanPrices().catch(() => {}) }
     },
     async tenant(context) {
       const grant = await client.claims(context.externalId || (context.organizationLevel === 2 ? context.organizationId : undefined))
       if (grant.level !== context.organizationLevel) throw failure('BINDING_MISMATCH', '本地组织与授权层级不符', 403)
-      return { ...grant, billingOwnerUserId: context.billingOwnerUserId, ...(context.allowedModelIds ? { modelIds: grant.modelIds.filter(id => context.allowedModelIds.includes(id)) } : {}) }
+      return { ...grant, billingOwnerUserId: context.billingOwnerUserId, ...(context.allowedModelIds ? { allowedModelIds: context.allowedModelIds, modelIds: grant.modelIds.filter(id => context.allowedModelIds.includes(id)) } : {}) }
     },
     async recordTenant(context) {
       const root = await client.recoveryIdentity()
@@ -107,7 +121,7 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
           if (model.source === 'official') return gateway(tenant, '/requests', { ...input, modelId: model.id, priceHash: digest(JSON.stringify(model.price)) }, undefined, options)
           let config
           try {
-            config = await customExecution(customModels.find(item => item.id === model.id), root, { credentials: true })
+            config = await customExecution(await definitionFor(root.id, model), root, { credentials: true })
             if (!config || root.modelMode !== 'custom' || config.version !== model.version || config.adapter !== model.adapter || config.bindingHash !== model.bindingHash) throw failure('MODEL_UNAVAILABLE', '自接模型配置不可用', 403)
             if (config.credentialId) await managed.used(config.credentialId)
           } catch (error) { error.noCharge = true; throw error }
@@ -119,7 +133,7 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
         },
         lookup: async (tenant, operation, options) => {
           if (operation.snapshot.model.source !== 'official') {
-            const original = operation.snapshot.model, definition = customModels.find(item => item.id === original.id)
+            const original = operation.snapshot.model, definition = await definitionFor(root.id, original, true)
             const config = await customExecution(definition, root, { credentials: true, credentialId: operation.job?.credentialId, recovery: true })
             const adapter = config && adapters[config.adapter]
             if (!config || config.version !== original.version || config.bindingHash !== original.bindingHash || config.adapter !== original.adapter || config.adapter !== 'minimax.speech_async' || !adapter?.recover) throw failure('RECONCILIATION_REQUIRED', '自接模型原配置或查询适配器不可用，禁止自动重发', 409)

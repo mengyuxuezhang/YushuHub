@@ -30,9 +30,10 @@ import { createResourceCoordinator, emptyResourceIntents } from './resource-runt
 import { UserUsageReportRepository } from '../../repositories/user-usage-report.mjs'
 import { emptyPriceNotificationState } from './price-notifications.mjs'
 import { offerFor } from './offer-pricing.mjs'
-import { HOUR } from './protocol.mjs'
+import { HOUR, decimal, micros } from './protocol.mjs'
 import { normalizeReportQuery } from '../user-usage-report.mjs'
 import { centerBuildScopes } from './build-scopes.mjs'
+import { emptyCustomDefinitions } from './custom-definitions.mjs'
 import { publicSupplyCatalogRow } from '../../routes/agent-supply.mjs'
 
 const configured = Boolean(process.env.LICENSING_TEST_DB)
@@ -378,6 +379,7 @@ test('real MySQL: independent services, HTTP activation, concurrent accounting, 
     const runtimeClient = { claims: async () => { if (expired) throw new Error('LICENSE_INACTIVE'); return { id: 'root', level: 1, modelMode: 'fixed' } },
       serviceToken: async () => { assert(!expired); return 'normal' }, recoveryIdentity: async () => ({ id: 'root' }),
       recoveryToken: async (org, id) => { assert.equal(org, 'root'); assert.equal(id, 'runtime-accepted'); return 'recovery' } }
+    await mysqlStateStore(gatewayPool, 'commerce-v2-custom-definitions', emptyCustomDefinitions()).migrate()
     const localRuntime = agentCommerceRuntime({ client: runtimeClient, database: () => gatewayPool, benefits: async () => ({ discount: '1' }), env: { AI_MODEL_GATEWAY_URL: 'https://gateway.example.com' },
       fetchImpl: async (url, options) => {
         let data
@@ -458,6 +460,7 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
   try {
     await migrateAccounting({ pool, book: 'stream-official', kind: 'ledger', sourceId: 'stream-official-old' })
     await migrateAccounting({ pool, book: 'commerce-v2', kind: 'commerce', sourceId: 'runtime-source' })
+    await mysqlStateStore(pool, 'commerce-v2-custom-definitions', emptyCustomDefinitions()).migrate()
     await pool.query('CREATE TABLE IF NOT EXISTS ai_end_users (id VARCHAR(64) PRIMARY KEY,status VARCHAR(16),credit_balance DECIMAL(18,6))')
     await pool.query('CREATE TABLE IF NOT EXISTS ai_credit_ledger (id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),model_name VARCHAR(120),note VARCHAR(255),request_id VARCHAR(80))')
     await pool.query('CREATE TABLE ai_membership_cards (id VARCHAR(64) PRIMARY KEY,created_by VARCHAR(64),status VARCHAR(16),discount_percent DECIMAL(8,3),discount_modules JSON,updated_at DATETIME(3))')
@@ -924,7 +927,7 @@ test('real MySQL managed custom models reuse encrypted scoped key pools and reco
   if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable test database required')
   const pool = mysql.createPool({ ...config, database: gatewayDatabase }), dir = await fs.mkdtemp(path.join(os.tmpdir(), 'managed-custom-'))
   let runtime, active = true, vendorCalls = 0, queryCalls = 0, streamChunks = 0
-  const root = { id: 'managed-root', level: 1, modelMode: 'custom', modelIds: ['managed-chat', 'managed-async'] }, child = { ...root, id: 'managed-child', level: 2, parentId: root.id, billingOwnerUserId: 'managed-child-owner' }
+  const root = { id: 'managed-root', level: 1, modelMode: 'custom', modelIds: [] }, child = { ...root, id: 'managed-child', level: 2, parentId: root.id, billingOwnerUserId: 'managed-child-owner' }
   const client = { claims: async id => { if (!active) throw Object.assign(new Error('expired'), { statusCode: 403 }); return id === child.id ? child : root }, recoveryIdentity: async () => ({ id: root.id }) }
   const file = path.join(dir, 'models.json'), vault = new ModelCredentialVault(path.join(dir, 'credentials.key'))
   const zero = meter => ({ meter, phase: meter === 'request' ? 'request' : 'usage', amount: '0', unitSize: '1' })
@@ -969,6 +972,9 @@ test('real MySQL managed custom models reuse encrypted scoped key pools and reco
     for (const model of models) { await service.configure(root, { ...offer, modelId: model.id }, 'owner'); await service.configure(child, { ...offer, modelId: model.id, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.1' }] }, 'child') }
     await service.credit(root, child.id, '10', 'managed-fund', 'managed-virtual-receipt', 'owner')
     const listed = await service.list(child); assert.equal(listed.length, 2)
+    const restricted = await runtime.tenant({ organizationLevel: 2, externalId: child.id, allowedModelIds: ['managed-chat'] })
+    assert.deepEqual((await service.list(restricted)).map(row => row.model.id), ['managed-chat'])
+    assert.equal((await service.list(await runtime.tenant({ organizationLevel: 2, externalId: child.id, allowedModelIds: [] }))).length, 0)
     const publicCatalog = JSON.stringify(listed.map(row => publicSupplyCatalogRow(row, 2)))
     assert.equal(publicCatalog.includes('managed.example'), false); assert.equal(publicCatalog.includes('bindingHash'), false); assert.equal(publicCatalog.includes('fictional-'), false)
     const input = { requestId: 'managed-text-one', modelId: 'managed-chat', request: { messages: [{ role: 'user', content: 'hello' }], stream: true } }
@@ -998,4 +1004,54 @@ test('real MySQL managed custom models reuse encrypted scoped key pools and reco
     assert.equal(state.wallets[child.id].balance, '9.000000'); assert.equal(state.wallets[child.id].reserved, '0.000000')
     const [[user]] = await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='managed-user'"); assert.equal(String(user.credit_balance), '8.800000')
   } finally { runtime?.stop(); await pool.end(); if (path.resolve(dir).startsWith(path.join(os.tmpdir(), 'managed-custom-'))) await fs.rm(dir, { recursive: true, force: true }) }
+})
+
+
+test('real MySQL reviewed definitions survive restart and retain original async configuration after cost edits and archival', { skip: !configured }, async () => {
+  const { gatewayDatabase = 'yushu_gateway_test', licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable test database required')
+  const pool = mysql.createPool({ ...config, database: gatewayDatabase }), dir = await fs.mkdtemp(path.join(os.tmpdir(), 'reviewed-custom-'))
+  let runtime, active = true, submissions = 0, polls = 0
+  const root = { id: 'managed-root', level: 1, modelMode: 'custom', modelIds: [] }, child = { ...root, id: 'managed-child', level: 2, parentId: root.id, billingOwnerUserId: 'managed-child-owner' }
+  const client = { claims: async id => { if (!active) throw Object.assign(new Error('expired'), { statusCode: 403 }); return id === child.id ? child : root }, recoveryIdentity: async () => ({ id: root.id }) }
+  const vault = new ModelCredentialVault(path.join(dir, 'credentials.key'))
+  const make = () => agentCommerceRuntime({ client, database: () => pool, env: { AI_MODEL_CREDENTIAL_KEY_PATH: vault.keyFile }, fetchImpl: async (url, options) => {
+    const location = String(url)
+    if (location.endsWith('/v1/t2a_async_v2')) { submissions++; return new Response('{"base_resp":{"status_code":0},"task_id":12345,"usage_characters":3}') }
+    if (location.includes('/v1/query/')) { polls++; return new Response('{"base_resp":{"status_code":0},"task_id":12345,"status":"Success","file_id":54321}') }
+    if (location.includes('/v1/files/')) return new Response('{"base_resp":{"status_code":0},"file":{"file_id":54321,"download_url":"https://minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com/review.zip"}}')
+    if (location.endsWith('/review.zip')) return new Response(Buffer.from([80, 75, 3, 4, 0, 0, 0, 0]))
+    throw Error('unexpected mock supplier request')
+  } })
+  try {
+    await pool.query("UPDATE ai_model_providers SET organization_id='managed-local-root' WHERE id='managed-provider'")
+    await pool.query("ALTER TABLE ai_system_voices ADD upstream_account_id VARCHAR(64),ADD provider_voice_id VARCHAR(120),ADD display_name VARCHAR(120),ADD status VARCHAR(16)")
+    await pool.query("INSERT INTO ai_provider_models(id,model_id,organization_id,model_type,provider_id,display_name,endpoint_path,context_window) VALUES ('reviewed-audio','reviewed-speech','managed-local-root','audio','managed-provider','审核异步语音','/v1/t2a_v2',100)")
+    await pool.query("INSERT INTO ai_system_voices VALUES ('reviewed-public','managed-local-root','reviewed-audio','managed-account','approved-public','虚构公共音色','enabled')")
+    for (const id of ['pool-a', 'pool-b']) await pool.query("UPDATE ai_model_provider_keys SET secret_ciphertext=? WHERE id=?", [await vault.seal(`fictional-${id}`, 'managed-account'), id])
+    runtime = make(); const before = (await runtime.store.read()).wallets[child.id].balance
+    const [[userBefore]] = await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='managed-user'")
+    const input = { providerModelId: 'reviewed-audio', expectedRevision: 0, status: 'enabled', adapter: 'minimax.speech_async', currency: 'CNY', clientId: 'reviewed-speech', memo: '虚构语音成本核定', allowedVoiceIds: ['approved-public'],
+      costComponents: [{ meter: 'request', phase: 'request', amount: '0.2', unitSize: '1' }, { meter: 'billable_characters', phase: 'usage', amount: '0.01', unitSize: '1' }] }
+    const saved = await runtime.customReview.save(root, input, 'managed-owner'); assert.equal(saved.revision, 1)
+    const candidate = (await runtime.customReview.list(root)).candidates.find(item => item.id === 'reviewed-audio')
+    assert.equal(candidate.voices[0].id, 'approved-public'); assert(!JSON.stringify(candidate).includes('managed.example'))
+    let service = await runtime.service()
+    const offer = { modelId: 'reviewed-audio', enabled: true, pointsPerCny: '1', expectedVersion: 0, saleMarkup: [{ meter: 'request', phase: 'request', amount: '1' }], supplyMarkup: [{ meter: 'request', phase: 'request', amount: '0.5' }] }
+    await service.configure(root, offer, 'owner'); await service.configure(child, { ...offer, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.1' }] }, 'child')
+    const operation = await service.submit(child, 'managed-user', { requestId: 'reviewed-async-original', modelId: 'reviewed-audio', request: { text: 'abc', voiceId: 'approved-public' } })
+    assert.equal(operation.state, 'pending'); assert.equal(operation.snapshot.model.definitionSource, 'reviewed-db'); assert.equal(operation.snapshot.model.version, 1)
+    await runtime.customReview.save(root, { ...input, expectedRevision: 1, memo: '虚构新成本版本', costComponents: input.costComponents.map(item => ({ ...item, amount: '9' })) }, 'managed-owner')
+    runtime.stop(); runtime = make()
+    assert.equal((await runtime.customReview.version(root.id, 'reviewed-audio', 1)).supplierCost.components[0].amount, '0.200000')
+    assert.equal((await runtime.customReview.list(root)).records.find(row => row.definition.id === 'reviewed-audio').revision, 2)
+    await pool.query("UPDATE ai_provider_models SET status='disabled',archived_at=CURRENT_TIMESTAMP WHERE id='reviewed-audio'")
+    active = false; service = await runtime.service({ recovery: true })
+    const settled = await service.recover(child, 'managed-user', operation.requestId)
+    assert.equal(settled.state, 'settled'); assert.equal(settled.upstreamAmount, '0.230000'); assert.equal(settled.points, '0.600000'); assert.equal(submissions, 1); assert.equal(polls, 1)
+    await service.recover(child, 'managed-user', operation.requestId); assert.equal(polls, 1)
+    assert.equal((await runtime.store.read()).wallets[child.id].balance, decimal(micros(before) - 500000n))
+    const [[userAfter]] = await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='managed-user'"); assert.equal(String(userAfter.credit_balance), decimal(micros(String(userBefore.credit_balance)) - 600000n))
+    auditAccounting(await runtime.store.read(), 'commerce')
+  } finally { runtime?.stop(); await pool.end(); if (path.resolve(dir).startsWith(path.join(os.tmpdir(), 'reviewed-custom-'))) await fs.rm(dir, { recursive: true, force: true }) }
 })

@@ -11,3 +11,8 @@ export const supplyBalance = () => api<SupplyBalance>('/api/supply/balance')
 export const saveOffer = (input: unknown) => api<SupplyOffer>('/api/supply/offers', { method: 'POST', body: JSON.stringify(input) })
 export const creditChild = (childId: string, input: unknown) => api(`/api/supply/children/${encodeURIComponent(childId)}/credit`, { method: 'POST', body: JSON.stringify(input) })
 export const reverseChildEntry = (childId: string, input: unknown) => api(`/api/supply/children/${encodeURIComponent(childId)}/reverse`, { method: 'POST', body: JSON.stringify(input) })
+export interface CustomSupplyDefinition { id: string; version: number; status: string; adapter: string; clientId?: string; contextWindow?: number; maxOutputTokens?: number; maxImages?: number; supportsStreaming?: boolean; allowedVoiceIds?: string[]; supplierCost: SupplyPlan }
+export interface CustomSupplyCandidate { id: string; clientId: string; name: string; modelType: string; contextWindow: number; providerId: string; adapters: string[]; voices: { id: string; name: string }[]; costComponents: SupplyComponent[] }
+export interface CustomSupplyReview { candidates: CustomSupplyCandidate[]; records: { revision: number; definition: CustomSupplyDefinition; updatedAt: number; updatedBy: string }[]; fileModelIds: string[] }
+export const customSupplyReview = () => api<CustomSupplyReview>('/api/supply/custom-models')
+export const saveCustomSupplyDefinition = (input: unknown) => api('/api/supply/custom-models', { method: 'PUT', body: JSON.stringify(input) })

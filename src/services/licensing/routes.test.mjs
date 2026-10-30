@@ -232,3 +232,25 @@ test('organization owners configure only their own price notification channel, i
     context = { ...context, isOwner: true, memberStatus: 'disabled' }; assert.equal((await fetch(url)).status, 403)
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
 })
+
+
+test('custom supply review is restricted to the active custom first owner and derives its own grant', async () => {
+  let context = { organizationId: 'local-root', externalId: 'central-root', organizationLevel: 1, authorizationSource: 'license-center', centralLicenseActive: true, organizationStatus: 'enabled', memberStatus: 'enabled', isOwner: true, modelMode: 'custom' }
+  let keys = ['pricing_rules.manage', 'model_providers.manage'], called = 0
+  setAuthDependencies({ getUserBySession: async () => ({ id: 'owner', organizationContext: context }), getEffectivePermissionKeys: async () => keys, permissionByKey: () => null })
+  const runtime = { tenant: async c => ({ id: c.externalId, level: c.organizationLevel, modelMode: c.modelMode }), customReview: {
+    list: async tenant => { called++; return { id: tenant.id } }, save: async (tenant, input, actor) => { called++; return { id: tenant.id, actor } },
+  } }
+  const app = express(); app.use(express.json()); registerAgentSupplyRoutes(app, { runtime })
+  app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ code: error.code }))
+  const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)) }), url = `http://127.0.0.1:${server.address().port}/api/supply/custom-models`
+  const save = () => fetch(url + '?organizationId=sibling', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ organizationId: 'sibling' }) })
+  try {
+    assert.deepEqual(await (await fetch(url)).json(), { success: true, data: { id: 'central-root' } })
+    assert.deepEqual(await (await save()).json(), { success: true, data: { id: 'central-root', actor: 'owner' } })
+    for (const patch of [{ modelMode: 'fixed' }, { organizationLevel: 2 }, { isOwner: false }, { memberStatus: 'disabled' }, { centralLicenseActive: false }]) {
+      const prior = context; context = { ...context, ...patch }; assert.equal((await save()).status, 403); context = prior
+    }
+    keys = ['pricing_rules.manage']; assert.equal((await fetch(url)).status, 403); assert.equal(called, 2)
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+})

@@ -4,6 +4,7 @@ import { migrateAccounting } from '../src/services/licensing/accounting-migratio
 import { mysqlStateStore } from '../src/repositories/licensing-state.mjs'
 import { emptyResourceIntents } from '../src/services/licensing/resource-runtime.mjs'
 import { emptyPriceNotificationState } from '../src/services/licensing/price-notifications.mjs'
+import { emptyCustomDefinitions } from '../src/services/licensing/custom-definitions.mjs'
 
 // Explicit command only. Does not read a production .env or run from app startup.
 if (process.env.AI_AUTHORIZATION_LOCAL_MIGRATION !== 'approved') throw new Error('Set AI_AUTHORIZATION_LOCAL_MIGRATION=approved for the explicitly selected database after backup')
@@ -16,5 +17,6 @@ try {
   await migrateAccounting({ pool, book: 'commerce-v2', kind: 'commerce', sourceId: 'commerce-v1', allowImport: process.argv.includes('--import-legacy') })
   await mysqlStateStore(pool, 'local-resources-v1', emptyResourceIntents()).migrate()
   await mysqlStateStore(pool, 'commerce-v2-price-notifications', emptyPriceNotificationState()).migrate()
+  await mysqlStateStore(pool, 'commerce-v2-custom-definitions', emptyCustomDefinitions()).migrate()
   console.log('Local authorization tables ready; no existing balances or grants changed.')
 } finally { await pool.end() }

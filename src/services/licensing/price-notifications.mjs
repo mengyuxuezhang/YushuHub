@@ -31,7 +31,7 @@ export function createPriceNotifications({ store, vault, fetchImpl = fetch, now 
 }
 
 export function priceAnnouncementEvents(state, rootId, tenant, models, at) {
-  return models.filter(model => tenant.modelIds.includes(model.id)).flatMap(model => offerPriceNotices(state, rootId, tenant, model, at).map(notice => ({
+  return models.filter(model => model.source === 'custom' || tenant.modelIds.includes(model.id)).flatMap(model => offerPriceNotices(state, rootId, tenant, model, at).map(notice => ({
     id: digest(JSON.stringify([rootId, tenant.id, model.id, notice])), kind: 'price-change', validUntil: notice.effectiveAt,
     text: `【调价通知】组织=${tenant.id}；模型=${model.id}；生效时间=${new Date(notice.effectiveAt).toISOString()}。请在“模型供货与收益”核对届时售价、积分换算和倍率；已受理任务沿用原价格快照。`,
   })))
