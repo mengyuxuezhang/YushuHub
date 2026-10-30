@@ -25,7 +25,15 @@ export function createModelGateway({ ledger, authorize, models, adapters, privat
     return publicSupplyPlan(validateSupplyPrice(versions.filter(p => p.effectiveAt <= now()).sort((a, b) => a.effectiveAt - b.effectiveAt || a.version - b.version).at(-1) || model.price))
   }
   async function privateAccess(token, modelId, write = false) {
-    const claims = await check(token), model = catalog.get(identifier(modelId)), adapter = model && adapters[model.adapter]
+    // The unsigned audience only selects which validator to call. The center
+    // still verifies the signature, binding, versions and current revocation.
+    let maintenance = false
+    if (!write && typeof token === 'string' && token.length < 16384) {
+      try { maintenance = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).aud === 'official-voice-maintenance' } catch {}
+    }
+    const claims = maintenance ? await authorize(token, 'official-voice-maintenance') : await check(token)
+    if (maintenance && (claims.modelId !== identifier(modelId) || claims.root?.level !== 1 || JSON.stringify(claims.actions) !== JSON.stringify(['read', 'delete']))) throw failure('VOICE_MAINTENANCE_DENIED', '维护凭据不适用于此模型', 403)
+    const model = catalog.get(identifier(modelId)), adapter = model && adapters[model.adapter]
     if (write) select(claims, modelId)
     if (!privateVoiceStore || model?.adapter !== 'minimax.private_voice' || !adapter?.remove) throw failure('VOICE_PRIVATE_SUPPLY_UNAVAILABLE', '该模型未开放私有音色', 503)
     if (!/^[a-f0-9]{64}$/.test(claims.subjectHash || '')) throw failure('VOICE_SUBJECT_REQUIRED', '私有音色须绑定已认证终端主体', 403)

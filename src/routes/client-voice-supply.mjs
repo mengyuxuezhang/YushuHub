@@ -44,6 +44,11 @@ export function registerClientVoiceSupplyRoutes(app, { runtime, tenantForUser })
   }
   registerClientPrivateVoiceSupplyRoutes(app, { runtime, tenantForUser, route, rowsFor })
   app.get('/api/client/voices', requireClientAuth, route(async (req, res) => {
+    if (req.clientAuthorizationActive === false) {
+      const tenant = await tenantForUser(req, { maintenance: true })
+      return res.json({ success: true, data: { models: [], voices: runtime.privateVoiceReady ? await runtime.privateVoiceInventory(tenant, req.clientUser.id) : [],
+        warnings: runtime.privateVoiceReady && runtime.privateVoiceWarnings ? await runtime.privateVoiceWarnings(tenant, req.clientUser.id) : [], maintenanceOnly: true } })
+    }
     const service = await runtime.service(), tenant = await tenantForUser(req), rows = await rowsFor(service, tenant, runtime.privateVoiceReady), models = [], voices = []
     for (const row of rows) {
       const id = row.model.clientId || row.model.id
@@ -89,12 +94,12 @@ export function registerClientVoiceSupplyRoutes(app, { runtime, tenantForUser })
     res.setHeader('X-Request-Id', operation.requestId)
     res.json({ success: true, data: publicOperation(operation, input.voiceId) })
   }))
-  const status = async req => (await runtime.service()).status(await tenantForUser(req), req.clientUser.id, identifier(req.params.id))
+  const status = async req => (await runtime.service({ recovery: true })).status(await tenantForUser(req, { maintenance: true }), req.clientUser.id, identifier(req.params.id))
   app.get('/api/client/voices/tasks/:id', requireClientAuth, route(async (req, res) => {
     try { res.json({ success: true, data: publicOperation(await status(req)) }) }
     catch (error) {
       if (!runtime.privateVoiceReady || error.code !== 'NOT_FOUND') throw error
-      const task = await runtime.privateVoice(await tenantForUser(req), req.clientUser.id, undefined, 'deletion', { requestId: identifier(req.params.id) })
+      const task = await runtime.privateVoice(await tenantForUser(req, { maintenance: true }), req.clientUser.id, undefined, 'deletion', { requestId: identifier(req.params.id) })
       res.json({ success: true, data: privateDeletionOperation(req.params.id, task.resourceId, task) })
     }
   }))
@@ -102,7 +107,7 @@ export function registerClientVoiceSupplyRoutes(app, { runtime, tenantForUser })
     const operation = await status(req)
     publicOperation(operation)
     const { bytes, audioSha256 } = operation.snapshot.model.adapter === 'minimax.private_voice' && operation.snapshot.voiceOperation !== 'public-synthesize'
-      ? await runtime.privateVoice(await tenantForUser(req), req.clientUser.id, operation.snapshot.model.id, 'audio', { requestId: operation.requestId }) : audioFor(operation)
+      ? await runtime.privateVoice(await tenantForUser(req, { maintenance: true }), req.clientUser.id, operation.snapshot.model.id, 'audio', { requestId: operation.requestId }) : audioFor(operation)
     res.setHeader('Cache-Control', 'private, no-store'); res.setHeader('X-Audio-Sha256', audioSha256)
     res.type('audio/mpeg').send(bytes)
   }))

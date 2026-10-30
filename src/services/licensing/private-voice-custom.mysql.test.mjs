@@ -51,7 +51,7 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
       }
     }
     const counts = { uploads: 0, clones: 0, syntheses: 0, deletes: 0, fileDeletes: 0, fileLists: 0, vendorRequests: 0 }, accounts = new Map(secrets.map(secret => [secret, new Set()])), files = new Map(secrets.map(secret => [secret, new Map()]))
-    let missingUsage = false, missingSpeechUsage = false, clock = Date.now(), failFileDelete = true, loseFileDeleteReply = true, loseFileUploadReply = false, failFileList = false, rejectVendor = false
+    let active = true, missingUsage = false, missingSpeechUsage = false, clock = Date.now(), failFileDelete = true, loseFileDeleteReply = true, loseFileUploadReply = false, failFileList = false, rejectVendor = false
     const ok = value => Response.json({ base_resp: { status_code: 0 }, ...value })
     const fetchImpl = async (url, options = {}) => {
       const parsed = new URL(url)
@@ -83,12 +83,13 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
       if (parsed.pathname === '/v1/delete_voice') { counts.deletes++; voices.delete(body.voice_id); return ok({}) }
       throw new Error('Unexpected simulated custom voice endpoint')
     }
-    const make = () => agentCommerceRuntime({ client: { claims: async () => root, recoveryIdentity: async () => root }, database: () => pool, fetchImpl, benefits: async () => ({ discount: '1' }), inspectPrivateVoiceAudio: async () => ({ duration: 10 }), now: () => clock,
+    const make = () => agentCommerceRuntime({ client: { claims: async () => { if (!active) throw Object.assign(new Error('simulated inactive grant'), { code: 'LICENSE_INACTIVE', statusCode: 403 }); return root }, recoveryIdentity: async () => root }, database: () => pool, fetchImpl, benefits: async () => ({ discount: '1' }), inspectPrivateVoiceAudio: async () => ({ duration: 10 }), now: () => clock,
       env: { AI_AGENT_CUSTOM_MODELS_FILE: file, AI_SUPPLY_PRIVATE_VOICE_ENABLED: '1', AI_SUPPLY_PRIVATE_VOICE_DIRECTORY: path.join(dir, 'storage'), AI_MODEL_CREDENTIAL_KEY_PATH: path.join(dir, 'credentials.key'), AI_PRICE_NOTIFICATIONS_KEY_FILE: path.join(dir, 'price.key'), AI_ACCOUNTING_MONITOR_KEY_FILE: path.join(dir, 'monitor.key') } })
     runtime = make()
     if (mode === 'keypool') await runtime.customReview.save(root, { providerModelId: model.id, clientId: model.clientId, expectedRevision: 0, status: 'enabled', adapter: model.adapter, currency: 'CNY', memo: '虚构密钥池私有音色成本审核', allowedVoiceIds: [], costComponents: model.supplierCost.components }, 'custom-owner')
-    setAuthDependencies({ getEndUserByToken: async token => ['custom-voice-client', 'custom-voice-peer'].includes(token) ? { id: token === 'custom-voice-client' ? 'custom-voice-user' : 'custom-voice-other', status: 'enabled' } : null, getClientAuthorization: async () => true })
-    const app = serviceApp(); registerClientVoiceSupplyRoutes(app, { runtime: { get privateVoiceReady() { return runtime.privateVoiceReady }, service: (...args) => runtime.service(...args), privateVoice: (...args) => runtime.privateVoice(...args), privateVoiceRoute: (...args) => runtime.privateVoiceRoute(...args), privateVoiceInventory: (...args) => runtime.privateVoiceInventory(...args), privateVoiceWarnings: (...args) => runtime.privateVoiceWarnings(...args) }, tenantForUser: async () => child }); serviceErrors(app)
+    setAuthDependencies({ getEndUserByToken: async token => ['custom-voice-client', 'custom-voice-peer'].includes(token) ? { id: token === 'custom-voice-client' ? 'custom-voice-user' : 'custom-voice-other', status: 'enabled' } : null, getClientAuthorization: async () => active })
+    const terminalContext = { externalId: child.id, organizationId: 'custom-local-child', organizationLevel: 2, billingOwnerUserId: 'child-owner' }
+    const app = serviceApp(); registerClientVoiceSupplyRoutes(app, { runtime: { get privateVoiceReady() { return runtime.privateVoiceReady }, service: (...args) => runtime.service(...args), privateVoice: (...args) => runtime.privateVoice(...args), privateVoiceRoute: (...args) => runtime.privateVoiceRoute(...args), privateVoiceInventory: (...args) => runtime.privateVoiceInventory(...args), privateVoiceWarnings: (...args) => runtime.privateVoiceWarnings(...args) }, tenantForUser: async (req, { maintenance = false } = {}) => maintenance ? runtime.terminalRecordTenant(terminalContext, req.clientUser) : child }); serviceErrors(app)
     server = await new Promise(resolve => { const result = app.listen(0, '127.0.0.1', () => resolve(result)) })
     const request = (route = '', body, token = 'custom-voice-client') => fetch(`http://127.0.0.1:${server.address().port}/api/client/voices${route}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, ...(body === undefined || body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) }) })
     let service = await runtime.service()
@@ -220,6 +221,24 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
     missingSpeechUsage = false
     const afterActivation = await service.submit(root, 'custom-root-voice-user', { requestId: 'custom-root-after-activation', modelId: model.id, request: { action: 'synthesize', resourceId: rootResource.id, text: 'abc' } })
     assert.equal(afterActivation.state, 'settled'); assert.equal(afterActivation.upstreamAmount, '3.000000')
+    active = false
+    await assert.rejects(runtime.terminalRecordTenant(terminalContext, { status: 'disabled' }), { code: 'BINDING_MISMATCH' })
+    await assert.rejects(runtime.terminalRecordTenant(terminalContext, { status: 'enabled', organizationId: 'foreign-local-org' }), { code: 'BINDING_MISMATCH' })
+    await assert.rejects(runtime.terminalRecordTenant({ ...terminalContext, externalId: '' }, { status: 'enabled' }), { code: 'BINDING_MISMATCH' })
+    const beforeInactiveCalls = { ...counts }, beforeInactiveWallet = (await service.balance(child)).wallet
+    const maintenanceCatalog = await request(); assert.equal(maintenanceCatalog.status, 200)
+    const historical = (await maintenanceCatalog.json()).data; assert.deepEqual(historical.models, []); assert.equal(historical.maintenanceOnly, true)
+    const recoveredResourceId = settled.result.voiceId
+    assert(historical.voices.some(voice => voice.id === recoveredResourceId))
+    assert.equal((await request(`/${recoveredResourceId}/preview`)).status, 200)
+    assert.equal((await request('/tasks/custom-voice-recover')).status, 200)
+    assert.equal((await request(`/${recoveredResourceId}/preview`, undefined, 'custom-voice-peer')).status, 404)
+    assert.equal((await runtime.privateVoice(root, 'custom-root-voice-user', model.id, 'audio', { requestId: afterActivation.requestId })).bytes.toString('hex'), '494433ff')
+    for (const route of ['/train', '/activate', '/synthesize']) assert.equal((await request(route, {})).status, 403)
+    assert.equal((await request('/delete', { voiceId: recoveredResourceId, idempotencyKey: 'inactive-delete-recovered' })).status, 200)
+    assert.equal((await request('/tasks/inactive-delete-recovered')).status, 200)
+    assert.equal(counts.clones, beforeInactiveCalls.clones); assert.equal(counts.syntheses, beforeInactiveCalls.syntheses)
+    assert.deepEqual((await service.balance(child)).wallet, beforeInactiveWallet)
     auditAccounting(await runtime.store.read(), 'commerce')
   } finally {
     runtime?.stop(); if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }

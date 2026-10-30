@@ -138,6 +138,7 @@ export async function requireClientAuth(req, res, next) {
     req.clientUser = user
     const authorization = deps.getClientAuthorization ? await deps.getClientAuthorization(user) : true
     const active = authorization === true || authorization?.active === true
+    req.clientAuthorizationActive = active
     if (!active && !expiredClientRequestAllowed(req.method, req.path)) {
       res.status(403).json({ success: false, code: 'LICENSE_INACTIVE', error: '所属代理授权或业务状态不可用' })
       return

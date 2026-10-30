@@ -213,14 +213,26 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
     },
     async introspect(token, audience) {
       const claims = verifyClaims(token, { keys: publicKeys, audience, now: now() }), state = await store.read()
-      const recovery = audience === 'official-model-recovery'
-      const grant = recovery ? state.grants[claims.sub] : current(state, claims.sub, now()), root = recovery ? state.grants[claims.rootId] : current(state, claims.rootId, now())
+      const recovery = audience === 'official-model-recovery', voiceMaintenance = audience === 'official-voice-maintenance', historical = recovery || voiceMaintenance
+      const grant = historical ? state.grants[claims.sub] : current(state, claims.sub, now()), root = historical ? state.grants[claims.rootId] : current(state, claims.rootId, now())
       if (!grant || !root || root.level !== 1 || (recovery && (grant.status === 'revoked' || root.status === 'revoked'
         || !claims.requestId || JSON.stringify(claims.actions) !== JSON.stringify(['status', 'poll', 'ack'])))) throw failure('RECOVERY_DENIED', '恢复权限无效或已撤销', 403)
+      if (voiceMaintenance && (grant.status === 'revoked' || root.status === 'revoked' || !activated(state, grant) || !activated(state, root)
+        || !/^[a-f0-9]{64}$/.test(claims.subjectHash || '') || !claims.modelId || JSON.stringify(claims.actions) !== JSON.stringify(['read', 'delete']))) throw failure('VOICE_MAINTENANCE_DENIED', '原音色维护权限无效或已撤销', 403)
       if (!recovery && !activated(state, grant)) throw failure('LICENSE_NOT_ACTIVATED', '授权尚未兑换激活', 403)
       if (claims.version !== grant.version || claims.rootVersion !== root.version || !bindingValid(root, claims.instanceId, now())
         || (grant.id !== root.id && grant.parentId !== root.id)) throw failure('STALE_LICENSE', '授权或绑定已变更', 403)
       return { ...claims, grant: publicGrant(grant), root: publicGrant(root) }
+    },
+    async voiceMaintenanceToken(token, organizationId, modelId, subjectHash) {
+      identifier(modelId)
+      if (typeof subjectHash !== 'string' || !/^[a-f0-9]{64}$/.test(subjectHash)) throw failure('INVALID_SUBJECT', '维护凭据必须绑定已认证终端主体')
+      const state = await store.read(), root = authenticate(state, token, true), grant = state.grants[identifier(organizationId || root.id)]
+      if (!grant || grant.status === 'revoked' || !activated(state, grant) || !activated(state, root)
+        || (grant.id !== root.id && grant.parentId !== root.id)) throw failure('VOICE_MAINTENANCE_DENIED', '原组织未激活、不属于此实例或已撤销', 403)
+      return { token: signClaims({ aud: 'official-voice-maintenance', sub: grant.id, rootId: root.id, modelId, subjectHash,
+        instanceId: root.instanceId, version: grant.version, rootVersion: root.version, actions: ['read', 'delete'],
+        iat: now(), exp: Math.min(now() + 60_000, root.bindingExpiresAt || Infinity) }, signing) }
     },
     async recoveryToken(token, organizationId, requestId) {
       identifier(requestId)

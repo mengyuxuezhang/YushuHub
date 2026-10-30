@@ -129,12 +129,12 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     store, monitor, notifications, customReview,
     privateVoiceReady: env.AI_SUPPLY_PRIVATE_VOICE_ENABLED === '1',
     async privateVoiceRoute(tenant, userId, resourceId) {
-      const root = await client.claims()
+      const root = await client.recoveryIdentity()
       return voiceRouting.find({ rootId: root.id, organizationId: tenant.id, subjectHash: digest(JSON.stringify([tenant.id, userId])) }, resourceId)
     },
     async privateVoiceInventory(tenant, userId) {
       const rows = []
-      const root = await client.claims(), scope = { rootId: root.id, organizationId: tenant.id, subjectHash: digest(JSON.stringify([tenant.id, userId])) }
+      const root = await client.recoveryIdentity(), scope = { rootId: root.id, organizationId: tenant.id, subjectHash: digest(JSON.stringify([tenant.id, userId])) }
       for (const slot of await voiceSlots.pending(scope)) {
         try { await runtime.privateVoice(tenant, userId, slot.model.id, 'upload-status', { requestId: slot.requestId }) }
         catch (error) { if (error.code !== 'VOICE_UPLOAD_NOT_FOUND') throw error }
@@ -148,7 +148,7 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
       return rows
     },
     async privateVoiceWarnings(tenant, userId) {
-      const root = await client.claims(), slots = await voiceSlots.pending({ rootId: root.id, organizationId: tenant.id, subjectHash: digest(JSON.stringify([tenant.id, userId])) })
+      const root = await client.recoveryIdentity(), slots = await voiceSlots.pending({ rootId: root.id, organizationId: tenant.id, subjectHash: digest(JSON.stringify([tenant.id, userId])) })
       return slots.map(slot => ({ requestId: slot.requestId, modelId: slot.model.clientId || slot.model.id, code: 'VOICE_UPLOAD_UNCONFIRMED', message: '上传尚未确认，仍占用音色额度；请按原请求重试或核对后清理' }))
     },
     async reconcilePrivate(tenant, requestId, input, actor) {
@@ -170,12 +170,12 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
       return (await runtime.service({ recovery: true })).recover(tenant, operation.userId, requestId)
     },
     async privateVoiceModels(tenant, userId) {
-      const root = await client.claims()
+      const root = await client.recoveryIdentity()
       return voiceRouting.models({ rootId: root.id, organizationId: tenant.id, subjectHash: digest(JSON.stringify([tenant.id, userId])) })
     },
     async privateVoice(tenant, userId, modelId, action, input = {}) {
-      const root = await client.claims(), context = { rootId: root.id, organizationId: tenant.id, subjectHash: digest(JSON.stringify([tenant.id, userId])), modelId }
       if (!['upload', 'list', 'preview', 'delete', 'audio', 'deletion', 'upload-status'].includes(action)) throw failure('VOICE_ACTION_INVALID', '私有音色操作无效')
+      const root = action === 'upload' ? await client.claims() : await client.recoveryIdentity(), context = { rootId: root.id, organizationId: tenant.id, subjectHash: digest(JSON.stringify([tenant.id, userId])), modelId }
       let model
       if (action === 'upload-status') {
         const slot = await voiceSlots.get(context, input.requestId)
@@ -189,9 +189,10 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
         const operation = await (await runtime.service({ recovery: true })).status(tenant, userId, input.requestId)
         model = operation.snapshot.model
         if (model.adapter !== 'minimax.private_voice' || (modelId && model.id !== modelId)) throw failure('VOICE_NOT_FOUND', '本主体音频不存在', 404)
+      } else if (action === 'list') {
+        model = (await voiceRouting.models(context)).find(row => row.id === modelId)
       } else {
         model = (await catalog(tenant)).find(row => row.id === modelId && row.adapter === 'minimax.private_voice')
-        if (!model && action === 'list') model = (await voiceRouting.models(context)).find(row => row.id === modelId)
       }
       if (!model) throw failure('MODEL_UNAVAILABLE', '私有音色模型不在当前供货目录或历史归属中', 403)
       modelId = model.id; context.modelId = modelId
@@ -205,7 +206,8 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
         if (!gatewayUrl) throw failure('GATEWAY_UNCONFIGURED', '官方模型网关未配置', 503)
         const prefix = `/private-voices/${encodeURIComponent(modelId)}`
         const suffix = { upload: '/upload', 'upload-status': `/uploads/${encodeURIComponent(input.requestId || '')}`, list: '', preview: `/resources/${encodeURIComponent(input.resourceId || '')}/preview`, delete: `/resources/${encodeURIComponent(input.resourceId || '')}/delete`, audio: `/requests/${encodeURIComponent(input.requestId || '')}/audio`, deletion: `/deletions/${encodeURIComponent(input.requestId || '')}` }[action]
-        const token = await client.serviceToken('official-models', tenant.id, context.subjectHash)
+        const token = action === 'upload' ? await client.serviceToken('official-models', tenant.id, context.subjectHash)
+          : await client.voiceMaintenanceToken(tenant.id, modelId, context.subjectHash)
         let body
         if (action === 'upload') {
           if (input.consent !== true || !Buffer.isBuffer(input.bytes) || input.bytes.length > 20 * 1024 * 1024) throw failure('VOICE_AUDIO_INVALID', '录音及复刻授权无效')
@@ -244,7 +246,7 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
       if (action === 'list') return voices.list(context)
       if (action === 'deletion') { const result = await voices.deletion(context, input.requestId); if (result.deleted) await voiceSlots.release(context, result.resourceId); return result }
       if (action === 'audio') {
-        const operation = await (await runtime.service()).status(tenant, userId, input.requestId)
+        const operation = await (await runtime.service({ recovery: true })).status(tenant, userId, input.requestId)
         if (operation.snapshot.model.id !== modelId || operation.state !== 'settled' || !operation.result?.audioArtifactId || operation.result?.error) throw failure('VOICE_AUDIO_PENDING', '原音频尚未确认', 409)
         return artifacts.read(context, operation.result.audioArtifactId)
       }
@@ -281,6 +283,15 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
       if (context.authorizationSource !== 'license-center' || context.memberStatus !== 'enabled' || ![1, 2].includes(context.organizationLevel)
         || (context.organizationLevel === 1 && context.externalId !== root.id)) throw failure('BINDING_MISMATCH', '历史账务主体与本地授权身份不匹配', 403)
       return { id: context.externalId || context.organizationId, level: context.organizationLevel, localOrganizationId: context.organizationId }
+    },
+    async terminalRecordTenant(context, user) {
+      const root = await client.recoveryIdentity()
+      // resolveUserContext looks up the terminal's billing owner in the local
+      // organization repository. It is not an administrative member session.
+      if (user?.status !== 'enabled' || !context.billingOwnerUserId || !context.organizationId || !context.externalId || ![1, 2].includes(context.organizationLevel)
+        || (user.organizationId && user.organizationId !== context.organizationId)
+        || (context.organizationLevel === 1 && context.externalId !== root.id)) throw failure('BINDING_MISMATCH', '终端历史资源归属与已绑定组织不匹配', 403)
+      return { id: context.externalId, level: context.organizationLevel, localOrganizationId: context.organizationId }
     },
     async service({ recovery = false } = {}) {
       const root = recovery ? await client.recoveryIdentity() : await client.claims()

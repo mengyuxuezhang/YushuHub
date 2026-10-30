@@ -76,6 +76,11 @@ export function createDeploymentLicenseClient({ store, centerUrl, instanceId, pu
       if (!state.credential || !state.rootId) throw failure('INSTANCE_UNAUTHORIZED', '实例尚未激活', 401)
       return { id: state.rootId }
     },
+    async voiceMaintenanceToken(organizationId, modelId, subjectHash) {
+      const state = await store.read()
+      if (!state.credential || !state.rootId) throw failure('INSTANCE_UNAUTHORIZED', '实例尚未激活', 401)
+      return (await request('voice-maintenance-token', { organizationId: organizationId || state.rootId, modelId, subjectHash }, state.credential)).token
+    },
     async monitorState() {
       const state = await store.read()
       return { activated: Boolean(state.credential && state.rootId), checkedAt: state.checkedAt || 0, rejected: Boolean(state.rejected) }

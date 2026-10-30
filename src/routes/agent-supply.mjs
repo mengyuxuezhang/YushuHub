@@ -62,9 +62,9 @@ export function registerAgentSupplyRoutes(app, { runtime, resolveUserContext, cl
     if (child.parentId !== tenant.id) throw failure('BINDING_MISMATCH', '只能审核绑定直属二级充值', 403)
     return (await runtime.service()).credit(tenant, child.id, req.body.amount, req.body.requestId, req.body.receipt, req.user.id)
   }))
-  const tenantForUser = async req => {
+  const tenantForUser = async (req, { maintenance = false } = {}) => {
     const context = await resolveUserContext(req.clientUser)
-    return runtime.tenant(context)
+    return maintenance ? runtime.terminalRecordTenant(context, req.clientUser) : runtime.tenant(context)
   }
   registerClientSupplyBridge(app, { runtime, tenantForUser })
   app.get('/api/client/supply/catalog', requireClientAuth, endpoint(async req => {

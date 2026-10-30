@@ -68,12 +68,12 @@ export function registerClientPrivateVoiceSupplyRoutes(app, { runtime, tenantFor
     res.json({ success: true, data: privateVoiceOperation(operation) })
   }))
   app.post('/api/client/voices/delete', requireClientAuth, route(async (req, res) => {
-    const requestId = voiceRequestId(req), resourceId = identifier(req.body?.voiceId), tenant = await tenantForUser(req)
+    const requestId = voiceRequestId(req), resourceId = identifier(req.body?.voiceId), tenant = await tenantForUser(req, { maintenance: true })
     const result = await runtime.privateVoice(tenant, req.clientUser.id, undefined, 'delete', { requestId, resourceId })
     res.json({ success: true, data: privateDeletionOperation(requestId, resourceId, result) })
   }))
   app.get('/api/client/voices/:id/preview', requireClientAuth, route(async (req, res) => {
-    const result = await runtime.privateVoice(await tenantForUser(req), req.clientUser.id, undefined, 'preview', { resourceId: identifier(req.params.id) })
+    const result = await runtime.privateVoice(await tenantForUser(req, { maintenance: true }), req.clientUser.id, undefined, 'preview', { resourceId: identifier(req.params.id) })
     res.setHeader('X-Audio-Sha256', result.audioSha256); res.setHeader('X-Content-Type-Options', 'nosniff'); res.type('audio/mpeg').send(result.bytes)
   }))
 }

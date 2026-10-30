@@ -465,6 +465,47 @@ test('expired deployment recovery is request-scoped and can only query, poll and
   await assert.rejects(center.recoveryToken(rotated.credential, 'first', 'accepted'), { code: 'INSTANCE_UNAUTHORIZED' })
 })
 
+test('expired voice maintenance is online, model and subject bound, and cannot create paid work or survive revocation and rebinding', async () => {
+  const { center, now, advance, publicKeys } = setup(), first = await root(center), subjectHash = digest('original-terminal')
+  const pending = await center.issue({ id: 'voice-pending-child', name: '未激活测试二级', packageId: 'second', parentId: 'first', expiresAt: '2027-01-01T00:00:00Z' }, 'operator')
+  await assert.rejects(center.voiceMaintenanceToken(first.credential, pending.grant.id, 'withdrawn-voice', subjectHash), { code: 'VOICE_MAINTENANCE_DENIED' })
+  await assert.rejects(center.voiceMaintenanceToken(first.credential, 'first', 'withdrawn-voice', 'raw-user'), { code: 'INVALID_SUBJECT' })
+  await center.update('first', { expectedVersion: 1, expiresAt: new Date(now() + 1000).toISOString(), modelIds: [] }, 'operator')
+  advance(2000)
+  const client = createDeploymentLicenseClient({ store: memoryStateStore({ ...emptyDeploymentState(), credential: first.credential, rootId: 'first', rejected: true }), publicKeys, now,
+    instanceId: 'instance-one', publicUrl: 'https://agent.example.com', centerUrl: 'https://center.example.com', fetchImpl: async (url, options) => {
+      assert(url.endsWith('/voice-maintenance-token'))
+      const body = JSON.parse(options.body)
+      return Response.json({ success: true, data: await center.voiceMaintenanceToken(options.headers.Authorization.slice(7), body.organizationId, body.modelId, body.subjectHash) })
+    } })
+  const token = await client.voiceMaintenanceToken('first', 'withdrawn-voice', subjectHash)
+  const claims = await center.introspect(token, 'official-voice-maintenance')
+  assert.equal(claims.subjectHash, subjectHash); assert.equal(claims.modelId, 'withdrawn-voice'); assert.deepEqual(claims.actions, ['read', 'delete'])
+  let paid = 0
+  const gateway = createModelGateway({ ledger: createSupplyLedger({ store: memoryStateStore(emptyLedgerState()), now }), now, authorize: (value, audience) => center.introspect(value, audience),
+    models: [{ id: 'withdrawn-voice', adapter: 'minimax.private_voice', status: 'disabled' }], adapters: { 'minimax.private_voice': { remove: async () => {}, prepare: async () => {}, submit: async () => { paid++ } } },
+    privateVoiceStore: { voices: { list: async scope => { assert.equal(scope.subjectHash, subjectHash); return [] } } } })
+  assert.deepEqual(await gateway.privateList(token, 'withdrawn-voice'), [])
+  await assert.rejects(gateway.privateList(token, 'another-model'), { code: 'VOICE_MAINTENANCE_DENIED' })
+  await assert.rejects(gateway.privateUpload(token, 'withdrawn-voice', {}), { code: 'INVALID_LICENSE' })
+  await assert.rejects(gateway.submit(token, { modelId: 'withdrawn-voice', requestId: 'forged-paid', request: {} }), { code: 'INVALID_LICENSE' })
+  const pieces = token.split('.'), forged = { ...JSON.parse(Buffer.from(pieces[1], 'base64url')), subjectHash: digest('another-terminal') }
+  await assert.rejects(gateway.privateList([pieces[0], Buffer.from(JSON.stringify(forged)).toString('base64url'), pieces[2]].join('.'), 'withdrawn-voice'), { code: 'INVALID_LICENSE' })
+  advance(60_001); await assert.rejects(gateway.privateList(token, 'withdrawn-voice'), { code: 'INVALID_LICENSE' })
+  const beforeRenewal = await client.voiceMaintenanceToken('first', 'withdrawn-voice', subjectHash)
+  await center.update('first', { expectedVersion: 2, expiresAt: null }, 'operator')
+  await assert.rejects(gateway.privateList(beforeRenewal, 'withdrawn-voice'), { code: 'STALE_LICENSE' })
+  const beforeRotation = await client.voiceMaintenanceToken('first', 'withdrawn-voice', subjectHash)
+  const rotated = await center.rotate('first', { instanceId: 'new-instance', domain: 'https://replacement.example.com' }, 'operator')
+  await assert.rejects(client.voiceMaintenanceToken('first', 'withdrawn-voice', subjectHash), { code: 'INSTANCE_UNAUTHORIZED' })
+  await assert.rejects(gateway.privateList(beforeRotation, 'withdrawn-voice'), { code: 'STALE_LICENSE' })
+  const beforeRevocation = (await center.voiceMaintenanceToken(rotated.credential, 'first', 'withdrawn-voice', subjectHash)).token
+  await center.update('first', { expectedVersion: 4, status: 'revoked' }, 'operator')
+  await assert.rejects(gateway.privateList(beforeRevocation, 'withdrawn-voice'), { code: 'VOICE_MAINTENANCE_DENIED' })
+  await assert.rejects(center.voiceMaintenanceToken(rotated.credential, 'first', 'withdrawn-voice', subjectHash), { code: 'INSTANCE_UNAUTHORIZED' })
+  assert.equal(paid, 0)
+})
+
 test('durable encrypted webhook: transitions, retries, rotation, restart and multi-worker delivery lease', async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'yushu-monitor-'))
   t.after(() => fs.rm(dir, { recursive: true, force: true }))

@@ -15,5 +15,7 @@ export function inactiveCentralPermissions(keys, context) {
 }
 export function expiredClientRequestAllowed(method, path) {
   return (method === 'GET' && (['/api/client/credits/me', '/api/client/credits/ledger'].includes(path) || /^\/api\/client\/payment-orders\/[^/]+$/.test(path)))
+    || (method === 'GET' && (path === '/api/client/voices' || /^\/api\/client\/voices\/(?:[^/]+\/preview|tasks\/[^/]+(?:\/audio)?)$/.test(path)))
+    || (method === 'POST' && path === '/api/client/voices/delete')
     || (method === 'POST' && path === '/api/client/logout')
 }

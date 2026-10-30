@@ -1409,13 +1409,14 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     firstRuntime = agentCommerceRuntime({ database: () => localPool, benefits: async () => ({ discount: '1' }), inspectPrivateVoiceAudio: async () => ({ duration: 10 }),
       client: { claims: async () => ({ ...root, modelMode: 'fixed' }), recoveryIdentity: async () => root,
         serviceToken: async (audience, organizationId, subjectHash) => (await center.serviceToken(rootActivation.credential, audience, organizationId, subjectHash)).token,
+        voiceMaintenanceToken: async (organizationId, modelId, subjectHash) => (await center.voiceMaintenanceToken(rootActivation.credential, organizationId, modelId, subjectHash)).token,
         recoveryToken: async (organizationId, requestId) => (await center.recoveryToken(rootActivation.credential, organizationId, requestId)).token },
       env: { AI_SUPPLY_PRIVATE_VOICE_ENABLED: '1', AI_MODEL_GATEWAY_URL: 'https://private-gateway.example.com', AI_MODEL_CREDENTIAL_KEY_PATH: path.join(dir, 'local-credentials.key'), AI_PRICE_NOTIFICATIONS_KEY_FILE: path.join(dir, 'local-price.key'), AI_ACCOUNTING_MONITOR_KEY_FILE: path.join(dir, 'local-monitor.key') },
       fetchImpl: async (url, options) => { const parsed = new URL(url); assert.equal(parsed.hostname, 'private-gateway.example.com'); const response = await fetch(`http://127.0.0.1:${privateServer.address().port}${parsed.pathname}`, options)
         if (losePrivateUploadReply && parsed.pathname.endsWith('/upload')) { losePrivateUploadReply = false; await response.body?.cancel(); throw new Error('simulated upload reply loss after remote commit') }; return response } })
     const localStore = firstRuntime.store, service = await firstRuntime.service()
     setAuthDependencies({ getEndUserByToken: async token => ['private-client', 'private-peer'].includes(token) ? { id: token === 'private-client' ? 'private-core-user' : 'private-peer-user', status: 'enabled' } : null, getClientAuthorization: async () => true })
-    const clientApp = serviceApp(); registerClientVoiceSupplyRoutes(clientApp, { runtime: firstRuntime, tenantForUser: async () => child }); serviceErrors(clientApp)
+    const clientApp = serviceApp(); registerClientVoiceSupplyRoutes(clientApp, { runtime: firstRuntime, tenantForUser: async (req, { maintenance = false } = {}) => maintenance ? firstRuntime.terminalRecordTenant({ externalId: child.id, organizationId: 'private-core-local-child', organizationLevel: 2, billingOwnerUserId: 'child-owner' }, req.clientUser) : child }); serviceErrors(clientApp)
     clientServer = await new Promise(resolve => { const server = clientApp.listen(0, '127.0.0.1', () => resolve(server)) })
     const clientFetch = (route = '', body, token = 'private-client') => fetch(`http://127.0.0.1:${clientServer.address().port}/api/client/voices${route}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, ...(body instanceof FormData || body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) }) })
     const markup = price.components.filter(item => item.meter !== 'request').map(({ meter, phase }) => ({ meter, phase, amount: '1' }))
@@ -1522,11 +1523,30 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     model.apiKey = 'fictional-private-key'
     assert.equal((await operatorRequest('/requests/private-unknown/resolve', { ...resolution, commandId: 'another-resolution' }, operatorToken)).status, 409)
     assert.equal(counts.clones, 2); assert.equal((await ledger.view(root.id)).balance, '80.000000')
-    const beforeDispatch = await voices.upload(identity, { ...upload, requestId: 'private-before-dispatch' }), originalJob = await voices.job(identity, 'private-clone')
+    const beforeDispatch = await firstRuntime.privateVoice(child, 'private-core-user', model.id, 'upload', { ...upload, requestId: 'private-before-dispatch', consent: true }), originalJob = await voices.job(identity, 'private-clone')
     await voices.claim(identity, beforeDispatch.id, { requestId: 'private-before-dispatch', action: 'clone', inputHash: hash('accepted before dispatch'), bindingHash: originalJob.bindingHash, name: '虚构崩溃恢复音色' })
     assert.equal((await core.recover(model, { requestId: 'private-before-dispatch' }, identity)).state, 'pending')
     const afterLease = privateVoiceAdapter({ voices, artifacts, book: 'official-v2', speech: httpGatewayAdapters(fetcher)['minimax.speech'], fetcher, now: () => Date.now() + 300_001 })
     assert.equal((await afterLease.recover(model, { requestId: 'private-before-dispatch' }, identity)).state, 'unknown')
+    await center.update(root.id, { expectedVersion: 1, status: 'suspended' }, 'fixture')
+    setAuthDependencies({ getEndUserByToken: async token => ['private-client', 'private-peer'].includes(token) ? { id: token === 'private-client' ? 'private-core-user' : 'private-peer-user', status: 'enabled' } : null, getClientAuthorization: async () => false })
+    const balancesBeforeMaintenance = { official: await ledger.view(root.id), local: (await service.balance(child)).wallet }, paidBeforeMaintenance = { clones: counts.clones, syntheses: counts.syntheses, uploads: counts.uploads }
+    const maintenanceCatalog = await clientFetch(); assert.equal(maintenanceCatalog.status, 200, await maintenanceCatalog.clone().text())
+    const maintenanceData = (await maintenanceCatalog.json()).data; assert.equal(maintenanceData.maintenanceOnly, true); assert.deepEqual(maintenanceData.models, [])
+    assert(maintenanceData.voices.some(voice => voice.id === uncertainResource.id))
+    assert.equal((await clientFetch(`/${uncertainResource.id}/preview`)).status, 200)
+    assert.equal((await clientFetch(`/${uncertainResource.id}/preview`, undefined, 'private-peer')).status, 404)
+    assert.equal((await clientFetch('/tasks/private-unknown')).status, 200)
+    for (const route of ['/train', '/activate', '/synthesize']) assert.equal((await clientFetch(route, {})).status, 403)
+    const maintenanceToken = (await center.voiceMaintenanceToken(rootActivation.credential, child.id, model.id, identity.subjectHash)).token
+    await assert.rejects(gateway.submit(maintenanceToken, { modelId: model.id, requestId: 'inactive-paid', request: {} }), { code: 'INVALID_LICENSE' })
+    assert.equal((await privateFetch('/upload', new FormData(), maintenanceToken)).status, 403)
+    assert.equal((await clientFetch('/delete', { voiceId: uncertainResource.id, idempotencyKey: 'inactive-official-delete' })).status, 200)
+    assert.equal((await clientFetch('/tasks/inactive-official-delete')).status, 200)
+    assert.deepEqual({ clones: counts.clones, syntheses: counts.syntheses, uploads: counts.uploads }, paidBeforeMaintenance)
+    assert.deepEqual({ official: await ledger.view(root.id), local: (await service.balance(child)).wallet }, balancesBeforeMaintenance)
+    await center.update(root.id, { expectedVersion: 2, status: 'revoked' }, 'fixture')
+    await assert.rejects(gateway.privateList(maintenanceToken, model.id), { code: 'VOICE_MAINTENANCE_DENIED' })
     assert.equal(counts.clones, 2); auditAccounting(await officialStore.read(), 'ledger'); auditAccounting(await localStore.read(), 'commerce')
   } finally {
     firstRuntime?.stop()
