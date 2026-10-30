@@ -175,7 +175,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       const prepared = await snapshot.model.prepare(request), upperUsage = prepared.upperUsage
       if (snapshot.model.supplierCost) quoteSupply(snapshot.model.supplierCost, upperUsage)
       if (snapshot.model.taskType === 'speech_synthesis') snapshot.speechVoiceId = prepared.request.voiceId
-      if (prepared.request.stream === true && (snapshot.model.source !== 'official' || typeof onChunk !== 'function')) throw failure('STREAM_UNAVAILABLE', '实时流式供货需使用官方流式传输入口')
+      if (prepared.request.stream === true && typeof onChunk !== 'function') throw failure('STREAM_UNAVAILABLE', '实时流式调用需使用流式传输入口')
       if (!Array.isArray(upperUsage)) throw failure('UNBOUNDED_REQUEST', '缺少可执行计费上界')
       const reservedSupply = quoteSupply(snapshot.supply, upperUsage)
       const reserved = await transact({ walletId: tenant.id, requestId, readConfiguration: true }, async (current, connection) => {

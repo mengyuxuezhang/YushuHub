@@ -19,17 +19,17 @@ export async function findKeyScopeModelId(pool, providerId, upstreamModelId, org
 }
 
 export async function selectEligibleModelKeys(pool, {
-  providerId, providerModelId = '', ownerUserId, organizationId, upstreamAccountId, encryptedOnly = false, limit = 1,
+  providerId, providerModelId = '', ownerUserId, organizationId, upstreamAccountId, activeAccountsOnly = false, encryptedOnly = false, limit = 1,
 }) {
   const params = [providerId, providerModelId || '']
   const conditions = ["k.provider_id=?", "k.status='enabled'", "(COALESCE(k.provider_model_id,'')='' OR k.provider_model_id=?)"]
   if (ownerUserId !== undefined) { conditions.push('k.owner_user_id=?'); params.push(ownerUserId) }
   if (organizationId !== undefined) { conditions.push('k.organization_id=?'); params.push(organizationId) }
   let accountJoin = ''
-  if (upstreamAccountId) {
+  if (upstreamAccountId || activeAccountsOnly) {
     accountJoin = 'JOIN ai_model_upstream_accounts a ON a.id=k.upstream_account_id'
-    conditions.push("a.id=? AND a.provider_id=k.provider_id AND a.organization_id=k.organization_id AND a.status='enabled'")
-    params.push(upstreamAccountId)
+    conditions.push("a.provider_id=k.provider_id AND a.organization_id=k.organization_id AND a.status='enabled'")
+    if (upstreamAccountId) { conditions.push('a.id=?'); params.push(upstreamAccountId) }
   }
   if (encryptedOnly) conditions.push('k.secret_ciphertext IS NOT NULL')
   const count = limit === 2 ? 2 : 1

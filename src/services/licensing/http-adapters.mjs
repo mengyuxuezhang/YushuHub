@@ -13,11 +13,12 @@ function boundedInteger(value, max, fallback) {
   return number
 }
 async function upstream(model, endpoint, body, fetcher, context) {
-  if (model.adapter === 'newapi.chat' && (!process.env[model.keyEnv] || process.env[model.keyEnv].startsWith('nap_'))) throw Object.assign(failure('INVALID_INFERENCE_KEY', 'New API 供货调用需要专用模型令牌，不能使用管理访问令牌'), { noCharge: true })
+  const apiKey = model.apiKey ?? process.env[model.keyEnv]
+  if (model.adapter === 'newapi.chat' && (!apiKey || apiKey.startsWith('nap_'))) throw Object.assign(failure('INVALID_INFERENCE_KEY', 'New API 供货调用需要专用模型令牌，不能使用管理访问令牌'), { noCharge: true })
   const origin = new URL(model.baseUrl)
   if (origin.protocol !== 'https:' || origin.username || origin.password || origin.search || origin.hash) throw Object.assign(failure('INVALID_UPSTREAM', '供应商必须使用 HTTPS'), { noCharge: true })
   const response = await fetcher(`${model.baseUrl.replace(/\/$/, '')}${endpoint}`, { method: 'POST', redirect: 'error',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env[model.keyEnv] || ''}`,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey || ''}`,
       ...(model.adapter === 'newapi.chat' && model.settlementProtocol === 'okpa-v1' ? { 'X-OKPA-Service-Key': process.env[model.settlementKeyEnv], 'X-OKPA-Request-ID': context?.requestId } : {}) }, body: JSON.stringify(body), signal: AbortSignal.timeout(180_000) })
   if (model.adapter === 'newapi.chat' && model.settlementProtocol !== 'okpa-v1') {
     const requestId = response.headers.get('x-oneapi-request-id')
@@ -97,7 +98,7 @@ export function httpGatewayAdapters(fetcher = fetch) {
           upperUsage: [requestEvent(), event('billable_characters', [...request.text].length * 2)] }
       },
       async submit(model, request) {
-        const result = await new MiniMaxAdapter({ fetchImpl: fetcher }).invoke({ baseUrl: model.baseUrl, apiKey: process.env[model.keyEnv] }, request)
+        const result = await new MiniMaxAdapter({ fetchImpl: fetcher }).invoke({ baseUrl: model.baseUrl, apiKey: model.apiKey ?? process.env[model.keyEnv] }, request)
         return { state: 'done', result: { voiceId: request.voiceId, audioBase64: result.bytes.toString('base64'), mimeType: 'audio/mpeg', durationSec: result.durationSec,
           ...(request.includeTimings ? { timingStatus: result.timingStatus, boundaries: result.boundaries || [] } : {}) }, usage: [requestEvent(), event('billable_characters', result.characters)] }
       },

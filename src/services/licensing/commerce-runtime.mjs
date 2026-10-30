@@ -11,6 +11,7 @@ import { chatStreamCollector, emitChunk, readSse } from './streaming.mjs'
 import { supplyMembershipBenefit } from './benefits.mjs'
 import { validateSupplyPrice } from './pricing.mjs'
 import { createPriceNotifications, emptyPriceNotificationState, priceAnnouncementEvents } from './price-notifications.mjs'
+import { managedCustomModels } from './managed-custom-models.mjs'
 
 export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch, benefits = supplyMembershipBenefit, now = Date.now }) {
   if (!client) return null
@@ -22,6 +23,10 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
   const monitor = createAccountingMonitor({ store: monitorStore, collect: (previous, now) => store.monitoring(previous, now), book: 'commerce-v2',
     licenseState: () => client.monitorState(), vault: new ModelCredentialVault(env.AI_ACCOUNTING_MONITOR_KEY_FILE || path.resolve('data/accounting-monitor.key')), fetchImpl })
   const customModels = env.AI_AGENT_CUSTOM_MODELS_FILE ? JSON.parse(fs.readFileSync(env.AI_AGENT_CUSTOM_MODELS_FILE, 'utf8')) : []
+  if (!Array.isArray(customModels) || new Set(customModels.map(model => model.id)).size !== customModels.length) throw failure('DUPLICATE_MODEL_ID', '自接模型定义必须为数组且模型ID唯一')
+  const keyVault = new ModelCredentialVault(env.AI_MODEL_CREDENTIAL_KEY_PATH || path.resolve('data/model-credentials.key'))
+  const managed = managedCustomModels({ pool, materializeKey: async key => ({ api_key: key.secret_ciphertext ? await keyVault.unseal(key.secret_ciphertext, key.upstream_account_id) : key.api_key }) })
+  const customExecution = (definition, root, options) => definition?.providerModelId ? managed.resolve(definition, root, options) : Promise.resolve(definition)
   const gatewayUrl = env.AI_MODEL_GATEWAY_URL ? new URL(env.AI_MODEL_GATEWAY_URL) : null
   if (gatewayUrl && gatewayUrl.protocol !== 'https:') throw new Error('Official gateway requires HTTPS')
   async function gateway(tenant, path, body, requestId, { onChunk } = {}) {
@@ -53,18 +58,26 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
   }
   async function catalog(tenant) {
     const root = await client.claims(), official = gatewayUrl ? await gateway(tenant, '/catalog') : []
-    const own = root.modelMode === 'custom' ? customModels.filter(model => model.status === 'enabled' && tenant.modelIds.includes(model.id)).map(model => ({
+    const definitions = []
+    if (root.modelMode === 'custom') for (const definition of customModels.filter(model => model.status === 'enabled' && tenant.modelIds.includes(model.id))) {
+      try { definitions.push(await customExecution(definition, root)) } catch (error) { if (error.code !== 'MODEL_UNAVAILABLE') throw error }
+    }
+    const own = definitions.map(model => ({
       id: model.id, clientId: model.clientId || model.id, name: model.name, taskType: model.taskType, version: model.version, adapter: model.adapter,
       contextWindow: model.contextWindow, maxOutputTokens: model.maxOutputTokens, maxImages: model.maxImages, allowedVoiceIds: model.allowedVoiceIds,
+      supportsStreaming: model.supportsStreaming === true,
+      ...(model.providerModelId ? { providerModelId: model.providerModelId, bindingHash: model.bindingHash } : {}),
       executor: model.adapter === 'minimax.speech_async' ? 'async_job' : 'sync',
       supplierCost: model.supplierCost ? validateSupplyPrice(model.supplierCost) : null,
       publicVoices: (model.publicVoices || []).filter(voice => model.allowedVoiceIds?.includes(voice.id)).map(voice => ({ id: voice.id, name: String(voice.name || voice.id).slice(0, 120), description: String(voice.description || '').slice(0, 512) })), price: model.price, source: 'custom',
-    })) : []
-    return [...official.map(model => ({ ...model, source: 'official' })), ...own].map(model => ({ ...model,
+    }))
+    const models = [...official.map(model => ({ ...model, source: 'official' })), ...own]
+    if (new Set(models.map(model => model.id)).size !== models.length || new Set(models.map(model => model.clientId || model.id)).size !== models.length) throw failure('MODEL_ID_CONFLICT', '官方/自接模型的内部ID或客户端别名冲突，须显式指定唯一标识', 409)
+    return models.map(model => ({ ...model,
       prepare: async request => {
         const adapter = adapters[model.adapter]
         if (!adapter) throw failure('ADAPTER_UNAVAILABLE', '该模型尚未接入供货计费上界', 503)
-        const execution = model.source === 'custom' ? customModels.find(config => config.id === model.id) : { ...model, model: model.id }
+        const execution = model.source === 'custom' ? await customExecution(customModels.find(config => config.id === model.id), root, { credentials: Boolean(model.providerModelId) || model.adapter === 'minimax.speech_async' }) : { ...model, model: model.id }
         const prepared = await adapter.prepare(execution, request)
         return { upperUsage: prepared.upperUsage, request }
       },
@@ -92,16 +105,24 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
       return createAgentCommerce({ store, rootId: root.id, userBank: sqlUserBank(), catalog, benefits, now,
         invoke: async (tenant, model, input, options) => {
           if (model.source === 'official') return gateway(tenant, '/requests', { ...input, modelId: model.id, priceHash: digest(JSON.stringify(model.price)) }, undefined, options)
-          const config = customModels.find(item => item.id === model.id)
-          if (!config || root.modelMode !== 'custom' || config.version !== model.version || config.adapter !== model.adapter) throw failure('MODEL_UNAVAILABLE', '自接模型配置不可用', 403)
-          const adapter = adapters[config.adapter], prepared = await adapter.prepare(config, input.request)
-          return adapter.submit(config, prepared.request, options)
+          let config
+          try {
+            config = await customExecution(customModels.find(item => item.id === model.id), root, { credentials: true })
+            if (!config || root.modelMode !== 'custom' || config.version !== model.version || config.adapter !== model.adapter || config.bindingHash !== model.bindingHash) throw failure('MODEL_UNAVAILABLE', '自接模型配置不可用', 403)
+            if (config.credentialId) await managed.used(config.credentialId)
+          } catch (error) { error.noCharge = true; throw error }
+          const adapter = adapters[config.adapter]
+          let prepared
+          try { prepared = await adapter.prepare(config, input.request) } catch (error) { error.noCharge = true; throw error }
+          const outcome = await adapter.submit(config, prepared.request, config.credentialId ? { ...options, recordJob: job => options.recordJob({ ...job, credentialId: config.credentialId }) } : options)
+          return outcome.job && config.credentialId ? { ...outcome, job: { ...outcome.job, credentialId: config.credentialId } } : outcome
         },
         lookup: async (tenant, operation, options) => {
           if (operation.snapshot.model.source !== 'official') {
-            const original = operation.snapshot.model, config = customModels.find(item => item.id === original.id)
+            const original = operation.snapshot.model, definition = customModels.find(item => item.id === original.id)
+            const config = await customExecution(definition, root, { credentials: true, credentialId: operation.job?.credentialId, recovery: true })
             const adapter = config && adapters[config.adapter]
-            if (!config || config.version !== original.version || config.adapter !== original.adapter || config.adapter !== 'minimax.speech_async' || !adapter?.recover) throw failure('RECONCILIATION_REQUIRED', '自接模型原配置或查询适配器不可用，禁止自动重发', 409)
+            if (!config || config.version !== original.version || config.bindingHash !== original.bindingHash || config.adapter !== original.adapter || config.adapter !== 'minimax.speech_async' || !adapter?.recover) throw failure('RECONCILIATION_REQUIRED', '自接模型原配置或查询适配器不可用，禁止自动重发', 409)
             return adapter.recover(config, operation, options)
           }
           const poll = ['pending', 'unknown'].includes(operation.state)

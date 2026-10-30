@@ -33,6 +33,7 @@ import { offerFor } from './offer-pricing.mjs'
 import { HOUR } from './protocol.mjs'
 import { normalizeReportQuery } from '../user-usage-report.mjs'
 import { centerBuildScopes } from './build-scopes.mjs'
+import { publicSupplyCatalogRow } from '../../routes/agent-supply.mjs'
 
 const configured = Boolean(process.env.LICENSING_TEST_DB)
 
@@ -915,4 +916,86 @@ test('real MySQL organization price notifications persist, isolate recipients an
     const raw = await mysqlStateStore(pool, 'commerce-v2-price-notifications', emptyPriceNotificationState()).read()
     assert.equal(JSON.stringify(raw).includes(url('a')), false); assert.equal(JSON.stringify(raw).includes('isolated-signing-secret'), false)
   } finally { runtime?.stop(); await pool.end(); await fs.rm(dir, { recursive: true, force: true }) }
+})
+
+
+test('real MySQL managed custom models reuse encrypted scoped key pools and recover async work with its original credential', { skip: !configured }, async () => {
+  const { gatewayDatabase = 'yushu_gateway_test', licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable test database required')
+  const pool = mysql.createPool({ ...config, database: gatewayDatabase }), dir = await fs.mkdtemp(path.join(os.tmpdir(), 'managed-custom-'))
+  let runtime, active = true, vendorCalls = 0, queryCalls = 0, streamChunks = 0
+  const root = { id: 'managed-root', level: 1, modelMode: 'custom', modelIds: ['managed-chat', 'managed-async'] }, child = { ...root, id: 'managed-child', level: 2, parentId: root.id, billingOwnerUserId: 'managed-child-owner' }
+  const client = { claims: async id => { if (!active) throw Object.assign(new Error('expired'), { statusCode: 403 }); return id === child.id ? child : root }, recoveryIdentity: async () => ({ id: root.id }) }
+  const file = path.join(dir, 'models.json'), vault = new ModelCredentialVault(path.join(dir, 'credentials.key'))
+  const zero = meter => ({ meter, phase: meter === 'request' ? 'request' : 'usage', amount: '0', unitSize: '1' })
+  const models = [{ id: 'managed-chat', providerModelId: 'managed-chat', status: 'enabled', version: 1, adapter: 'openai.chat', taskType: 'chat', contextWindow: 100, maxOutputTokens: 5, supportsStreaming: true,
+    price: { version: 1, components: ['request', 'input_tokens', 'cached_tokens', 'output_tokens'].map(zero) }, supplierCost: { version: 1, components: [{ ...zero('request'), amount: '0.2' }, ...['input_tokens', 'cached_tokens', 'output_tokens'].map(zero)] } },
+    { id: 'managed-async', providerModelId: 'managed-async', status: 'enabled', version: 1, adapter: 'minimax.speech_async', taskType: 'speech_synthesis', allowedVoiceIds: ['public-voice'],
+      price: { version: 1, components: [zero('request'), zero('billable_characters')] }, supplierCost: { version: 1, components: [{ ...zero('request'), amount: '0.25' }, zero('billable_characters')] } }]
+  const seen = [], keys = { 'pool-a': 'fictional-a', 'pool-b': 'fictional-b' }
+  const make = () => agentCommerceRuntime({ client, database: () => pool, env: { AI_AGENT_CUSTOM_MODELS_FILE: file, AI_MODEL_CREDENTIAL_KEY_PATH: vault.keyFile }, fetchImpl: async (url, options) => {
+    seen.push(options?.headers?.Authorization)
+    if (String(url).endsWith('/chat/completions')) {
+      vendorCalls++
+      assert.equal(JSON.parse(options.body).max_tokens, 5)
+      const frame = value => `data: ${JSON.stringify({ id: 'managed-stream', created: 1, model: 'vendor-chat', ...value })}\n\n`
+      return new Response(frame({ choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }] }) + frame({ choices: [], usage: { prompt_tokens: 2, completion_tokens: 1 } }) + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
+    }
+    if (String(url).endsWith('/v1/t2a_async_v2')) { vendorCalls++; return new Response('{"base_resp":{"status_code":0},"task_id":9876543210123456789,"usage_characters":5}') }
+    if (String(url).includes('/v1/query/')) { queryCalls++; return new Response('{"base_resp":{"status_code":0},"task_id":9876543210123456789,"status":"Success","file_id":8876543210123456789}') }
+    if (String(url).includes('/v1/files/')) return new Response('{"base_resp":{"status_code":0},"file":{"file_id":8876543210123456789,"download_url":"https://minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com/test.zip"}}')
+    if (String(url).endsWith('/test.zip')) return new Response(Buffer.from([80, 75, 3, 4, 0, 0, 0, 0]))
+    throw Error('unexpected mock supplier request')
+  } })
+  try {
+    // These fixture tables live only in this runner's disposable database; full
+    // production-schema boot is covered separately by the HTTP resource test.
+    for (const sql of [
+      "ALTER TABLE ai_organizations ADD COLUMN external_id VARCHAR(64) DEFAULT '', ADD COLUMN agent_level INT DEFAULT 1, ADD COLUMN status VARCHAR(16) DEFAULT 'enabled', ADD COLUMN legacy_owner_user_id VARCHAR(64) DEFAULT ''",
+      "ALTER TABLE ai_provider_models ADD COLUMN provider_id VARCHAR(64), ADD COLUMN display_name VARCHAR(120), ADD COLUMN endpoint_path VARCHAR(120), ADD COLUMN context_window INT, ADD COLUMN status VARCHAR(16) DEFAULT 'enabled', ADD COLUMN archived_at DATETIME NULL",
+      "CREATE TABLE ai_model_providers(id VARCHAR(64) PRIMARY KEY,organization_id VARCHAR(64),base_url VARCHAR(255),status VARCHAR(16))",
+      "CREATE TABLE ai_model_upstream_accounts(id VARCHAR(64) PRIMARY KEY,provider_id VARCHAR(64),organization_id VARCHAR(64),status VARCHAR(16))",
+      "CREATE TABLE ai_model_provider_keys(id VARCHAR(64) PRIMARY KEY,provider_id VARCHAR(64),provider_model_id VARCHAR(64),organization_id VARCHAR(64),owner_user_id VARCHAR(64),upstream_account_id VARCHAR(64),status VARCHAR(16),secret_ciphertext TEXT,api_key TEXT,last_used_at DATETIME(3),failure_count INT DEFAULT 0,created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3))",
+    ]) await pool.query(sql)
+    await pool.query("INSERT INTO ai_organizations(id,name,external_id,agent_level,status,legacy_owner_user_id) VALUES ('managed-local-root','fixture',?,1,'enabled','managed-owner')", [root.id])
+    await pool.query("INSERT INTO ai_model_providers VALUES ('managed-provider','managed-local-root','https://managed.example/v1','enabled')")
+    await pool.query("INSERT INTO ai_model_upstream_accounts VALUES ('managed-account','managed-provider','managed-local-root','enabled')")
+    for (const model of models) await pool.query('INSERT INTO ai_provider_models(id,model_id,organization_id,model_type,provider_id,display_name,endpoint_path,context_window) VALUES (?,?,?,?,?,?,?,?)',
+      [model.id, model.id === 'managed-chat' ? 'vendor-chat' : 'vendor-speech', 'managed-local-root', model.id === 'managed-chat' ? 'text' : 'audio', 'managed-provider', model.id, model.id === 'managed-chat' ? '/chat/completions' : '/v1/t2a_v2', 100])
+    for (const [id, secret] of Object.entries(keys)) await pool.query("INSERT INTO ai_model_provider_keys(id,provider_id,provider_model_id,organization_id,owner_user_id,upstream_account_id,status,secret_ciphertext,api_key) VALUES (?,'managed-provider','','managed-local-root','managed-owner','managed-account','enabled',?,'')", [id, await vault.seal(secret, 'managed-account')])
+    await pool.query("INSERT INTO ai_end_users(id,status,credit_balance,organization_id,username) VALUES ('managed-user','enabled','10',?,'managed-user')", [child.id])
+    await fs.writeFile(file, JSON.stringify(models)); runtime = make(); let service = await runtime.service()
+    const offer = { enabled: true, saleMarkup: [{ meter: 'request', phase: 'request', amount: '1' }], supplyMarkup: [{ meter: 'request', phase: 'request', amount: '0.5' }], pointsPerCny: '1', expectedVersion: 0 }
+    for (const model of models) { await service.configure(root, { ...offer, modelId: model.id }, 'owner'); await service.configure(child, { ...offer, modelId: model.id, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.1' }] }, 'child') }
+    await service.credit(root, child.id, '10', 'managed-fund', 'managed-virtual-receipt', 'owner')
+    const listed = await service.list(child); assert.equal(listed.length, 2)
+    const publicCatalog = JSON.stringify(listed.map(row => publicSupplyCatalogRow(row, 2)))
+    assert.equal(publicCatalog.includes('managed.example'), false); assert.equal(publicCatalog.includes('bindingHash'), false); assert.equal(publicCatalog.includes('fictional-'), false)
+    const input = { requestId: 'managed-text-one', modelId: 'managed-chat', request: { messages: [{ role: 'user', content: 'hello' }], stream: true } }
+    const text = await service.submit(child, 'managed-user', input, { onChunk: () => { streamChunks++; throw Error('downstream disconnected') } }); assert.equal(text.state, 'settled'); assert.equal(text.points, '0.600000'); assert.equal(text.upstreamAmount, '0.200000')
+    assert(streamChunks > 0); assert.equal(text.result.choices[0].message.content, 'ok')
+    await service.submit(child, 'managed-user', input); assert.equal(vendorCalls, 1)
+    const speech = await service.submit(child, 'managed-user', { requestId: 'managed-speech-one', modelId: 'managed-async', request: { text: 'hello', voiceId: 'public-voice' } })
+    assert.equal(speech.state, 'pending'); assert(keys[speech.job.credentialId]); assert.equal(vendorCalls, 2)
+    const originalKey = speech.job.credentialId, originalSecret = keys[originalKey]
+    assert.equal(JSON.stringify(speech).includes(originalSecret), false); assert.equal(speech.snapshot.model.providerModelId, 'managed-async')
+    models[1].supplierCost.components[0].amount = '9'; await fs.writeFile(file, JSON.stringify(models)); runtime.stop(); runtime = make(); service = await runtime.service({ recovery: true }); active = false
+    await pool.query("UPDATE ai_model_provider_keys SET secret_ciphertext=? WHERE id=?", [await vault.seal('rotated-different-secret', 'managed-account'), originalKey])
+    await assert.rejects(service.recover(child, 'managed-user', speech.requestId), { code: 'ASYNC_BINDING_CHANGED' }); assert.equal(queryCalls, 0)
+    await pool.query("UPDATE ai_model_provider_keys SET secret_ciphertext=? WHERE id=?", [await vault.seal(originalSecret, 'managed-account'), originalKey])
+    const settled = await service.recover(child, 'managed-user', speech.requestId)
+    assert.equal(settled.state, 'settled'); assert.equal(settled.upstreamAmount, '0.250000'); assert.equal(settled.points, '0.600000'); assert.equal(vendorCalls, 2)
+    assert(seen.filter(value => value?.startsWith('Bearer ')).includes(`Bearer ${originalSecret}`))
+    assert.equal((await runtime.store.readRequest(speech.requestId)).job.credentialId, originalKey)
+    active = true; await pool.query("UPDATE ai_model_upstream_accounts SET status='disabled' WHERE id='managed-account'")
+    service = await runtime.service(); const callsBefore = vendorCalls
+    await assert.rejects(service.submit(child, 'managed-user', { ...input, requestId: 'disabled-key-account' }), { code: 'MODEL_CREDENTIAL_UNAVAILABLE' })
+    assert.equal(vendorCalls, callsBefore)
+    await pool.query("UPDATE ai_model_upstream_accounts SET status='enabled' WHERE id='managed-account'")
+    await pool.query("UPDATE ai_model_providers SET organization_id='sibling' WHERE id='managed-provider'")
+    assert.equal((await service.list(root)).length, 0)
+    const state = await runtime.store.read(); auditAccounting(state, 'commerce')
+    assert.equal(state.wallets[child.id].balance, '9.000000'); assert.equal(state.wallets[child.id].reserved, '0.000000')
+    const [[user]] = await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='managed-user'"); assert.equal(String(user.credit_balance), '8.800000')
+  } finally { runtime?.stop(); await pool.end(); if (path.resolve(dir).startsWith(path.join(os.tmpdir(), 'managed-custom-'))) await fs.rm(dir, { recursive: true, force: true }) }
 })

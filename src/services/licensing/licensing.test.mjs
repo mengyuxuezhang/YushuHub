@@ -5,6 +5,7 @@ import { memoryStateStore } from '../../repositories/licensing-state.mjs'
 import { createLicenseCenter, emptyCenterState } from './center.mjs'
 import { createAgentCommerce, emptyCommerceState } from './commerce.mjs'
 import { createPriceNotifications, emptyPriceNotificationState } from './price-notifications.mjs'
+import { managedCustomModels } from './managed-custom-models.mjs'
 import { modelPriceAt, offerFor, offerKey } from './offer-pricing.mjs'
 import { createSupplyLedger, emptyLedgerState } from './ledger.mjs'
 import { createModelGateway } from './gateway.mjs'
@@ -764,4 +765,39 @@ test('activating another first-level code cannot replace a persisted identity or
   assert.equal((await state.read()).rootId, 'first'); assert.equal((await state.read()).credential, first.credential)
   assert.equal((await centerStore.read()).codes[digest(other.code)].status, 'unused')
   assert.equal((await client.activeGrants()).length, 1)
+})
+
+
+test('managed custom models bind root ownership and active scoped keys without exposing credentials or changing process env', async () => {
+  const root = { id: 'central-root', level: 1, modelMode: 'custom' }, definition = { id: 'local-model', providerModelId: 'local-model', version: 1, adapter: 'openai.chat', taskType: 'chat', contextWindow: 100, maxOutputTokens: 10,
+    price: { version: 1, components: [{ meter: 'request', phase: 'request', amount: '0', unitSize: '1' }] } }
+  let duplicate = false, available = true, secretReads = 0, selected = 0
+  const row = { id: 'local-model', provider_id: 'local-provider', model_id: 'vendor-chat', model_type: 'text', endpoint_path: '/chat/completions', context_window: 100, base_url: 'https://provider.example/v1' }
+  const pool = { async query(sql, args) {
+    if (sql.startsWith('SELECT id,legacy_owner_user_id')) { assert.equal(args[0], root.id); return [duplicate ? [{ id: 'a' }, { id: 'b' }] : [{ id: 'local-root', legacy_owner_user_id: 'root-owner' }]] }
+    if (sql.startsWith('SELECT m.id')) { assert.deepEqual(args, ['local-model', 'local-root', 'local-root']); return [available ? [row] : []] }
+    if (sql.startsWith('SELECT k.*')) {
+      if (sql.includes('k.id=?')) { assert.deepEqual(args, ['original-key', 'local-provider', 'local-root', 'root-owner', 'local-model']); return [[]] }
+      selected++; assert(sql.includes("a.status='enabled'")); assert(sql.includes('k.owner_user_id=?')); assert(sql.includes('k.organization_id=?')); assert(args.includes('local-model'))
+      return [[{ id: 'key-one', secret_ciphertext: 'sealed', upstream_account_id: 'account' }]]
+    }
+    throw Error('unexpected query')
+  } }
+  const resolver = managedCustomModels({ pool, materializeKey: async () => { secretReads++; return { api_key: 'fictional-pool-secret' } } })
+  const meta = await resolver.resolve(definition, root); assert.equal(meta.model, 'vendor-chat'); assert.equal(meta.apiKey, undefined); assert.equal(secretReads, 0)
+  const execution = await resolver.resolve(definition, root, { credentials: true }); assert.equal(execution.apiKey, 'fictional-pool-secret'); assert.equal(execution.credentialId, 'key-one')
+  assert.equal(meta.bindingHash, execution.bindingHash)
+  assert.equal((await resolver.resolve({ ...definition, supplierCost: { version: 2 } }, root)).bindingHash, meta.bindingHash)
+  await assert.rejects(resolver.resolve(definition, { ...root, modelMode: 'fixed' }), { code: 'MODEL_FIXED' })
+  await assert.rejects(resolver.resolve({ ...definition, baseUrl: 'https://override.example' }, root), { code: 'INVALID_MODEL_BINDING' })
+  await assert.rejects(resolver.resolve({ ...definition, id: 'another-model' }, root), { code: 'MODEL_IDENTITY_MISMATCH' })
+  await assert.rejects(resolver.resolve({ ...definition, price: { ...definition.price, components: [{ ...definition.price.components[0], amount: '1' }] } }, root), { code: 'MANAGED_PRICE_REQUIRED' })
+  await assert.rejects(resolver.resolve({ ...definition, contextWindow: 101 }, root), { code: 'UNBOUNDED_REQUEST' })
+  duplicate = true; await assert.rejects(resolver.resolve(definition, root), { code: 'MODEL_SCOPE_UNRESOLVED' }); duplicate = false
+  available = false; await assert.rejects(resolver.resolve(definition, root), { code: 'MODEL_UNAVAILABLE' }); available = true
+  await assert.rejects(resolver.resolve(definition, { id: root.id }, { credentials: true, recovery: true, credentialId: 'original-key' }), { code: 'MODEL_CREDENTIAL_UNAVAILABLE' })
+  assert.equal(selected, 1); assert.equal(secretReads, 1)
+  const received = [], adapter = httpGatewayAdapters(async (_url, options) => { received.push(options.headers.Authorization); return new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1 } })) })['openai.chat']
+  await Promise.all(['one', 'two'].map(apiKey => adapter.submit({ adapter: 'openai.chat', model: 'vendor-chat', baseUrl: row.base_url, apiKey }, { messages: ['test'] })))
+  assert.deepEqual(received.sort(), ['Bearer one', 'Bearer two'])
 })

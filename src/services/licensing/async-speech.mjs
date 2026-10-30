@@ -16,9 +16,9 @@ async function read(response, max) {
 
 export function asyncSpeechAdapter(speech, fetcher) {
   function connection(model) {
-    const url = new URL(model.baseUrl), key = process.env[model.keyEnv]
+    const url = new URL(model.baseUrl), key = model.apiKey ?? process.env[model.keyEnv]
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !key) throw failure('ASYNC_CONFIGURATION_INVALID', '异步语音连接未正确配置')
-    return { origin: url.origin, key, hash: digest(JSON.stringify([model.adapter, model.model, url.origin, model.keyEnv, digest(key)])) }
+    return { origin: url.origin, key, hash: digest(JSON.stringify([model.adapter, model.model, url.origin, model.credentialId || model.keyEnv, digest(key)])) }
   }
   async function request(model, path, body) {
     const config = connection(model)
