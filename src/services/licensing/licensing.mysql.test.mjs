@@ -24,6 +24,7 @@ import { ModelCredentialVault } from '../model-credentials.mjs'
 import { agentCommerceRuntime } from './commerce-runtime.mjs'
 import { httpGatewayAdapters } from './http-adapters.mjs'
 import { registerClientSupplyBridge } from '../../routes/client-supply-bridge.mjs'
+import { registerClientVoiceSupplyRoutes } from '../../routes/client-voice-supply.mjs'
 import { setAuthDependencies } from '../../middleware/auth.mjs'
 import { supplyMembershipBenefit } from './benefits.mjs'
 import { createResourceCoordinator, emptyResourceIntents } from './resource-runtime.mjs'
@@ -1349,7 +1350,7 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
   if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(licenseDatabase)) throw new Error('Disposable databases required')
   const suffix = crypto.randomBytes(5).toString('hex'), names = ['official', 'local'].map(kind => `yushu_private_${kind}_${suffix}`), created = []
   const admin = await mysql.createConnection(config), centerPool = mysql.createPool({ ...config, database: licenseDatabase }), dir = await fs.mkdtemp(path.join(os.tmpdir(), 'private-voice-core-'))
-  let officialPool, localPool, privateServer, firstRuntime
+  let officialPool, localPool, privateServer, firstRuntime, clientServer
   try {
     for (const name of names) { await admin.query('CREATE DATABASE ??', [name]); created.push(name) }
     officialPool = mysql.createPool({ ...config, database: names[0], connectionLimit: 12 }); localPool = mysql.createPool({ ...config, database: names[1], connectionLimit: 12 })
@@ -1404,9 +1405,13 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
       client: { claims: async () => ({ ...root, modelMode: 'fixed' }), recoveryIdentity: async () => root,
         serviceToken: async (audience, organizationId, subjectHash) => (await center.serviceToken(rootActivation.credential, audience, organizationId, subjectHash)).token,
         recoveryToken: async (organizationId, requestId) => (await center.recoveryToken(rootActivation.credential, organizationId, requestId)).token },
-      env: { AI_MODEL_GATEWAY_URL: 'https://private-gateway.example.com', AI_MODEL_CREDENTIAL_KEY_PATH: path.join(dir, 'local-credentials.key'), AI_PRICE_NOTIFICATIONS_KEY_FILE: path.join(dir, 'local-price.key'), AI_ACCOUNTING_MONITOR_KEY_FILE: path.join(dir, 'local-monitor.key') },
+      env: { AI_SUPPLY_PRIVATE_VOICE_ENABLED: '1', AI_MODEL_GATEWAY_URL: 'https://private-gateway.example.com', AI_MODEL_CREDENTIAL_KEY_PATH: path.join(dir, 'local-credentials.key'), AI_PRICE_NOTIFICATIONS_KEY_FILE: path.join(dir, 'local-price.key'), AI_ACCOUNTING_MONITOR_KEY_FILE: path.join(dir, 'local-monitor.key') },
       fetchImpl: (url, options) => { const parsed = new URL(url); assert.equal(parsed.hostname, 'private-gateway.example.com'); return fetch(`http://127.0.0.1:${privateServer.address().port}${parsed.pathname}`, options) } })
     const localStore = firstRuntime.store, service = await firstRuntime.service()
+    setAuthDependencies({ getEndUserByToken: async token => ['private-client', 'private-peer'].includes(token) ? { id: token === 'private-client' ? 'private-core-user' : 'private-peer-user', status: 'enabled' } : null, getClientAuthorization: async () => true })
+    const clientApp = serviceApp(); registerClientVoiceSupplyRoutes(clientApp, { runtime: firstRuntime, tenantForUser: async () => child }); serviceErrors(clientApp)
+    clientServer = await new Promise(resolve => { const server = clientApp.listen(0, '127.0.0.1', () => resolve(server)) })
+    const clientFetch = (route = '', body, token = 'private-client') => fetch(`http://127.0.0.1:${clientServer.address().port}/api/client/voices${route}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, ...(body instanceof FormData || body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) }) })
     const markup = price.components.filter(item => item.meter !== 'request').map(({ meter, phase }) => ({ meter, phase, amount: '1' }))
     await service.configure(root, { modelId: model.id, expectedVersion: 0, enabled: true, pointsPerCny: '1', saleMarkup: markup, supplyMarkup: markup }, 'root-owner')
     await service.configure(child, { modelId: model.id, expectedVersion: 0, enabled: true, pointsPerCny: '1', saleMarkup: markup }, 'child-owner')
@@ -1418,13 +1423,17 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     const resource = (await uploaded.json()).data
     assert.equal((await firstRuntime.privateVoice(child, 'private-core-user', model.id, 'upload', { ...upload, consent: true })).id, resource.id)
     assert.equal((await (await privateFetch('/upload', uploadForm('true'))).json()).data.id, resource.id)
-    const cloneRequest = { action: 'clone', resourceId: resource.id, text: '你好', name: '虚构供货私有音色', consent: true }
+    const cloneRequest = { action: 'clone', resourceId: resource.id, text: '你好', name: '虚构供货私有音色', consent: true, speed: 1, includeTimings: false, timingGranularity: 'sentence' }
     await assert.rejects(service.submit(child, 'private-core-user', { requestId: 'private-unconfirmed-price', modelId: model.id, request: cloneRequest, confirmedMaxPoints: '1' }), { code: 'VOICE_PRICE_CHANGED' })
     assert.equal(counts.clones, 0); assert.equal(await localStore.readRequest('private-unconfirmed-price'), null)
     const peerResource = await voices.upload({ ...identity, subjectHash: hash('another-private-user') }, { ...upload, requestId: 'private-peer-upload' })
     const refused = await service.submit(child, 'private-core-user', { requestId: 'private-forged-resource', modelId: model.id, request: { ...cloneRequest, resourceId: peerResource.id } })
     assert.equal(refused.points, '0.000000'); assert.equal(counts.clones, 0)
-    const cloned = await service.submit(child, 'private-core-user', { requestId: 'private-clone', modelId: model.id, request: cloneRequest })
+    const clientRecording = () => { const form = new FormData(); form.set('audio', new Blob([upload.bytes]), 'recording.wav'); for (const [key, value] of Object.entries({ modelId: model.id, idempotencyKey: 'private-clone', name: cloneRequest.name, text: cloneRequest.text, consent: 'true', confirmedPoints: '12', organizationId: 'forged-peer-org' })) form.set(key, value); return form }
+    const clientClone = await clientFetch('/train', clientRecording()); assert.equal(clientClone.status, 200)
+    const clonedPublic = (await clientClone.json()).data; assert.equal(clonedPublic.status, 'succeeded'); assert.equal(clonedPublic.voiceId, resource.id)
+    assert.equal((await (await clientFetch('/train', clientRecording())).json()).data.voiceId, resource.id)
+    const cloned = await service.status(child, 'private-core-user', 'private-clone')
     assert.equal(cloned.points, '12.000000'); assert.equal(cloned.result.voiceId, resource.id); assert.equal((await voices.get(identity, resource.id)).status, 'preview_ready')
     assert.equal((await core.preview(model, resource.id, identity)).bytes.toString(), 'fictional private preview mp3')
     assert.equal((await firstRuntime.privateVoice(child, 'private-core-user', undefined, 'preview', { resourceId: resource.id })).bytes.toString(), 'fictional private preview mp3')
@@ -1434,15 +1443,26 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     assert.equal((await privateFetch(`/resources/${resource.id}/preview`, undefined, peerToken)).status, 404)
     const privateList = (await (await privateFetch()).json()).data; assert.equal(privateList.length, 1)
     assert.equal(JSON.stringify(privateList).includes('providerVoiceId'), false)
+    const clientCatalog = (await (await clientFetch()).json()).data
+    assert.equal(clientCatalog.models[0].privateVoiceSupported, true); assert.equal(clientCatalog.models[0].prices.activation, 19)
+    assert.equal(clientCatalog.voices.filter(voice => voice.category === 'private').length, 1)
+    assert.equal((await clientFetch(`/${resource.id}/preview`, undefined, 'private-peer')).status, 404)
+    assert.equal((await clientFetch('/activate', { idempotencyKey: 'private-low-confirmation', voiceId: resource.id, confirmedPoints: 1 })).status, 409)
     assert.equal(fileIds.size, 0); assert.equal((await voices.job(identity, 'private-clone')).cleanupPending, false)
     await service.submit(child, 'private-core-user', { requestId: 'private-clone', modelId: model.id, request: cloneRequest }); assert.equal(counts.clones, 1)
-    const activations = await Promise.all(['a', 'b'].map(label => service.submit(child, 'private-core-user', { requestId: `private-activation-${label}`, modelId: model.id, request: { action: 'activate', resourceId: resource.id } })))
+    const activationResponses = await Promise.all(['a', 'b'].map(label => clientFetch('/activate', { idempotencyKey: `private-activation-${label}`, voiceId: resource.id, confirmedPoints: 19 })))
+    assert(activationResponses.every(response => response.status === 200))
+    const activations = await Promise.all(['a', 'b'].map(label => service.status(child, 'private-core-user', `private-activation-${label}`)))
     assert.equal(activations.filter(row => row.points === '19.000000').length, 1); assert.equal(counts.syntheses, 1)
-    const spoken = await service.submit(child, 'private-core-user', { requestId: 'private-synthesis', modelId: model.id, request: { action: 'synthesize', resourceId: resource.id, text: 'abc' } })
+    const spokenResponse = await clientFetch('/synthesize', { idempotencyKey: 'private-synthesis', modelId: model.id, voiceId: resource.id, text: 'abc' }); assert.equal(spokenResponse.status, 200)
+    assert.equal((await spokenResponse.json()).data.speech.artifactId, 'private-synthesis')
+    const spoken = await service.status(child, 'private-core-user', 'private-synthesis')
     assert.equal(spoken.points, '9.000000'); assert((await artifacts.read(identity, spoken.result.audioArtifactId)).bytes.equals(Buffer.from('494433ff', 'hex')))
     const audioResponse = await privateFetch('/requests/private-synthesis/audio'); assert.equal(audioResponse.status, 200)
     assert.equal(Buffer.from(await audioResponse.arrayBuffer()).toString('hex'), '494433ff')
     assert.equal((await privateFetch('/requests/private-synthesis/audio', undefined, peerToken)).status, 404)
+    assert.equal((await clientFetch('/tasks/private-synthesis/audio')).status, 200)
+    assert.equal((await clientFetch('/tasks/private-synthesis', undefined, 'private-peer')).status, 404)
     assert.equal((await ledger.view(root.id)).balance, '84.000000'); assert.equal((await service.balance(child)).wallet.balance, '72.000000')
     assert.equal(String((await localPool.query("SELECT credit_balance FROM ai_end_users WHERE id='private-core-user'"))[0][0].credit_balance), '60.000000')
     model.status = 'disabled'
@@ -1451,7 +1471,10 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     assert.equal((await privateFetch(`/resources/${resource.id}/delete`, { requestId: 'peer-forged-delete' }, peerToken)).status, 404)
     assert.equal((await firstRuntime.privateVoice(child, 'private-core-user', model.id, 'list')).length, 1)
     assert.equal((await firstRuntime.privateVoice(child, 'private-core-user', undefined, 'audio', { requestId: 'private-synthesis' })).bytes.toString('hex'), '494433ff')
-    const removed = await firstRuntime.privateVoice(child, 'private-core-user', undefined, 'delete', { resourceId: resource.id, requestId: 'private-delete' }); assert.equal(removed.result.deleted, true)
+    assert.equal((await (await clientFetch()).json()).data.voices[0].id, resource.id)
+    const removedResponse = await clientFetch('/delete', { voiceId: resource.id, idempotencyKey: 'private-delete' }); assert.equal(removedResponse.status, 200)
+    assert.equal((await removedResponse.json()).data.status, 'succeeded')
+    assert.equal((await (await clientFetch('/tasks/private-delete')).json()).data.status, 'succeeded')
     assert.equal((await firstRuntime.privateVoice(child, 'private-core-user', undefined, 'deletion', { requestId: 'private-delete' })).deleted, true)
     await core.remove(model, resource.id, { ...identity, requestId: 'private-delete' }); assert.equal(counts.deletes, 1)
     await assert.rejects(artifacts.read(identity, spoken.result.audioArtifactId), { code: 'VOICE_ARTIFACT_EXPIRED' })
@@ -1473,6 +1496,7 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     assert.equal(counts.clones, 2); auditAccounting(await officialStore.read(), 'ledger'); auditAccounting(await localStore.read(), 'commerce')
   } finally {
     firstRuntime?.stop()
+    if (clientServer) { clientServer.closeAllConnections(); await new Promise(resolve => clientServer.close(resolve)) }
     if (privateServer) { privateServer.closeAllConnections(); await new Promise(resolve => privateServer.close(resolve)) }
     await officialPool?.end(); await localPool?.end(); await centerPool.end()
     for (const name of created) { assert(/^yushu_private_(official|local)_[a-f0-9]{10}$/.test(name)); await admin.query('DROP DATABASE ??', [name]) }
