@@ -5,6 +5,7 @@ import { registerModelGatewayRoutes } from '../../src/routes/model-gateway.mjs'
 import { jsonFile, operatorRuntime, serviceApp, serviceDatabase, serviceErrors } from '../../src/services/licensing/runtime.mjs'
 import { failure } from '../../src/services/licensing/protocol.mjs'
 import { mysqlAccountingStore } from '../../src/repositories/accounting.mjs'
+import { migrateSupplyVoiceSchema } from '../../src/repositories/supply-voices.mjs'
 import { mysqlStateStore } from '../../src/repositories/licensing-state.mjs'
 import { migrateAccounting } from '../../src/services/licensing/accounting-migration.mjs'
 import { startAccountingRecovery } from '../../src/services/licensing/accounting-recovery.mjs'
@@ -18,6 +19,7 @@ const operators = mysqlStateStore(pool, 'official-v2-operators', {})
 if (process.argv.includes('--migrate')) {
   try {
     await migrateAccounting({ pool, book: 'official-v2', kind: 'ledger', sourceId: 'state-v1', allowImport: process.argv.includes('--import-legacy') })
+    await migrateSupplyVoiceSchema(pool)
     console.log('Model gateway accounting schema ready')
   } finally { await pool.end() }
 } else {

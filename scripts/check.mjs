@@ -11,6 +11,7 @@ const targets = [
   ...readdirSync(path.join(repoRoot, 'src/services/licensing')).filter(file => file.endsWith('.mjs')).map(file => `src/services/licensing/${file}`),
   'src/repositories/licensing-state.mjs',
   'src/repositories/accounting.mjs',
+  'src/repositories/supply-voices.mjs',
   'src/repositories/accounting-schema.mjs',
   'src/repositories/licensing-file-state.mjs',
   'src/routes/license-center.mjs',

@@ -5,6 +5,7 @@ import { mysqlStateStore } from '../src/repositories/licensing-state.mjs'
 import { emptyResourceIntents } from '../src/services/licensing/resource-runtime.mjs'
 import { emptyPriceNotificationState } from '../src/services/licensing/price-notifications.mjs'
 import { emptyCustomDefinitions } from '../src/services/licensing/custom-definitions.mjs'
+import { migrateSupplyVoiceSchema } from '../src/repositories/supply-voices.mjs'
 
 // Explicit command only. Does not read a production .env or run from app startup.
 if (process.env.AI_AUTHORIZATION_LOCAL_MIGRATION !== 'approved') throw new Error('Set AI_AUTHORIZATION_LOCAL_MIGRATION=approved for the explicitly selected database after backup')
@@ -18,5 +19,6 @@ try {
   await mysqlStateStore(pool, 'local-resources-v1', emptyResourceIntents()).migrate()
   await mysqlStateStore(pool, 'commerce-v2-price-notifications', emptyPriceNotificationState()).migrate()
   await mysqlStateStore(pool, 'commerce-v2-custom-definitions', emptyCustomDefinitions()).migrate()
+  await migrateSupplyVoiceSchema(pool)
   console.log('Local authorization tables ready; no existing balances or grants changed.')
 } finally { await pool.end() }

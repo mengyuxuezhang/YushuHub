@@ -37,6 +37,7 @@ import { emptyCustomDefinitions } from './custom-definitions.mjs'
 import { legacySnapshotFixture } from './fixtures/legacy-snapshot.mjs'
 import { verifyLegacyImportReceipt } from './local-legacy-binding.mjs'
 import { publicSupplyCatalogRow } from '../../routes/agent-supply.mjs'
+import { supplyVoiceRepository } from '../../repositories/supply-voices.mjs'
 
 const configured = Boolean(process.env.LICENSING_TEST_DB)
 
@@ -1219,4 +1220,88 @@ test('real MySQL HTTP gateway persists signed terminal subjects and rejects peer
     for (const server of [centerServer, gatewayServer]) if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
     await pool.end(); await centerPool.end()
   }
+})
+test('real MySQL private voice resource foundation isolates subjects, enforces concurrent quotas and persists original action results', { skip: !configured }, async () => {
+  const { gatewayDatabase = 'yushu_gateway_test', licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable database required')
+  const pool = mysql.createPool({ ...config, database: gatewayDatabase, connectionLimit: 24 }), dir = await fs.mkdtemp(path.join(os.tmpdir(), 'supply-voices-test-'))
+  let clock = Date.now(), inspections = 0
+  const hash = value => crypto.createHash('sha256').update(value).digest('hex')
+  const scope = { rootId: 'voice-root', organizationId: 'voice-child', subjectHash: hash('fictional-owner'), modelId: 'private-model' }
+  const peer = { ...scope, subjectHash: hash('fictional-peer') }, bindingHash = hash('original-connection')
+  const make = () => supplyVoiceRepository({ pool, book: 'voice-foundation', directory: dir, now: () => clock, inspectAudio: async (bytes, format) => { assert(Buffer.isBuffer(bytes)); assert.equal(format, 'wav'); inspections++; return { duration: 10 } } })
+  try {
+    let voices = make(); await voices.migrate(); await voices.migrate(); await voices.assertReady()
+    const [moneyBefore] = await pool.query('SELECT SUM(balance) AS balance,SUM(reserved) AS reserved FROM accounting_wallets')
+    const upload = { requestId: 'voice-upload', format: 'wav', bytes: Buffer.from('fictional 10 second wav recording') }
+    const resource = await voices.upload(scope, upload), repeated = await voices.upload(scope, upload)
+    assert.equal(resource.id, repeated.id); assert.equal(inspections, 1); assert.equal((await fs.readdir(dir)).length, 1)
+    assert.equal(JSON.stringify(resource).includes('sourceFile'), false)
+    await assert.rejects(voices.upload(scope, { ...upload, bytes: Buffer.from('different') }), { code: 'IDEMPOTENCY_CONFLICT' })
+    await assert.rejects(voices.get(peer, resource.id), { code: 'VOICE_NOT_FOUND' })
+    await assert.rejects(voices.get({ ...scope, organizationId: 'sibling' }, resource.id), { code: 'VOICE_NOT_FOUND' })
+    await assert.rejects(voices.get({ ...scope, modelId: 'another-model' }, resource.id), { code: 'VOICE_NOT_FOUND' })
+    await assert.rejects(voices.get({ ...scope, subjectHash: '' }, resource.id), { code: 'VOICE_SUBJECT_REQUIRED' })
+    assert((await voices.source(scope, resource.id)).bytes.equals(upload.bytes))
+    const sourceRecord = await voices.get(scope, resource.id), alteredAudio = Buffer.from(upload.bytes); alteredAudio[0] ^= 1
+    await fs.writeFile(path.join(dir, sourceRecord.sourceFile), alteredAudio)
+    await assert.rejects(voices.source(scope, resource.id), { code: 'VOICE_FILE_INVALID' })
+    await fs.writeFile(path.join(dir, sourceRecord.sourceFile), upload.bytes)
+    const clone = { requestId: 'voice-clone', action: 'clone', inputHash: hash('approved text and consent'), bindingHash, credentialId: 'original-key', name: '虚构私有音色' }
+    const claims = await Promise.all([voices.claim(scope, resource.id, clone), voices.claim(scope, resource.id, clone)])
+    assert.equal(claims.filter(value => value.created).length, 1); assert.equal(claims[0].resource.providerVoiceId, claims[1].resource.providerVoiceId)
+    await voices.checkpoint(scope, resource.id, clone.requestId, { stage: 'file-uploaded', upstreamFileId: '9999999999999999999', cleanupPending: true })
+    await assert.rejects(voices.checkpoint(scope, resource.id, clone.requestId, { upstreamFileId: 9999999999999999 }), { code: 'VOICE_CHECKPOINT_INVALID' })
+    await assert.rejects(voices.checkpoint(scope, resource.id, clone.requestId, { cleanupPending: false }), { code: 'VOICE_CHECKPOINT_INVALID' })
+    await assert.rejects(voices.checkpoint(scope, resource.id, clone.requestId, { upstreamFileId: '9999999999999999998' }), { code: 'VOICE_CHECKPOINT_IMMUTABLE' })
+    await assert.rejects(voices.checkpoint(scope, resource.id, clone.requestId, { stage: 'dispatch-ready' }), { code: 'VOICE_CHECKPOINT_IMMUTABLE' })
+    const done = { state: 'done', usage: [{ meter: 'billable_characters', phase: 'preview', quantity: '4' }], result: { voiceId: resource.id } }
+    await voices.finish(scope, resource.id, clone.requestId, done)
+    voices = make(); assert.deepEqual((await voices.job(scope, clone.requestId)).outcome, done)
+    assert.equal((await voices.job(scope, clone.requestId)).upstreamFileId, '9999999999999999999')
+    await voices.checkpoint(scope, resource.id, clone.requestId, { stage: 'clean', cleanupPending: false })
+    await assert.rejects(voices.job(peer, clone.requestId), { code: 'VOICE_JOB_NOT_FOUND' })
+    assert.equal((await voices.list(scope))[0].name, '虚构私有音色'); assert.deepEqual(await voices.list(peer), [])
+    await voices.releaseSource(scope, resource.id); await assert.rejects(voices.source(scope, resource.id), { code: 'VOICE_SOURCE_UNAVAILABLE' })
+    let loseCommitReply = true
+    const lostPool = { query: (...args) => pool.query(...args), getConnection: async () => {
+      const connection = await pool.getConnection()
+      return { query: (...args) => connection.query(...args), beginTransaction: () => connection.beginTransaction(), rollback: () => connection.rollback(), release: () => connection.release(), commit: async () => { await connection.commit(); if (loseCommitReply) { loseCommitReply = false; throw new Error('simulated lost upload commit reply') } } }
+    } }
+    const committedUpload = supplyVoiceRepository({ pool: lostPool, book: 'voice-commit-loss', directory: dir, now: () => clock, inspectAudio: async () => ({ duration: 10 }) })
+    await assert.rejects(committedUpload.upload(scope, upload), /simulated lost upload commit reply/)
+    const kept = await committedUpload.upload(scope, upload); assert((await committedUpload.source(scope, kept.id)).bytes.equals(upload.bytes))
+    clock += 3_600_001; assert.equal((await committedUpload.pruneExpiredUploads()).cleaned, 1)
+    const activate = { requestId: 'voice-activate', action: 'activate', inputHash: hash('activation'), bindingHash, credentialId: 'original-key' }
+    await assert.rejects(voices.claim(scope, resource.id, { ...activate, bindingHash: hash('another-account') }), { code: 'VOICE_BINDING_CHANGED' })
+    const activations = await Promise.allSettled(['a', 'b'].map(label => voices.claim(scope, resource.id, { ...activate, requestId: `voice-activate-${label}` })))
+    assert.equal(activations.filter(row => row.status === 'fulfilled').length, 1)
+    const accepted = activations.find(row => row.status === 'fulfilled').value.job.requestId
+    await voices.finish(scope, resource.id, accepted, { state: 'unknown' }); assert.equal((await voices.get(scope, resource.id)).status, 'unknown')
+    const activated = { state: 'done', usage: [{ meter: 'resource_activation', phase: 'activation', quantity: '1' }], result: { voiceId: resource.id } }
+    await voices.finish(scope, resource.id, accepted, activated); await voices.finish(scope, resource.id, accepted, activated)
+    await assert.rejects(voices.finish(scope, resource.id, accepted, { ...activated, usage: [] }), { code: 'VOICE_SETTLEMENT_IMMUTABLE' })
+    assert.equal((await voices.get(scope, resource.id)).status, 'active')
+    const synth = { ...activate, action: 'synthesize' }
+    await Promise.all(['a', 'b'].map(label => voices.claim(scope, resource.id, { ...synth, requestId: `synthesis-${label}` })))
+    const removal = { ...activate, action: 'delete', requestId: 'voice-delete' }
+    await assert.rejects(voices.claim(scope, resource.id, removal), { code: 'VOICE_BUSY' })
+    await voices.finish(scope, resource.id, 'synthesis-a', { state: 'unknown' })
+    await assert.rejects(voices.claim(scope, resource.id, { ...synth, requestId: 'synthesis-c' }), { code: 'VOICE_BUSY' })
+    for (const label of ['a', 'b']) await voices.finish(scope, resource.id, `synthesis-${label}`, { state: 'done', usage: [{ meter: 'billable_characters', quantity: '2' }], result: {} })
+    await voices.claim(scope, resource.id, removal); await voices.finish(scope, resource.id, removal.requestId, { state: 'done', usage: [], result: {} })
+    assert.deepEqual(await voices.list(scope), [])
+    const quota = { ...scope, organizationId: 'quota-child', subjectHash: hash('quota-user') }
+    const uploaded = await Promise.all(Array.from({ length: 20 }, (_, index) => voices.upload({ ...quota, modelId: index % 2 ? 'private-model' : 'second-private-model' }, { ...upload, requestId: `quota-upload-${index}` })))
+    assert.equal(new Set(uploaded.map(row => row.id)).size, 20)
+    await assert.rejects(voices.upload(quota, { ...upload, requestId: 'quota-excess' }), { code: 'VOICE_QUOTA_EXCEEDED' })
+    clock += 3_600_001
+    assert.equal((await voices.pruneExpiredUploads()).cleaned, 20); assert.deepEqual(await fs.readdir(dir), [])
+    const failedClone = await voices.upload(quota, { ...upload, requestId: 'quota-excess' }); assert.equal(failedClone.status, 'uploaded')
+    await voices.claim(quota, failedClone.id, { ...clone, requestId: 'failed-voice-clone' })
+    await voices.finish(quota, failedClone.id, 'failed-voice-clone', { state: 'done', usage: [], result: { error: 'PROVIDER_REJECTED' } })
+    assert.equal((await voices.get(quota, failedClone.id)).status, 'failed')
+    assert.equal((await voices.pruneSafeSources()).cleaned, 1)
+    const [moneyAfter] = await pool.query('SELECT SUM(balance) AS balance,SUM(reserved) AS reserved FROM accounting_wallets'); assert.deepEqual(moneyAfter, moneyBefore)
+  } finally { await pool.end(); assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir())); await fs.rm(dir, { recursive: true, force: true }) }
 })
