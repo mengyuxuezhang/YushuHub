@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { centerLogin, centerLogout, centerRequest, centerState, issueLicense } from '@/api/license-center'
-import type { LicenseCenterState, LicenseGrant } from '@/types/licensing'
-const state = ref<LicenseCenterState | null>(null), busy = ref(false), error = ref(''), secret = ref(''), packageJson = ref(''), renewal = ref('')
+import type { LicenseCenterState, LicenseGrant, LicenseChangePreview } from '@/types/licensing'
+import LicenseNotifications from './LicenseNotifications.vue'
+const state = ref<LicenseCenterState | null>(null), busy = ref(false), error = ref(''), secret = ref(''), packageJson = ref('')
+const editing = ref<LicenseGrant | null>(null), preview = ref<LicenseChangePreview | null>(null)
+const edit = reactive({ package: '', models: '', expiresAt: '', status: '' })
+const migration = reactive({ grantId: '', instanceId: '', domain: '', overlapHours: 24 })
 const login = reactive({ username: '', password: '', code: '' })
 const form = reactive({ name: '', package: 'first-custom:1', parentId: '', domain: '', modelIds: '', expiresAt: '' })
 const selectedPackage = computed(() => state.value?.packages.find(p => `${p.id}:${p.version}` === form.package))
@@ -21,12 +25,29 @@ async function issue() {
     secret.value = `一次性激活码（7天有效）：${result.code}`; await refresh()
   })
 }
-async function change(grant: LicenseGrant, status: string) {
-  await perform(async () => { await centerRequest(`/grants/${encodeURIComponent(grant.id)}`, { status, expectedVersion: grant.version }, 'PATCH'); await refresh() })
+function selectGrant(grant: LicenseGrant) {
+  editing.value = grant; preview.value = null
+  Object.assign(edit, { package: `${grant.packageId}:${grant.packageVersion}`, models: grant.modelIds.join(','), expiresAt: grant.expiresAt || '', status: grant.status })
 }
-async function renew(grant: LicenseGrant) {
-  if (!renewal.value) { error.value = '请先选择新的到期时间'; return }
-  await perform(async () => { await centerRequest(`/grants/${encodeURIComponent(grant.id)}`, { expiresAt: new Date(renewal.value).toISOString(), expectedVersion: grant.version }, 'PATCH'); await refresh() })
+function patch() {
+  const [packageId, version] = edit.package.split(':')
+  return { packageId, packageVersion: Number(version), modelIds: edit.models.split(',').map(s => s.trim()).filter(Boolean),
+    expiresAt: edit.expiresAt ? new Date(edit.expiresAt).toISOString() : null, status: edit.status, expectedVersion: editing.value!.version }
+}
+async function inspect() { await perform(async () => { preview.value = await centerRequest<LicenseChangePreview>(`/grants/${encodeURIComponent(editing.value!.id)}/preview`, patch()) }) }
+async function applyChange() {
+  const reviewed = preview.value
+  if (!reviewed || !editing.value) return
+  await perform(async () => { await centerRequest(`/grants/${encodeURIComponent(editing.value!.id)}`, { ...patch(), previewDigest: reviewed.previewDigest }, 'PATCH'); editing.value = null; preview.value = null; await refresh() })
+}
+async function rotate(grant: LicenseGrant) {
+  await perform(async () => {
+    const result = await centerRequest<{ credential: string }>(`/grants/${encodeURIComponent(grant.id)}/rotate`, { instanceId: migration.instanceId, domain: migration.domain, overlapHours: migration.overlapHours, expectedVersion: grant.version })
+    secret.value = `新实例凭据（请保存在服务器受控配置中）：${result.credential}`; migration.grantId = ''; await refresh()
+  })
+}
+async function completeMigration(grant: LicenseGrant) {
+  await perform(async () => { await centerRequest(`/grants/${encodeURIComponent(grant.id)}/migration/complete`, { expectedVersion: grant.version }); await refresh() })
 }
 async function reissue(grant: LicenseGrant) {
   await perform(async () => { const result = await centerRequest<{ code: string }>(`/grants/${encodeURIComponent(grant.id)}/code`, {}); secret.value = `新激活码：${result.code}` })
@@ -62,12 +83,37 @@ async function logout() { await perform(async () => { await centerLogout(); stat
       </form>
       <section>
         <h2>代理授权</h2><button :disabled="busy" @click="perform(refresh)">刷新</button>
-        <label>续期目标时间<input v-model="renewal" type="datetime-local" /></label>
         <div class="table-scroll"><table><thead><tr><th>代理</th><th>套餐与层级</th><th>绑定</th><th>状态与期限</th><th>操作</th></tr></thead><tbody>
-          <tr v-for="grant in state.grants" :key="grant.id"><td>{{ grant.name }}<small>{{ grant.id }}</small></td><td>{{ grant.packageId }} · v{{ grant.packageVersion }}<small>{{ grant.level }}级</small></td><td>{{ grant.domain }}<small>{{ grant.instanceId || '未激活' }}</small><small v-if="grant.parentId">上级：{{ grant.parentId }}</small></td><td>{{ grant.status }}<small>{{ grant.expiresAt ? new Date(grant.expiresAt).toLocaleString() : '无期限' }}</small></td><td><div class="actions"><button :disabled="busy || grant.status === 'revoked'" @click="change(grant, grant.status === 'enabled' ? 'suspended' : 'enabled')">{{ grant.status === 'enabled' ? '暂停' : '恢复' }}</button><button :disabled="busy || grant.status === 'revoked'" @click="renew(grant)">续期</button><button :disabled="busy || !!grant.instanceId" @click="reissue(grant)">重发激活码</button></div></td></tr>
+          <tr v-for="grant in state.grants" :key="grant.id"><td>{{ grant.name }}<small>{{ grant.id }}</small></td><td>{{ grant.packageId }} · v{{ grant.packageVersion }}<small>{{ grant.level }}级</small></td><td>{{ grant.domain }}<small>{{ grant.instanceId || '未激活' }}</small><small v-if="grant.previousBinding">旧实例：{{ grant.previousBinding.instanceId }}，截止 {{ new Date(grant.previousBinding.expiresAt).toLocaleString() }}</small><small v-if="grant.parentId">上级：{{ grant.parentId }}</small></td><td>{{ grant.status }}<small>{{ grant.expiresAt ? new Date(grant.expiresAt).toLocaleString() : '无期限' }}</small></td><td><div class="actions"><button :disabled="busy || grant.status === 'revoked'" @click="selectGrant(grant)">变更 / 续期</button><button v-if="grant.level === 1 && grant.instanceId && grant.status === 'enabled'" :disabled="busy" @click="migration.grantId = grant.id">迁移实例</button><button v-if="grant.previousBinding" :disabled="busy" @click="completeMigration(grant)">立即撤销旧实例</button><button :disabled="busy || !!grant.instanceId" @click="reissue(grant)">重发激活码</button></div></td></tr>
         </tbody></table></div>
       </section>
+      <section v-if="editing" aria-label="授权变更">
+        <h2>变更 {{ editing.name }}</h2>
+        <div @input="preview = null" @change="preview = null">
+          <label>套餐<select v-model="edit.package"><option v-for="pkg in state.packages.filter(p => p.level === editing?.level)" :key="`${pkg.id}:${pkg.version}`" :value="`${pkg.id}:${pkg.version}`">{{ pkg.id }} · v{{ pkg.version }}</option></select></label>
+          <label>授权模型ID<input v-model="edit.models" /></label>
+          <label>到期时间（含时区，留空为无期限）<input v-model="edit.expiresAt" placeholder="2027-01-01T00:00:00Z" /></label>
+          <label>状态<select v-model="edit.status"><option value="enabled">正常</option><option value="suspended">暂停</option><option value="revoked">永久撤销</option></select></label>
+        </div>
+        <button :disabled="busy" @click="inspect">预览影响</button>
+        <div v-if="preview" role="status">
+          <p>新增能力：{{ preview.addedCapabilities.join('、') || '无' }}；移除能力：{{ preview.removedCapabilities.join('、') || '无' }}。</p>
+          <p>移除模型：{{ preview.removedModels.join('、') || '无' }}；现有项目 {{ preview.usage.projects }}，累计构建 {{ preview.usage.builds }}。已用额度保留。</p>
+          <p v-if="preview.exceededQuotas.length">新额度低于用量：{{ preview.exceededQuotas.join('、') }}；现有记录保留，新申请将受限。</p>
+          <ul><li v-for="child in preview.affectedChildren" :key="child.id">二级 {{ child.id }}：{{ child.parentInactive ? '因一级失效停止新业务' : '受一级期限及总额度约束' }}；不可用模型 {{ child.unavailableModels.join('、') || '无' }}；有效期 {{ child.effectiveExpiresAt || '无期限' }}</li></ul>
+          <p v-if="edit.status === 'revoked'">撤销永久生效，不能恢复。请核对代理与影响后应用。</p>
+          <button :disabled="busy" @click="applyChange">应用已预览的变更</button>
+        </div>
+        <button :disabled="busy" @click="editing = null; preview = null">关闭</button>
+      </section>
+      <form v-if="migration.grantId" @submit.prevent="rotate(state.grants.find(g => g.id === migration.grantId)!)">
+        <h2>迁移一级实例</h2><p>先备份并同步经营数据。授权窗口允许两台实例；经营账务仍须只由一台受理，不能双写扣款。</p>
+        <label>新实例编号<input v-model="migration.instanceId" required /></label><label>新备案域名<input v-model="migration.domain" type="url" required /></label>
+        <label>临时双实例小时数<input v-model.number="migration.overlapHours" type="number" min="0" max="24" step="1" required /><small>0表示立即撤销旧实例；最长24小时。</small></label>
+        <button :disabled="busy">迁移并显示新凭据</button><button type="button" @click="migration.grantId = ''">取消</button>
+      </form>
       <section><h2>发布套餐新版本</h2><p>发布不修改现有代理授权，需通过授权变更接口显式应用。</p><label>套餐定义<textarea v-model="packageJson" rows="8" placeholder="粘贴新的套餐 JSON 定义" /></label><button :disabled="busy || !packageJson" @click="publish">发布不可变版本</button></section>
+      <LicenseNotifications />
       <section><h2>审计记录</h2><ul><li v-for="event in state.audit" :key="event.id">{{ new Date(event.at).toLocaleString() }} · {{ event.actor }} · {{ event.event }} · {{ event.target }}</li></ul></section>
     </template>
   </main>

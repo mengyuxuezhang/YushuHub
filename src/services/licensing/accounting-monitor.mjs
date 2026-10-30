@@ -17,13 +17,15 @@ function publicConfig(config) {
   return { version: config.version, enabled: config.enabled, configured: Boolean(config.encrypted), host: config.encrypted ? 'open.feishu.cn' : null,
     thresholds: { ...defaults, ...config.thresholds } }
 }
-function enqueue(state, event, now) {
+export function enqueueOperationalNotice(state, event, now) {
   // Preserve all pending messages. Delivered history is operational, bounded.
-  state.deliveries = [...state.deliveries.filter(d => d.state !== 'delivered'), ...state.deliveries.filter(d => d.state === 'delivered').slice(-100)]
+  const terminal = d => ['delivered', 'skipped'].includes(d.state)
+  state.deliveries = [...state.deliveries.filter(d => !terminal(d)), ...state.deliveries.filter(terminal).slice(-100)]
   if (state.deliveries.some(d => d.id === event.id)) return
-  if (state.deliveries.filter(d => d.state !== 'delivered').length >= 200) throw failure('ALERT_QUEUE_FULL', '告警队列已满，请处理发送失败', 503)
+  if (state.deliveries.filter(d => !terminal(d)).length >= 200) throw failure('ALERT_QUEUE_FULL', '告警队列已满，请处理发送失败', 503)
   state.deliveries.push({ ...event, createdAt: now, state: 'pending', attempts: 0, nextAttemptAt: now })
 }
+const enqueue = enqueueOperationalNotice
 export function createAccountingMonitor({ store, collect, vault, book, licenseState, fetchImpl = fetch, now = Date.now }) {
   const account = `accounting-monitor:${book}`
   let rejects = 0, recoveryErrors = 0, scanRunning = false, timer
@@ -99,7 +101,10 @@ export function createAccountingMonitor({ store, collect, vault, book, licenseSt
       for (let i = 0; i < Math.min(5, limit); i++) {
         const claim = await store.transaction(state => {
           if (!state.config.enabled) return null
-          const event = state.deliveries.find(d => d.state !== 'delivered' && d.nextAttemptAt <= now() && (!d.leaseUntil || d.leaseUntil <= now()))
+          for (const event of state.deliveries) if (!['delivered', 'skipped'].includes(event.state) && event.validUntil && event.validUntil <= now() && (!event.leaseUntil || event.leaseUntil <= now())) {
+            event.state = 'skipped'; event.lastError = 'NOTICE_WINDOW_PASSED'; event.skippedAt = now()
+          }
+          const event = state.deliveries.find(d => !['delivered', 'skipped'].includes(d.state) && d.nextAttemptAt <= now() && (!d.leaseUntil || d.leaseUntil <= now()))
           if (!event) return null
           event.lease = crypto.randomUUID(); event.leaseUntil = now() + 30_000; event.state = 'sending'
           return { event, encrypted: state.config.encrypted }

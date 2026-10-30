@@ -16,6 +16,7 @@ import { createAccountingMonitor, emptyMonitorState } from './accounting-monitor
 import { ModelCredentialVault } from '../model-credentials.mjs'
 import { readChatStream, readSse } from './streaming.mjs'
 import { deploymentRuntime, officialAuthorization } from './admin-runtime.mjs'
+import { licenseNotifications } from './license-notifications.mjs'
 import { reserveCentralQuota } from './quotas.mjs'
 import fs from 'node:fs/promises'
 import os from 'node:os'
@@ -506,4 +507,108 @@ test('webhook failed transport hides secrets; expired sending leases recover aft
   await createAccountingMonitor(options).drain(); assert.equal(calls, 1)
   assert.equal((await monitor.state()).deliveries[0].lastError, 'WEBHOOK_UNAVAILABLE')
   assert(!JSON.stringify(await monitor.state()).includes(secret))
+})
+
+
+test('grant impact preview preserves usage, reports descendant effects and rejects a stale reviewed change', async () => {
+  const { center, store } = setup(), first = await root(center)
+  await center.issue({ id: 'preview-child', name: 'Child', packageId: 'second', parentId: 'first', expiresAt: '2027-01-01T00:00:00Z' }, 'operator')
+  const { token } = await center.serviceToken(first.credential, 'official-build')
+  const pkg = (await center.list()).packages.find(p => p.id === 'first-fixed')
+  await center.publishPackage({ ...pkg, version: 2, quotas: { projects: { mode: 'none' }, builds: { mode: 'limited', value: 1 } } }, 'operator')
+  const patch = { expectedVersion: 1, packageId: pkg.id, packageVersion: 2, modelIds: [], expiresAt: '2026-12-01T00:00:00Z' }
+  const preview = await center.preview('first', patch)
+  assert.equal((await center.list()).grants[0].version, 1)
+  assert.deepEqual(preview.affectedChildren[0].unavailableModels, ['chat'])
+  assert.equal(preview.affectedChildren[0].effectiveExpiresAt, new Date(patch.expiresAt).toISOString())
+  assert.equal(JSON.stringify(preview).includes('credentialHash'), false)
+  await center.resource(token, { kind: 'projects', resourceId: 'preview-project' })
+  await assert.rejects(center.update('first', { ...patch, previewDigest: preview.previewDigest }, 'operator'), { code: 'PREVIEW_CHANGED' })
+  await assert.rejects(center.update('first', patch, 'operator'), { code: 'PREVIEW_CHANGED' })
+  const updated = await center.preview('first', patch)
+  assert.deepEqual(updated.exceededQuotas, ['projects'])
+  await center.update('first', { ...patch, previewDigest: updated.previewDigest }, 'operator')
+  assert.equal(Object.keys((await store.read()).resources).length, 1)
+  await assert.rejects(center.resource((await center.serviceToken(first.credential, 'official-build')).token, { kind: 'projects', resourceId: 'another-project' }), { code: 'QUOTA_EXHAUSTED' })
+})
+
+test('migration permits two bound instances for at most 24 hours and never leaks or revives old credentials', async () => {
+  const { center, publicKeys, now, advance } = setup(), first = await root(center)
+  const child = await center.issue({ id: 'migration-child', name: 'Child', packageId: 'second', parentId: 'first', expiresAt: '2027-01-01T00:00:00Z' }, 'operator')
+  await center.activate({ code: child.code, instanceId: first.input.instanceId, domain: first.input.domain, requestId: 'migration-child' }, first.credential)
+  await assert.rejects(center.rotate('first', { instanceId: 'replacement', domain: 'https://new.example.com', overlapHours: 25 }, 'operator'), { code: 'INVALID_MIGRATION_WINDOW' })
+  const migrated = await center.rotate('first', { instanceId: 'replacement', domain: 'https://new.example.com', overlapHours: 24, expectedVersion: 1 }, 'operator')
+  const old = await center.refresh(first.credential), next = await center.refresh(migrated.credential)
+  for (const entry of old.grants) assert.equal(verifyClaims(entry.certificate, { keys: publicKeys, audience: 'deployment', now: now() }).instanceId, first.input.instanceId)
+  for (const entry of next.grants) assert.equal(verifyClaims(entry.certificate, { keys: publicKeys, audience: 'deployment', now: now() }).instanceId, 'replacement')
+  const oldToken = (await center.serviceToken(first.credential, 'official-build', child.grant.id)).token
+  assert.equal((await center.introspect(oldToken, 'official-build')).instanceId, first.input.instanceId)
+  await center.resource(oldToken, { kind: 'builds', resourceId: 'migration-build' })
+  assert.equal(JSON.stringify(await center.list()).includes('credentialHash'), false)
+  await assert.rejects(center.rotate('first', { instanceId: 'third', domain: 'https://third.example.com', overlapHours: 1 }, 'operator'), { code: 'MIGRATION_IN_PROGRESS' })
+  advance(24 * HOUR)
+  await assert.rejects(center.refresh(first.credential), { code: 'INSTANCE_UNAUTHORIZED' })
+  await assert.rejects(center.recoveryToken(first.credential, 'first', 'old-recovery'), { code: 'INSTANCE_UNAUTHORIZED' })
+  assert.ok((await center.refresh(migrated.credential)).grants.length)
+  await center.completeMigration('first', { expectedVersion: 2 }, 'operator')
+  assert.equal((await center.list()).grants[0].previousBinding, undefined)
+  const again = await center.rotate('first', { instanceId: 'third', domain: 'https://third.example.com', overlapHours: 1 }, 'operator')
+  const temporary = (await center.serviceToken(migrated.credential, 'official-build')).token
+  await center.completeMigration('first', { expectedVersion: 3 }, 'operator')
+  await assert.rejects(center.introspect(temporary, 'official-build'), { code: 'STALE_LICENSE' })
+  await assert.rejects(center.refresh(migrated.credential), { code: 'INSTANCE_UNAUTHORIZED' })
+  assert.ok((await center.refresh(again.credential)).grants.length)
+})
+
+
+test('expiry notices atomically enqueue, skip missed windows, survive restart and expose failed delivery', async () => {
+  const { center, store, now, advance } = setup()
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'license-notices-'))
+  let reject = true, sends = 0
+  const options = { center, store, vault: new ModelCredentialVault(path.join(dir, 'key')), now,
+    fetchImpl: async () => { sends++; return new Response(JSON.stringify({ code: reject ? 1 : 0 })) } }
+  try {
+    await center.issue({ id: 'notice-root', name: 'Fictional', packageId: 'first-fixed', domain: 'https://notice.example.com', expiresAt: new Date(now() + 40 * 24 * HOUR).toISOString() }, 'operator')
+    const notifications = licenseNotifications(options)
+    await notifications.configure({ expectedVersion: 0, enabled: true, url: 'https://open.feishu.cn/open-apis/bot/v2/hook/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' }, 'operator')
+    advance(10 * 24 * HOUR)
+    assert.deepEqual((await center.reminders()).map(n => n.days), [30])
+    assert.equal((await center.reminders()).length, 0)
+    await notifications.tick()
+    assert.equal(sends, 1)
+    assert.equal((await notifications.state()).deliveries[0].lastError, 'WEBHOOK_REJECTED')
+    advance(5000); reject = false
+    await licenseNotifications(options).tick()
+    assert.equal((await notifications.state()).deliveries[0].state, 'delivered')
+    // A stopped service resumes in the one-day window, never floods old 7-day notices.
+    advance(29 * 24 * HOUR)
+    assert.deepEqual((await center.reminders()).map(n => n.days), [1])
+    await center.update('notice-root', { expectedVersion: 1, expiresAt: new Date(now() + 2 * 24 * HOUR).toISOString() }, 'operator')
+    assert.equal((await center.reminders()).length, 0)
+    advance(24 * HOUR)
+    assert.deepEqual((await center.reminders()).map(n => n.days), [1])
+    assert.equal(JSON.stringify(await notifications.state()).includes('aaaaaaaa-bbbb'), false)
+    const before = await store.read()
+    await store.transaction(state => { state.notifications.deliveries = Array.from({ length: 200 }, (_, i) => ({ id: String(i), state: 'pending' })); state.notices = {} })
+    await assert.rejects(center.reminders(), { code: 'ALERT_QUEUE_FULL' })
+    assert.equal(Object.keys((await store.read()).notices).length, 0)
+    await store.transaction(state => { state.notifications = before.notifications; state.notices = before.notices })
+    advance(2 * 24 * HOUR); assert.equal((await center.reminders()).length, 0)
+  } finally { await fs.rm(dir, { recursive: true, force: true }) }
+})
+
+
+test('new instance adopts only an online verified credential for its binding and retains organization identity', async () => {
+  const { center, now, publicKeys } = setup(), first = await root(center)
+  const moved = await center.rotate('first', { instanceId: 'replacement', domain: 'https://new.example.com', overlapHours: 24 }, 'operator')
+  const store = memoryStateStore(emptyDeploymentState())
+  const options = { store, instanceId: 'replacement', publicUrl: 'https://new.example.com', publicKeys, now, centerUrl: 'https://license.example.com',
+    fetchImpl: async (_url, options) => new Response(JSON.stringify({ success: true, data: await center.refresh(options.headers.Authorization.slice(7)) })) }
+  const client = createDeploymentLicenseClient(options)
+  await assert.rejects(createDeploymentLicenseClient({ ...options, instanceId: 'wrong' }).adoptCredential(moved.credential), { code: 'INVALID_LICENSE' })
+  await assert.rejects(createDeploymentLicenseClient({ ...options, publicUrl: 'https://wrong.example.com' }).adoptCredential(moved.credential), { code: 'BINDING_MISMATCH' })
+  assert.equal((await client.adoptCredential(moved.credential)).id, 'first')
+  assert.equal((await client.claims()).instanceId, 'replacement')
+  await store.transaction(state => { state.rootId = 'different-agent' })
+  await assert.rejects(client.adoptCredential(moved.credential), { code: 'BINDING_MISMATCH' })
 })

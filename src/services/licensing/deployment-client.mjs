@@ -44,6 +44,23 @@ export function createDeploymentLicenseClient({ store, centerUrl, instanceId, pu
   }
   return {
     refresh,
+    async adoptCredential(credential) {
+      if (typeof credential !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(credential)) throw failure('INSTANCE_UNAUTHORIZED', '迁移凭据格式无效', 401)
+      const response = await request('refresh', {}, credential), grants = {}
+      let rootId
+      for (const entry of response.grants) {
+        const claims = entry.certificate ? verify(entry.certificate) : null
+        if (claims && (claims.id !== entry.id || claims.version !== entry.version || claims.domain !== new URL(publicUrl).origin)) throw failure('BINDING_MISMATCH', '新实例域名、版本或授权身份不匹配', 403)
+        if (claims?.level === 1) rootId = claims.id
+        grants[entry.id] = { certificate: entry.certificate, inactive: !claims, expiresAt: entry.expiresAt, level: entry.level }
+      }
+      if (!rootId) throw failure('LICENSE_INACTIVE', '迁移凭据未取得有效一级授权', 403)
+      await store.transaction(state => {
+        if (state.rootId && state.rootId !== rootId) throw failure('BINDING_MISMATCH', '迁移不能替换本地已有代理身份', 403)
+        Object.assign(state, { credential, rootId, grants, checkedAt: now(), rejected: false })
+      })
+      return { id: rootId, instanceId, adopted: true }
+    },
     async recoveryToken(organizationId, requestId) {
       const state = await store.read()
       if (!state.credential || !state.rootId) throw failure('INSTANCE_UNAUTHORIZED', '实例尚未激活', 401)

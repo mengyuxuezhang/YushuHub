@@ -53,10 +53,14 @@
 - `GET /operator/state`：授权、不可变套餐版本和最近审计；不返回激活码及实例明文凭据。
 - `POST /operator/packages`：发布新套餐版本，不修改既有授权。
 - `POST /operator/grants`：签发授权，返回仅当次显示的7天一次性激活码。
-- `PATCH /operator/grants/:id`：显式变更套餐、期限、状态或模型；必须提交 `expectedVersion`。
+- `POST /operator/grants/:id/preview`：只读预览套餐、期限、状态和模型变更，列出能力差异、上下级影响、已用额度及超额项，返回 `previewDigest`。
+- `PATCH /operator/grants/:id`：显式变更；须 `expectedVersion`，切换套餐须同时提交预览摘要。界面所有变更都先预览；摘要涵盖用量和二级状态，并发变化返回 `PREVIEW_CHANGED`，不清零额度。
 - `POST /operator/grants/:id/code`：作废旧码，重发激活码。
-- `POST /operator/grants/:id/rotate`：立即迁移实例并撤销旧凭据，联动更新二级绑定。
-- `POST /operator/reminders`：产生30/7/1天到期提醒记录，去重且跳过签发前已错过的窗口。
+- `POST /operator/grants/:id/rotate`：迁移实例，`overlapHours` 为0至24，默认0立即轮换；正值保留旧绑定至截止时间，拒绝叠加第三实例，二级随一级迁移。
+- `POST /operator/grants/:id/migration/complete`：携带 `expectedVersion` 提前撤销旧实例；不再次更换新凭据。
+- 新实例停止管理进程后，显式配置环境变量，运行 `node scripts/authorization-adopt-instance.mjs` 从受控 `AI_LICENSE_INSTANCE_CREDENTIAL_FILE` 导入轮换凭据。在线核验签名、实例、域名和本地原代理ID，不能拿其他代理凭据覆盖本地身份。状态文件路径、公钥文件、实例ID、中心URL和域名均须显式指定；不自动读取 `.env`。窗口不代表允许两台同时受理经营扣款，数据库/用户权益迁移仍须单写。
+- `POST /operator/reminders`：在同一事务产生30/7/1天提醒和投递事件；只生成当前尚未错过的窗口，签发/续期前已错过的阈值跳过。
+- `GET /operator/notifications`、`PUT /operator/notifications/config`、`POST /operator/notifications/test`、`POST /operator/notifications/scan`：查看状态、版本化更换飞书Webhook、通道测试和扫描。中心启动即扫描，此后每60秒扫描并发送；多工作器用持久化租约，投递失败退避重试。外部Webhook不支持事务幂等，因此响应丢失可能重复投递同一事件ID，不宣称恰好一次通知。
 - `POST /activate`：绑定实例、域名和幂等请求ID；二级必须额外携带所属一级实例凭据。
 - `POST /refresh`：一级实例获取自身及直属二级的当前签名授权。
 - `POST /service-token`：签发最长60秒且限定服务用途的访问令牌。
@@ -258,3 +262,12 @@ npm run license-center:build
 ```
 
 MySQL测试脚本创建自有临时容器、随机本地端口和两个一次性测试数据库，结束后清理容器；不读取现有部署的数据库配置，不挂载生产目录，不调用真实模型供应商。
+
+
+### 授权中心运营补齐（2026-10-30）
+
+运营界面增加授权变更/续期/永久撤销的影响预览、实例迁移及提前结束窗口、到期Webhook配置和发送状态。通知沿用现有受控飞书适配器；地址、签名密钥以AES-GCM加密，不从状态接口回显。`AI_LICENSE_NOTIFICATION_KEY_FILE` 默认 `data/license-notifications.key`，首次保存配置时创建，须与授权库一起受控备份，不能提交仓库；更换地址时可同时更换签名密钥。通知配置和队列存于中心自己的聚合记录，无需新增数据库DDL。未配置通道时提醒仍持久排队，可在界面看到未投递；已过窗口或续期/暂停后不再适用的待发提醒标记跳过。外部服务完全停机仍需外部监控，不能靠自身Webhook侦测停机。
+
+迁移窗口将截止时间写入旧实例签名凭证；旧实例断网也无法获得超过截止时间的本地宽限。恢复、服务令牌和额度校验均检查绑定，不允许过期旧凭据取得已受理任务恢复权限。提前结束窗口对在线校验立即生效，离线凭证仍受既有短期/宽限边界约束，不承诺离线瞬时撤销。
+
+验证包括：变更只读/并发用量冲突/额度保留、子级影响、新旧实例及子级绑定、到期/提前撤销/禁止第三实例、凭据不泄露、导入域名/实例/代理身份拒绝、提醒事务/重启/队列满回滚/投递失败、运营UI必须预览及编辑后作废预览。MySQL 8.4.10及授权测试服务器5.7.44新库通过HTTP预览/变更/迁移和重建中心后的凭据恢复；未触及真实经营库、未调用付费供应商，也未迁移生产实例。正式套餐、域名、试点和7天观察仍未执行。

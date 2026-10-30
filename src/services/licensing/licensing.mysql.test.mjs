@@ -41,12 +41,14 @@ test('real MySQL resource quotas: business atomicity, lost replies, project gene
     await pool.query('CREATE TABLE quota_builds (id VARCHAR(120) PRIMARY KEY,organization_id VARCHAR(120),remote_build_id VARCHAR(120))')
     const state = mysqlStateStore(centerPool, 'resource-center', emptyCenterState()), intents = mysqlStateStore(pool, 'resource-intents', emptyResourceIntents())
     await state.migrate(); await intents.migrate()
-    const keys = crypto.generateKeyPairSync('ed25519'), center = createLicenseCenter({ store: state, privateKey: keys.privateKey, publicKeys: { test: keys.publicKey }, keyId: 'test', credentialKey: crypto.randomBytes(32) })
+    const keys = crypto.generateKeyPairSync('ed25519'), credentialKey = crypto.randomBytes(32)
+    const makeCenter = () => createLicenseCenter({ store: state, privateKey: keys.privateKey, publicKeys: { test: keys.publicKey }, keyId: 'test', credentialKey })
+    const center = makeCenter()
     const issued = await center.issue({ id: 'quota-root', name: '虚构额度一级', packageId: 'first-fixed', domain: 'https://quota.example.com', expiresAt: null }, 'test')
     const activation = await center.activate({ code: issued.code, requestId: 'quota-activate', instanceId: 'quota-instance', domain: 'https://quota.example.com' })
     const child = await center.issue({ id: 'quota-child', name: '虚构额度二级', packageId: 'second', parentId: 'quota-root', expiresAt: null }, 'test')
     await center.activate({ code: child.code, requestId: 'quota-child-activate', instanceId: 'quota-instance', domain: 'https://quota.example.com' }, activation.credential)
-    const app = serviceApp(); registerLicenseCenterRoutes(app, { center, operators: {} }); serviceErrors(app)
+    const app = serviceApp(); registerLicenseCenterRoutes(app, { center, operators: { authenticate: async () => 'isolated-test' } }); serviceErrors(app)
     server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)) })
     let loseReserve = false, loseRelease = false, loseConfirm = false
     const remote = async (action, kind, resourceId, organizationId, input = {}) => {
@@ -98,6 +100,26 @@ test('real MySQL resource quotas: business atomicity, lost replies, project gene
     const scopes = await centerBuildScopes('/api/center/builds/status', { buildIds: ['remote-confirmed-build'], organizationId: 'forged' },
       { query: async (_sql, args) => pool.query('SELECT remote_build_id,organization_id FROM quota_builds WHERE remote_build_id IN (?)', args) }, async id => ({ id, externalId: id, agentLevel: 1 }))
     assert.deepEqual(scopes, [{ grantId: 'quota-root', buildIds: ['remote-confirmed-build'] }])
+    const operatorRequest = async (path, body, method = 'POST') => {
+      const response = await fetch(`http://127.0.0.1:${server.address().port}/api/license-center/v1/operator${path}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      return { status: response.status, ...await response.json() }
+    }
+    const patch = { expectedVersion: 2, modelIds: [], expiresAt: '2028-01-01T00:00:00Z' }
+    const reviewed = await operatorRequest('/grants/quota-root/preview', patch)
+    assert.equal(reviewed.status, 200); assert.equal(reviewed.data.usage.builds, 10)
+    assert.equal((await operatorRequest('/grants/quota-root', { ...patch, previewDigest: reviewed.data.previewDigest }, 'PATCH')).status, 200)
+    const moved = await operatorRequest('/grants/quota-root/rotate', { expectedVersion: 3, instanceId: 'replacement-quota', domain: 'https://replacement.example.com', overlapHours: 24 })
+    assert.equal(moved.status, 200)
+    const restarted = makeCenter()
+    assert.equal((await restarted.refresh(activation.credential)).grants[0].instanceId, 'quota-instance')
+    assert.equal((await restarted.refresh(moved.data.credential)).grants[0].instanceId, 'replacement-quota')
+    const oldService = await restarted.serviceToken(activation.credential, 'official-build')
+    await restarted.introspect(oldService.token, 'official-build')
+    assert.equal((await operatorRequest('/grants/quota-root/migration/complete', { expectedVersion: 4 })).status, 200)
+    await assert.rejects(restarted.refresh(activation.credential), { code: 'INSTANCE_UNAUTHORIZED' })
+    await assert.rejects(restarted.introspect(oldService.token, 'official-build'), { code: 'STALE_LICENSE' })
+    assert.equal(Object.values((await state.read()).resources).filter(row => row.kind === 'builds').length, 10)
+
   } finally {
     if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
     await pool.end(); await centerPool.end()
