@@ -19,7 +19,7 @@ export function registerDeploymentAuthorizationRoutes(app, { client, repository,
   app.get('/api/authorization/state', requireAuth, endpoint(async req => ({ mode: 'center', license: await client.license(req.organizationContext?.externalId || (req.organizationContext?.organizationLevel === 2 ? req.organizationContext.organizationId : undefined)) })))
   app.post('/api/authorization/activate', requireAuth, owner, endpoint(async req => {
     const grant = await client.activate(String(req.body.code || ''), 1)
-    await repository.syncLocalRootAuthorization({ organizationId: req.organizationContext.organizationId, externalId: grant.id, name: grant.name, status: 'enabled',
+    await repository.syncLocalRootAuthorization({ organizationId: req.organizationContext.organizationId, externalId: grant.id, name: grant.name, status: 'enabled', preserveBusinessStatus: true,
       authorizationVersion: grant.version, capabilities: grant.capabilities, expiresAt: grant.expiresAt }, { userId: req.user.id })
     return { id: grant.id, activated: true }
   }))

@@ -170,7 +170,7 @@ export async function syncLocalRootAuthorization(input, actor = {}) {
   await db().query(
     `UPDATE ai_organizations SET external_id=?, name=?, business_mode=?, status=?, authorization_version=?, expires_at=? WHERE id=?`,
     [input.externalId || input.organizationId, input.name || organization.name, 'personal',
-      input.status, Number(input.authorizationVersion || 0), input.expiresAt ? new Date(input.expiresAt) : null, organization.id],
+      input.preserveBusinessStatus ? organization.status : input.status, Number(input.authorizationVersion || 0), input.expiresAt ? new Date(input.expiresAt) : null, organization.id],
   )
   if (currentSignature !== nextSignature) await replaceOrganizationCapabilities(organization.id, capabilities, actor)
   return findOrganizationById(organization.id)

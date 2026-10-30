@@ -5,11 +5,13 @@ import net from 'node:net'
 import os from 'node:os'
 import pathModule from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawn } from 'node:child_process'
+import { spawn, execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import mysql from 'mysql2/promise'
 import AdmZip from 'adm-zip'
 import { mysqlStateStore } from '../src/repositories/licensing-state.mjs'
 import { BASE_PACKAGES } from '../src/services/licensing/packages.mjs'
+import { createOperatorAuth, passwordHash, totp } from '../src/services/licensing/operator-auth.mjs'
 import { createLicenseCenter, emptyCenterState } from '../src/services/licensing/center.mjs'
 import { migrateAccounting } from '../src/services/licensing/accounting-migration.mjs'
 import { emptyResourceIntents } from '../src/services/licensing/resource-runtime.mjs'
@@ -18,6 +20,9 @@ import { emptyPriceNotificationState } from '../src/services/licensing/price-not
 import { registerLicenseCenterRoutes } from '../src/routes/license-center.mjs'
 import { serviceApp, serviceErrors } from '../src/services/licensing/runtime.mjs'
 import { hashPassword } from '../src/utils/crypto.mjs'
+import { readLegacyDeploymentSnapshot, collectMigrationProofs } from '../src/services/licensing/migration-snapshot.mjs'
+import { applyLocalLegacyBinding } from '../src/services/licensing/local-legacy-binding.mjs'
+import { shadowLegacyAuthorization, legacyRollbackStatus } from '../src/services/licensing/migration-safety.mjs'
 import { canonicalJson } from '../src/services/curated-skills.mjs'
 // Invoked by the disposable MySQL runner. Boot both real admin processes with
 // fictional resources; never inherit a deployment database or paid model route.
@@ -56,19 +61,46 @@ try{
  localPool=mysql.createPool({...config,database:names[0]});officialPool=mysql.createPool({...config,database:names[1]});centerPool=mysql.createPool({...config,database:names[2]})
  const store=mysqlStateStore(centerPool,'state-v1',emptyCenterState());await store.migrate();const keys=crypto.generateKeyPairSync('ed25519'),publicKeys={test:keys.publicKey.export({type:'spki',format:'pem'})}
  center=createLicenseCenter({store,privateKey:keys.privateKey,publicKeys,keyId:'test',credentialKey:crypto.randomBytes(32)})
- const app=serviceApp();registerLicenseCenterRoutes(app,{center,operators:{}});serviceErrors(app);centerServer=await new Promise(r=>{const s=app.listen(0,'127.0.0.1',()=>r(s))});centerUrl=`http://127.0.0.1:${centerServer.address().port}`
+ const centerOperators=createOperatorAuth({store,operators:[{id:'fixture-operator',passwordHash:passwordHash(password),totpSecret:'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'}]});const app=serviceApp();registerLicenseCenterRoutes(app,{center,operators:centerOperators});serviceErrors(app);centerServer=await new Promise(r=>{const s=app.listen(0,'127.0.0.1',()=>r(s))});centerUrl=`http://127.0.0.1:${centerServer.address().port}`
  await fs.writeFile(dir+'/public-keys.json',JSON.stringify(publicKeys),{mode:0o600})
+ const operatorLogin=await fetch(centerUrl+'/api/license-center/v1/operator/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'fixture-operator',password,code:totp('JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',Math.floor(Date.now()/30000))})})
+ const operatorSession=await operatorLogin.json();assert(operatorSession.success);await fs.writeFile(dir+'/operator-token',operatorSession.data.token,{mode:0o600})
+ const runTransfer=async(...args)=>{const out=await promisify(execFile)(process.execPath,['scripts/authorization-transfer.mjs',...args],{cwd:root,windowsHide:true,env:{...process.env,NODE_ENV:'test',AI_AUTH_TRANSFER_DB_HOST:config.host,AI_AUTH_TRANSFER_DB_PORT:String(config.port),AI_AUTH_TRANSFER_DB_USER:config.user,AI_AUTH_TRANSFER_DB_PASSWORD:config.password,AI_AUTH_TRANSFER_DB_NAME:names[0],AI_AUTHORIZATION_MIGRATION:'approved',AI_AUTH_TRANSFER_PUBLIC_KEYS_FILE:dir+'/public-keys.json',AI_AUTH_TRANSFER_MAINTENANCE:'1',AI_AUTH_TRANSFER_PUBLIC_URL:'https://resources-local.example.com',AI_AUTH_TRANSFER_INSTANCE_ID:'resource-instance',AI_AUTH_TRANSFER_CENTER_URL:centerUrl,AI_AUTH_TRANSFER_OPERATOR_TOKEN_FILE:dir+'/operator-token'}});assert(!out.stdout.includes(password));return out}
+
  await start('official','legacy',{AI_OFFICIAL_AUTHORIZATION_MODE:'center',AI_CENTER_SUPPLIER_MANAGEMENT:'1',AI_LICENSE_CENTER_URL:centerUrl})
  await start('local','legacy');await stop('local')
  await localPool.query(await fs.readFile(root+'/src/db/authorization-local.sql','utf8'));await migrateAccounting({pool:localPool,book:'commerce-v2',kind:'commerce',sourceId:'commerce-v1'})
  await mysqlStateStore(localPool,'local-resources-v1',emptyResourceIntents()).migrate();await mysqlStateStore(localPool,'commerce-v2-price-notifications',emptyPriceNotificationState()).migrate();await mysqlStateStore(localPool,'commerce-v2-custom-definitions',emptyCustomDefinitions()).migrate()
  envLocal={AI_LICENSE_CENTER_URL:centerUrl,AI_LICENSE_INSTANCE_ID:'resource-instance',AI_LICENSE_PUBLIC_KEYS_FILE:dir+'/public-keys.json',AI_BUILD_CENTER_URL:urls.official}
- const grant=await center.issue({id:'resources-root',name:'虚构资源一级',packageId:'first-custom',domain:'https://resources-local.example.com',expiresAt:null},'test')
+ const [[legacyOrganization]]=await localPool.query('SELECT id FROM ai_organizations WHERE agent_level=1')
+ const profile={sourceId:'resource-legacy-source',oldOrganizationId:legacyOrganization.id,legacySupplierId:'resources-root',status:'enabled',expiresAt:null,allowCustomApiProviders:true,domain:'https://resources-local.example.com',instanceId:'resource-instance',cumulativeBuilds:0,
+ capabilities:BASE_PACKAGES['first-custom'].capabilities.map(cap=>({...cap,limitValue:cap.key==='projects.manage'?1:cap.key==='builds.create'?10:0}))}
+ await fs.writeFile(dir+'/profile.json',JSON.stringify(profile),{mode:0o600});await runTransfer('export',dir+'/profile.json',dir+'/snapshot.json');const snapshot=JSON.parse(await fs.readFile(dir+'/snapshot.json','utf8'))
+ assert.equal(JSON.stringify(snapshot).includes('password_hash'),false);assert.equal(JSON.stringify(snapshot).includes('model_gateway_key'),false)
+ const alternateDecoder=mysql.createPool({...config,database:names[0],timezone:'+08:00',decimalNumbers:true,supportBigNumbers:false})
+ try{assert.deepEqual(await collectMigrationProofs(alternateDecoder),snapshot.proofs)}finally{await alternateDecoder.end()}
+ const transferManifest={batchId:'resource-legacy-import',snapshot,mapping:{oldOrganizationId:legacyOrganization.id,grantId:'resources-root',packageId:'first-custom',packageVersion:1,domain:profile.domain,instanceId:profile.instanceId,officialModelIds:[],unlimitedExpiryReview:'隔离历史无限期核验'}}
+ const importPreview=await center.previewLegacyImport(transferManifest),imported=await center.importLegacy({...transferManifest,previewDigest:importPreview.previewDigest},'test')
+ await localPool.query('UPDATE ai_organizations SET name=? WHERE id=?',['虚构采集后变更',legacyOrganization.id])
+ await assert.rejects(applyLocalLegacyBinding({pool:localPool,...transferManifest,result:imported,publicKeys,maintenance:true,publicUrl:profile.domain,instanceId:profile.instanceId}),{code:'SOURCE_CHANGED'})
+ await localPool.query('UPDATE ai_organizations SET name=? WHERE id=?',[snapshot.organizations[0].name,legacyOrganization.id])
+ await fs.writeFile(dir+'/mapping.json',JSON.stringify({batchId:transferManifest.batchId,mapping:transferManifest.mapping}),{mode:0o600});await runTransfer('manifest',dir+'/snapshot.json',dir+'/mapping.json',dir+'/transfer.json');assert.deepEqual(JSON.parse(await fs.readFile(dir+'/transfer.json','utf8')),transferManifest);await fs.writeFile(dir+'/import-receipt.json',JSON.stringify(imported),{mode:0o600})
+ await runTransfer('bind-local',dir+'/transfer.json',dir+'/import-receipt.json',dir+'/binding.json');const binding=JSON.parse(await fs.readFile(dir+'/binding.json','utf8'))
+
+ assert.equal(binding.identitiesPreserved,true);assert.equal(binding.cutoverReady,false)
+ const shadow=shadowLegacyAuthorization({...transferManifest,result:imported,publicKeys,proofs:await collectMigrationProofs(localPool),usage:(await center.preview('resources-root',{expectedVersion:1})).usage})
+ assert.equal(shadow.authorizationAndRightsMatch,true,JSON.stringify(shadow));assert.equal(shadow.cutoverReady,false)
+ await runTransfer('shadow',dir+'/transfer.json',dir+'/shadow.json');assert.equal(JSON.parse(await fs.readFile(dir+'/shadow.json','utf8')).authorizationAndRightsMatch,true)
+ await runTransfer('rollback-check',dir+'/snapshot.json',dir+'/rollback.json');assert.equal(JSON.parse(await fs.readFile(dir+'/rollback.json','utf8')).databaseSnapshotRestoreAllowed,true)
+
+ const grant={code:imported.activationCode}
+
  await start('local','center',envLocal);let rootCookie=await login('local');ok(await request('local','/api/authorization/activate',{code:grant.code},'POST',rootCookie));rootCookie=await login('local')
  credential=JSON.parse(await fs.readFile(dir+'/local-deployment.json','utf8')).credential
  const sub=await center.issue({id:'resources-child',name:'虚构资源二级',packageId:'second',parentId:'resources-root',expiresAt:null},'test')
  const invitation=ok(await request('local','/api/authorization/children/activate',{code:sub.code,username:'resource_child'},'POST',rootCookie)).invitation
  const childPwd=crypto.randomBytes(20).toString('hex');ok(await request('local','/api/authorization/invitation',{invitation,password:childPwd}));let childCookie=await login('local','resource_child',childPwd)
+ const repeatedBinding=await applyLocalLegacyBinding({pool:localPool,...transferManifest,result:await center.legacyImportReceipt(transferManifest.batchId),publicKeys,maintenance:true,publicUrl:profile.domain,instanceId:profile.instanceId});assert.equal(repeatedBinding.alreadyApplied,true);assert.equal((await legacyRollbackStatus(localPool,snapshot)).databaseSnapshotRestoreAllowed,false)
  const [[childOwner]]=await localPool.query("SELECT legacy_owner_user_id FROM ai_organizations WHERE external_id='resources-child'");const [[rootOrg]]=await localPool.query("SELECT id,legacy_owner_user_id FROM ai_organizations WHERE external_id='resources-root'");assert(childOwner)
  // Configure existing model/key management and review its new supply definition
  // through real HTTP, with no center preregistration of local model identities.
@@ -124,6 +156,8 @@ try{
  assert.equal((await request('official',`/api/center/curated-skills/${ids.skill}/versions/1.0.1/lease`,{deviceIdHash:'a'.repeat(64),endUserHash:'b'.repeat(64),nonce:crypto.randomUUID()},'POST',`Bearer ${token}`)).status,403)
  // Restore the same identity after central suspension and verify isolation.
  await localPool.query("UPDATE ai_organizations SET status='disabled' WHERE id=?",[rootOrg.id])
+ const pausedCookie=await login('local');await request('local','/api/license',undefined,'GET',pausedCookie)
+ const [[pausedRoot]]=await localPool.query('SELECT status FROM ai_organizations WHERE id=?',[rootOrg.id]);assert.equal(pausedRoot.status,'disabled')
  assert.equal((await request('local','/api/client/mcp-market',undefined,'GET',childUser.auth)).status,403)
  await localPool.query("UPDATE ai_organizations SET status='enabled' WHERE id=?",[rootOrg.id])
  await center.update('resources-child',{expectedVersion:2,status:'suspended'},'test')
@@ -137,7 +171,7 @@ try{
  await restartLocal()
  assert(ok(await request('local','/api/client/skill-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.skill))
  assert(ok(await request('local','/api/client/agent-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.agent))
- const report={actualOfficialAndLocalProcesses:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,paidSupplierCalls:0,productionChanged:false}
+ const report={actualOfficialAndLocalProcesses:true,legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,paidSupplierCalls:0,productionChanged:false}
  await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2),{mode:0o600});console.log('Resource HTTP regression: '+JSON.stringify(report));completed=true
 }finally{
  await stop('local');await stop('official');if(centerServer){centerServer.closeAllConnections();await new Promise(r=>centerServer.close(r))}

@@ -3,10 +3,11 @@ import { BASE_PACKAGES, validatePackage } from './packages.mjs'
 import { digest, domain, equal, failure, HOUR, identifier, secret, signClaims, verifyClaims } from './protocol.mjs'
 import { bindingValid, grantChange, publicGrant } from './grant-changes.mjs'
 import { emptyMonitorState, enqueueOperationalNotice } from './accounting-monitor.mjs'
+import { prepareLegacyImport, migrationHash } from './legacy-import.mjs'
 import { reserveCentralQuota, releaseCentralProject, centralResourceAction } from './quotas.mjs'
 
 export function emptyCenterState() {
-  return { packages: Object.fromEntries(Object.values(BASE_PACKAGES).map(p => [`${p.id}:1`, p])), grants: {}, codes: {}, credentials: {}, audit: [], sessions: {}, otpCounters: {}, notices: {} }
+  return { packages: Object.fromEntries(Object.values(BASE_PACKAGES).map(p => [`${p.id}:1`, p])), grants: {}, codes: {}, credentials: {}, audit: [], sessions: {}, otpCounters: {}, notices: {}, legacyImports: {} }
 }
 function audit(state, actor, event, target, detail, now) {
   state.audit.push({ id: crypto.randomUUID(), actor, event, target, detail, at: now })
@@ -52,6 +53,40 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
       agentLevel: grant.level, organizationId: grant.id, authorizationVersion: grant.version,
       parentVersion: parent?.version || null, deploymentMode: grant.level === 1 ? 'local' : 'inherited' }, signing)
   }
+  function issueInState(state, input, actor, { historical = false, codeOverride } = {}) {
+    const pkg = state.packages[`${identifier(input.packageId)}:${input.packageVersion || 1}`]
+    if (!pkg) throw failure('PACKAGE_NOT_FOUND', '套餐不存在', 404)
+    const id = identifier(input.id || crypto.randomUUID()), expiresAt = expiry(input.expiresAt), name = String(input.name || '').trim().slice(0, 120)
+    if (id.length > 64) throw failure('INVALID_GRANT', '代理授权ID不能超过64字符，以兼容经营与官方服务主体标识')
+    if (!name || Object.keys(state.grants).some(existing => existing.toLowerCase() === id.toLowerCase())) throw failure('INVALID_GRANT', '名称为空或授权ID重复（大小写不能形成不同代理）', 409)
+    if (!historical && expiresAt && Date.parse(expiresAt) <= now()) throw failure('INVALID_EXPIRY', '新授权有效期必须晚于当前时间')
+    let parent = null
+    if (pkg.level === 2) {
+      parent = current(state, input.parentId, now())
+      if (parent.level !== 1 || !parent.instanceId) throw failure('INVALID_PARENT', '二级必须绑定已激活一级')
+      if (parent.expiresAt && (!expiresAt || Date.parse(expiresAt) > Date.parse(parent.expiresAt))) throw failure('PARENT_EXPIRY', '二级有效期不能超过一级')
+    }
+    const models = [...new Set((input.modelIds || parent?.modelIds || []).map(x => identifier(x, '模型ID')))]
+    if (parent && models.some(model => !parent.modelIds.includes(model))) throw failure('MODEL_OUT_OF_SCOPE', '二级模型超出一级授权范围')
+    const grant = { id, name, level: pkg.level, modelMode: pkg.modelMode, packageId: pkg.id, packageVersion: pkg.version,
+      capabilities: structuredClone(pkg.capabilities), quotas: structuredClone(pkg.quotas), modelIds: models,
+      version: 1, status: 'enabled', expiresAt, parentId: parent?.id || null,
+      instanceId: parent?.instanceId || null, domain: parent?.domain || domain(input.domain), activatedAt: null, createdAt: now() }
+    state.grants[id] = grant
+    const code = codeOverride || secret(), hash = digest(code)
+    state.codes[hash] = { grantId: id, status: 'unused', expiresAt: now() + 7 * 24 * HOUR }
+    audit(state, actor, 'grant_issued', id, { packageId: pkg.id }, now())
+    return { grant: publicGrant(grant), code }
+  }
+  function legacyImportResponse(state, receipt, retryCode = false) {
+    const code = state.codes[receipt.activationCodeHash], grant = state.grants[receipt.grantId]
+    const available = retryCode && receipt.importedAt + 600_000 > now() && code?.status === 'unused' && code.expiresAt > now() && active(grant, now()) && grant.instanceId === receipt.instanceId && grant.domain === receipt.domain
+    const { fingerprint, activationCodeHash, ...publicReceipt } = receipt
+    return { receipt: publicReceipt, grant: publicGrant(grant), activationCode: available ? derive(`legacy-import:${receipt.fingerprint}`, receipt.instanceId) : null,
+      attestation: signClaims({ aud: 'legacy-import', iat: now(), exp: now() + 24 * HOUR, batchId: receipt.batchId, receiptHash: receipt.receiptHash,
+        snapshotHash: receipt.snapshotHash, mappingHash: receipt.mappingHash, grantId: grant.id, grantVersion: grant.version, domain: grant.domain, instanceId: grant.instanceId,
+        localOrganizationId: receipt.oldOrganizationId, grantHash: migrationHash(publicGrant(grant)) }, signing) }
+  }
   return {
     store,
     async list() {
@@ -69,30 +104,41 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
       })
     },
     async issue(input, actor) {
+      return store.transaction(state => issueInState(state, input, actor))
+    },
+    async previewLegacyImport(input) {
+      const { impact, previewDigest } = prepareLegacyImport(await store.read(), input)
+      return { impact, previewDigest }
+    },
+    async legacyImportReceipt(batchId) {
+      const state = await store.read(), receipt = state.legacyImports?.[identifier(batchId)]
+      if (!receipt) throw failure('NOT_FOUND', '迁入批次不存在', 404)
+      return legacyImportResponse(state, receipt)
+    },
+    async importLegacy(input, actor) {
       return store.transaction(state => {
-        const pkg = state.packages[`${identifier(input.packageId)}:${input.packageVersion || 1}`]
-        if (!pkg) throw failure('PACKAGE_NOT_FOUND', '套餐不存在', 404)
-        const id = identifier(input.id || crypto.randomUUID()), expiresAt = expiry(input.expiresAt), name = String(input.name || '').trim().slice(0, 120)
-        if (id.length > 64) throw failure('INVALID_GRANT', '代理授权ID不能超过64字符，以兼容经营与官方服务主体标识')
-        if (!name || Object.keys(state.grants).some(existing => existing.toLowerCase() === id.toLowerCase())) throw failure('INVALID_GRANT', '名称为空或授权ID重复（大小写不能形成不同代理）', 409)
-        if (expiresAt && Date.parse(expiresAt) <= now()) throw failure('INVALID_EXPIRY', '新授权有效期必须晚于当前时间')
-        let parent = null
-        if (pkg.level === 2) {
-          parent = current(state, input.parentId, now())
-          if (parent.level !== 1 || !parent.instanceId) throw failure('INVALID_PARENT', '二级必须绑定已激活一级')
-          if (parent.expiresAt && (!expiresAt || Date.parse(expiresAt) > Date.parse(parent.expiresAt))) throw failure('PARENT_EXPIRY', '二级有效期不能超过一级')
+        const plan = prepareLegacyImport(state, input)
+        if (plan.previous) return legacyImportResponse(state, plan.previous, true)
+        if (input.previewDigest !== plan.previewDigest) throw failure('PREVIEW_CHANGED', '须重新预览并核对迁入摘要', 409)
+        const code = derive(`legacy-import:${plan.fingerprint}`, plan.impact.instanceId)
+        issueInState(state, plan.issue, actor, { historical: true, codeOverride: code })
+        const grant = state.grants[plan.issue.id]
+        Object.assign(grant, { instanceId: plan.impact.instanceId, status: plan.impact.status,
+          migratedUsage: { projects: 0, builds: plan.impact.additionalHistoricalBuilds },
+          migration: { batchId: plan.impact.batchId, sourceId: plan.impact.sourceId, snapshotHash: plan.impact.snapshotHash, localOrganizationId: plan.impact.oldOrganizationId } })
+        state.resources ||= {}
+        const resources = []
+        for (const [kind, rows] of [['projects', plan.projects], ['builds', plan.builds]]) for (const row of rows) {
+          const key = JSON.stringify([grant.id, kind, row.id]), reservationId = crypto.randomUUID()
+          state.resources[key] = { key, resourceId: row.id, rootId: grant.id, organizationId: grant.id, kind, at: now(), reservationId, status: 'accepted', migrated: true }
+          resources.push({ kind, resourceId: row.id, reservationId })
         }
-        const models = [...new Set((input.modelIds || parent?.modelIds || []).map(x => identifier(x, '模型ID')))]
-        if (parent && models.some(model => !parent.modelIds.includes(model))) throw failure('MODEL_OUT_OF_SCOPE', '二级模型超出一级授权范围')
-        const grant = { id, name, level: pkg.level, modelMode: pkg.modelMode, packageId: pkg.id, packageVersion: pkg.version,
-          capabilities: structuredClone(pkg.capabilities), quotas: structuredClone(pkg.quotas), modelIds: models,
-          version: 1, status: 'enabled', expiresAt, parentId: parent?.id || null,
-          instanceId: parent?.instanceId || null, domain: parent?.domain || domain(input.domain), activatedAt: null, createdAt: now() }
-        state.grants[id] = grant
-        const code = secret(), hash = digest(code)
-        state.codes[hash] = { grantId: id, status: 'unused', expiresAt: now() + 7 * 24 * HOUR }
-        audit(state, actor, 'grant_issued', id, { packageId: pkg.id }, now())
-        return { grant: publicGrant(grant), code }
+        if (grant.status === 'revoked') state.codes[digest(code)].status = 'void'
+        const payload = { ...plan.impact, resources, importedAt: now(), actor }
+        const receipt = { ...payload, fingerprint: plan.fingerprint, activationCodeHash: digest(code), receiptHash: migrationHash(payload) }
+        state.legacyImports ||= {}; state.legacyImports[plan.impact.batchId] = receipt
+        audit(state, actor, 'legacy_authorization_imported', grant.id, { batchId: receipt.batchId, sourceId: receipt.sourceId, snapshotHash: receipt.snapshotHash, receiptHash: receipt.receiptHash, preservedUsage: receipt.preservedUsage }, now())
+        return legacyImportResponse(state, receipt, true)
       })
     },
     async reissueCode(id, actor) {

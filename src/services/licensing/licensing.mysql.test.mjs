@@ -34,6 +34,8 @@ import { HOUR, decimal, micros } from './protocol.mjs'
 import { normalizeReportQuery } from '../user-usage-report.mjs'
 import { centerBuildScopes } from './build-scopes.mjs'
 import { emptyCustomDefinitions } from './custom-definitions.mjs'
+import { legacySnapshotFixture } from './fixtures/legacy-snapshot.mjs'
+import { verifyLegacyImportReceipt } from './local-legacy-binding.mjs'
 import { publicSupplyCatalogRow } from '../../routes/agent-supply.mjs'
 
 const configured = Boolean(process.env.LICENSING_TEST_DB)
@@ -1054,4 +1056,60 @@ test('real MySQL reviewed definitions survive restart and retain original async 
     const [[userAfter]] = await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='managed-user'"); assert.equal(String(userAfter.credit_balance), decimal(micros(String(userBefore.credit_balance)) - 600000n))
     auditAccounting(await runtime.store.read(), 'commerce')
   } finally { runtime?.stop(); await pool.end(); if (path.resolve(dir).startsWith(path.join(os.tmpdir(), 'reviewed-custom-'))) await fs.rm(dir, { recursive: true, force: true }) }
+})
+
+
+test('real MySQL legacy import CLI enforces MFA preview, concurrent idempotency, hashed codes and durable quota receipts', { skip: !configured }, async () => {
+  const { licenseDatabase = 'yushu_license_test', gatewayDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(licenseDatabase)) throw new Error('Disposable center database required')
+  const pool = mysql.createPool({ ...config, database: licenseDatabase }), dir = await fs.mkdtemp(path.join(os.tmpdir(), 'legacy-import-'))
+  let server
+  try {
+    const store = mysqlStateStore(pool, 'migration-state', emptyCenterState()), operatorStore = mysqlStateStore(pool, 'migration-operators', {})
+    await store.migrate(); await operatorStore.migrate()
+    const keys = crypto.generateKeyPairSync('ed25519'), publicKeys = { test: keys.publicKey.export({ type: 'spki', format: 'pem' }) }, credentialKey = crypto.randomBytes(32)
+    const make = () => createLicenseCenter({ store, privateKey: keys.privateKey, publicKeys, keyId: 'test', credentialKey })
+    const center = make(), secret = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', password = crypto.randomBytes(24).toString('hex')
+    const operators = createOperatorAuth({ store: operatorStore, operators: [{ id: 'import-operator', passwordHash: passwordHash(password), totpSecret: secret }] })
+    const app = serviceApp(); registerLicenseCenterRoutes(app, { center, operators }); serviceErrors(app)
+    server = await new Promise(resolve => { const value = app.listen(0, '127.0.0.1', () => resolve(value)) })
+    const url = `http://127.0.0.1:${server.address().port}/api/license-center/v1`
+    const request = async (route, body, token) => {
+      const response = await fetch(url + route, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) })
+      return { status: response.status, ...await response.json() }
+    }
+    const fixture = legacySnapshotFixture((await center.list()).packages.find(pkg => pkg.id === 'first-fixed'), Date.now())
+    assert.equal((await request('/operator/legacy-imports/preview', fixture)).status, 401)
+    assert.equal((await request('/operator/login', { username: 'import-operator', password })).status, 401)
+    const loggedIn = await request('/operator/login', { username: 'import-operator', password, code: totp(secret, Math.floor(Date.now() / 30000)) }); assert.equal(loggedIn.status, 200)
+    const tokenFile = path.join(dir, 'operator-token'), manifestFile = path.join(dir, 'manifest.json'), previewFile = path.join(dir, 'preview.json')
+    await fs.writeFile(tokenFile, loggedIn.data.token, { mode: 0o600 }); await fs.writeFile(manifestFile, JSON.stringify(fixture), { mode: 0o600 })
+    const env = { ...process.env, NODE_ENV: 'test', AI_AUTH_TRANSFER_CENTER_URL: url.split('/api/')[0], AI_AUTH_TRANSFER_OPERATOR_TOKEN_FILE: tokenFile }
+    const cli = (...args) => promisify(execFile)(process.execPath, ['scripts/authorization-transfer.mjs', ...args], { env, windowsHide: true })
+    await cli('preview', manifestFile, previewFile)
+    assert.equal((await center.list()).grants.length, 0)
+    env.AI_AUTHORIZATION_MIGRATION = 'approved'
+    const outputs = [path.join(dir, 'receipt-one.json'), path.join(dir, 'receipt-two.json')]
+    const logs = await Promise.all(outputs.map(file => cli('apply-center', manifestFile, previewFile, file)))
+    const result = JSON.parse(await fs.readFile(outputs[0], 'utf8')), peer = JSON.parse(await fs.readFile(outputs[1], 'utf8'))
+    assert.equal(result.activationCode, peer.activationCode); assert.equal((await center.list()).grants.length, 1)
+    assert(logs.every(log => !log.stdout.includes(result.activationCode) && !log.stderr.includes(loggedIn.data.token)))
+    assert.equal(JSON.stringify(await store.read()).includes(result.activationCode), false)
+    assert.equal((await store.read()).audit.filter(event => event.event === 'legacy_authorization_imported').length, 1)
+    verifyLegacyImportReceipt(result, { publicKeys, ...fixture })
+    const reloaded = make(), retry = await reloaded.importLegacy(fixture, 'import-operator')
+    assert.equal(retry.activationCode, result.activationCode); assert.equal(retry.receipt.receiptHash, result.receipt.receiptHash)
+    assert.equal((await request(`/operator/legacy-imports/${fixture.batchId}/receipt`, {}, loggedIn.data.token)).data.activationCode, null)
+    const code = result.activationCode
+    const activated = await request('/activate', { code, requestId: 'imported-http-activation', domain: fixture.mapping.domain, instanceId: fixture.mapping.instanceId }); assert.equal(activated.status, 200)
+    assert.equal((await reloaded.legacyImportReceipt(fixture.batchId)).activationCode, null)
+    const buildToken = (await reloaded.serviceToken(activated.data.credential, 'official-build')).token
+    await assert.rejects(reloaded.resource(buildToken, { kind: 'projects', resourceId: 'exceeds-imported-projects' }), { code: 'QUOTA_EXHAUSTED' })
+    assert.equal((await reloaded.preview('imported-first', { expectedVersion: 1 })).usage.builds, 2)
+    await assert.rejects(cli('apply-center', manifestFile, previewFile, outputs[0])) // Never overwrite a protected receipt.
+    assert.equal((await center.list()).grants.length, 1)
+  } finally {
+    if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+    await pool.end(); if (path.resolve(dir).startsWith(path.join(os.tmpdir(), 'legacy-import-'))) await fs.rm(dir, { recursive: true, force: true })
+  }
 })

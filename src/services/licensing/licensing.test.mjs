@@ -7,6 +7,11 @@ import { createAgentCommerce, emptyCommerceState } from './commerce.mjs'
 import { createPriceNotifications, emptyPriceNotificationState } from './price-notifications.mjs'
 import { managedCustomModels } from './managed-custom-models.mjs'
 import { customDefinitionService, emptyCustomDefinitions } from './custom-definitions.mjs'
+import { legacySnapshotFixture } from './fixtures/legacy-snapshot.mjs'
+import { migrationHash } from './legacy-import.mjs'
+import { writeMigrationArtifact } from './migration-artifacts.mjs'
+import { verifyLegacyImportReceipt } from './local-legacy-binding.mjs'
+import { shadowLegacyAuthorization } from './migration-safety.mjs'
 import { modelPriceAt, offerFor, offerKey } from './offer-pricing.mjs'
 import { createSupplyLedger, emptyLedgerState } from './ledger.mjs'
 import { createModelGateway } from './gateway.mjs'
@@ -831,4 +836,93 @@ test('reviewed custom definitions preserve immutable history, decimal costs and 
   const saved = await review.save(root, { ...voice, allowedVoiceIds: ['public-voice'] }, 'owner')
   assert.deepEqual(saved.definition.publicVoices, [{ id: 'public-voice', name: '公共音色' }])
   assert.equal((await review.list(root)).records.length, 2)
+})
+
+
+async function legacyImportFixture(fixture) {
+  const pkg = (await fixture.center.list()).packages.find(item => item.id === 'first-fixed' && item.version === 1)
+  return legacySnapshotFixture(pkg, fixture.now())
+}
+
+test('legacy authorization import is reviewed, atomic, idempotent and preserves identified and historical quotas', async () => {
+  const f = setup(), input = await legacyImportFixture(f), preview = await f.center.previewLegacyImport(input)
+  assert.equal(preview.impact.importedSupplyCredit, '0.000000'); assert.deepEqual(preview.impact.removedDelegation, ['organizations.capabilities.manage'])
+  await assert.rejects(f.center.importLegacy(input, 'operator'), { code: 'PREVIEW_CHANGED' }); assert.equal((await f.center.list()).grants.length, 0)
+  const [imported, repeated] = await Promise.all([1, 2].map(() => f.center.importLegacy({ ...input, previewDigest: preview.previewDigest }, 'operator')))
+  assert.equal(imported.activationCode, repeated.activationCode); assert.equal(imported.receipt.receiptHash, repeated.receipt.receiptHash)
+  assert.equal((await f.center.list()).grants.length, 1); assert.equal((await f.center.list()).grants[0].activated, false)
+  assert.equal(JSON.stringify(await f.store.read()).includes(imported.activationCode), false)
+  const attestation = verifyClaims(imported.attestation, { keys: f.publicKeys, audience: 'legacy-import', now: f.now() }); assert.equal(attestation.snapshotHash, migrationHash(input.snapshot))
+  const activation = { code: imported.activationCode, requestId: 'migrated-activation', instanceId: 'legacy-instance', domain: 'https://legacy.example.com' }
+  await assert.rejects(f.center.activate({ ...activation, instanceId: 'wrong-instance' }), { code: 'BINDING_MISMATCH' })
+  const activated = await f.center.activate(activation), token = (await f.center.serviceToken(activated.credential, 'official-build')).token
+  await assert.rejects(f.center.resource(token, { kind: 'projects', resourceId: 'new-project' }), { code: 'QUOTA_EXHAUSTED' })
+  const oldProject = imported.receipt.resources.find(item => item.kind === 'projects')
+  await f.center.resource(token, { kind: 'projects', resourceId: 'old-project', reservationId: oldProject.reservationId }, true)
+  await f.center.resource(token, { kind: 'projects', resourceId: 'new-project' })
+  for (let i = 0; i < 8; i++) await f.center.resource(token, { kind: 'builds', resourceId: `new-build-${i}` })
+  await assert.rejects(f.center.resource(token, { kind: 'builds', resourceId: 'exceeds-ten' }), { code: 'QUOTA_EXHAUSTED' })
+  const again = await f.center.importLegacy(input, 'operator'); assert.equal(again.activationCode, null)
+  const usage = await f.center.preview('imported-first', { expectedVersion: 1, expiresAt: new Date(f.now() + 7 * 24 * HOUR).toISOString() })
+  assert.deepEqual(usage.usage, { projects: 1, builds: 10 }); assert.equal(again.grant.migratedUsage.builds, 1)
+  await assert.rejects(f.center.importLegacy({ ...input, snapshot: { ...input.snapshot, sourceId: 'another-source' } }, 'operator'), { code: 'IDEMPOTENCY_CONFLICT' })
+  await assert.rejects(f.center.importLegacy({ ...input, batchId: 'another-batch' }, 'operator'), { code: 'IMPORT_ALREADY_EXISTS' })
+})
+
+test('legacy import refuses silent capability loss, expansion, ambiguous zero quotas, omitted resources and old secrets', async () => {
+  const f = setup(), input = await legacyImportFixture(f)
+  const changed = transform => { const value = structuredClone(input); transform(value); return value }
+  await assert.rejects(f.center.previewLegacyImport(changed(value => { value.snapshot.token = 'never-import-old-token' })), { code: 'SECRET_IN_SNAPSHOT' })
+  await assert.rejects(f.center.previewLegacyImport(changed(value => { value.snapshot.organizations[0].agentLevel = 2 })), { code: 'HISTORICAL_SECONDARY_DEFERRED' })
+  await assert.rejects(f.center.previewLegacyImport(changed(value => { value.snapshot.projects = [] })), { code: 'USAGE_BASELINE_REQUIRED' })
+  await assert.rejects(f.center.previewLegacyImport(changed(value => { value.mapping.grantId = 'replacement-identity' })), { code: 'SUPPLIER_ID_MAPPING_REQUIRED' })
+  await assert.rejects(f.center.previewLegacyImport(changed(value => { value.snapshot.capabilities.find(cap => cap.key === 'projects.manage').limitValue = 0 })), { code: 'QUOTA_REVIEW_REQUIRED' })
+  await assert.rejects(f.center.previewLegacyImport(changed(value => { value.snapshot.capabilities = value.snapshot.capabilities.filter(cap => cap.key !== 'payments.manage') })), { code: 'CAPABILITY_EXPANSION_REVIEW_REQUIRED' })
+  const pkg = (await f.center.list()).packages.find(item => item.id === 'first-fixed')
+  await f.center.publishPackage({ ...pkg, version: 2, capabilities: pkg.capabilities.filter(cap => cap.key !== 'credits.manage') }, 'operator')
+  await assert.rejects(f.center.previewLegacyImport(changed(value => { value.mapping.packageVersion = 2 })), { code: 'CAPABILITY_LOSS' })
+  const wildcard = changed(value => { value.snapshot.capabilities = [{ organizationId: 'old-local-root', key: '*', enabled: true, limitValue: 0 }] })
+  await assert.rejects(f.center.previewLegacyImport(wildcard), { code: 'WILDCARD_REVIEW_REQUIRED' })
+  wildcard.mapping.resolvedCapabilities = pkg.capabilities.filter(cap => cap.enabled).map(cap => cap.key); wildcard.mapping.wildcardReview = '逐项核对旧通配能力'
+  wildcard.mapping.quotaReviews = Object.fromEntries(['projects', 'builds'].map(kind => [kind, { quota: pkg.quotas[kind], reason: '原0值按已核定口径登记' }]))
+  assert.equal((await f.center.previewLegacyImport(wildcard)).impact.retainedCapabilities.length, pkg.capabilities.filter(cap => cap.enabled).length)
+  assert.equal((await f.center.list()).grants.length, 0)
+})
+
+test('expired historical grants stay inactive and renewal reuses identity without resetting migrated usage', async () => {
+  const f = setup(), input = await legacyImportFixture(f)
+  input.snapshot.organizations[0].expiresAt = new Date(f.now() - HOUR).toISOString()
+  const preview = await f.center.previewLegacyImport(input), imported = await f.center.importLegacy({ ...input, previewDigest: preview.previewDigest }, 'operator')
+  assert.equal(imported.activationCode, null); assert.equal(imported.grant.expiresAt, input.snapshot.organizations[0].expiresAt)
+  await f.center.update(imported.grant.id, { expectedVersion: 1, expiresAt: new Date(f.now() + HOUR).toISOString() }, 'operator')
+  const code = await f.center.reissueCode(imported.grant.id, 'operator')
+  await f.center.activate({ code: code.code, requestId: 'renewed-import', instanceId: input.mapping.instanceId, domain: input.mapping.domain })
+  const repeated = await f.center.importLegacy(input, 'operator')
+  assert.equal(repeated.grant.id, imported.grant.id); assert.equal(repeated.grant.migratedUsage.builds, 1)
+  assert.equal(repeated.activationCode, null); assert.equal((await f.center.list()).grants.length, 1)
+})
+
+
+test('migration receipts authenticate all public metadata and reports cannot overwrite files or enter Git workspaces', async () => {
+  const f = setup(), input = await legacyImportFixture(f), preview = await f.center.previewLegacyImport(input)
+  const result = await f.center.importLegacy({ ...input, previewDigest: preview.previewDigest }, 'operator')
+  verifyLegacyImportReceipt(result, { ...input, publicKeys: f.publicKeys, now: f.now() })
+  const shadow = shadowLegacyAuthorization({ ...input, result, publicKeys: f.publicKeys, proofs: input.snapshot.proofs, usage: { projects: 1, builds: 2 }, now: f.now() })
+  assert.equal(shadow.authorizationAndRightsMatch, true); assert.equal(shadow.cutoverReady, false)
+  const altered = structuredClone(result); altered.receipt.importedSupplyCredit = '1.000000'
+  assert.throws(() => verifyLegacyImportReceipt(altered, { ...input, publicKeys: f.publicKeys, now: f.now() }), { code: 'IMPORT_RECEIPT_MISMATCH' })
+  const alteredGrant = structuredClone(result); alteredGrant.grant.capabilities = []
+  assert.throws(() => verifyLegacyImportReceipt(alteredGrant, { ...input, publicKeys: f.publicKeys, now: f.now() }), { code: 'IMPORT_RECEIPT_MISMATCH' })
+  const changed = shadowLegacyAuthorization({ ...input, result, publicKeys: f.publicKeys, proofs: { ...input.snapshot.proofs, balances: { count: 1, hash: 'b'.repeat(64) } }, usage: { projects: 1, builds: 3 }, now: f.now() })
+  assert.equal(changed.authorizationAndRightsMatch, false); assert.equal(changed.rights.equal, false); assert.equal(changed.usageMatches, false)
+  f.advance(600001); assert.equal((await f.center.importLegacy(input, 'operator')).activationCode, null)
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'migration-artifact-'))
+  try {
+    const file = path.join(dir, 'receipt.json'); await writeMigrationArtifact(file, result)
+    assert.equal(JSON.parse(await fs.readFile(file, 'utf8')).activationCode, result.activationCode)
+    await assert.rejects(writeMigrationArtifact(file, {}), { code: 'EEXIST' })
+    await fs.mkdir(path.join(dir, 'fake-project', '.git'), { recursive: true })
+    await assert.rejects(writeMigrationArtifact(path.join(dir, 'fake-project', 'receipt.json'), result), { code: 'GIT_OUTPUT_FORBIDDEN' })
+    await assert.rejects(writeMigrationArtifact('relative.json', result), { code: 'OUTPUT_PATH_REQUIRED' })
+  } finally { assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir())); await fs.rm(dir, { recursive: true, force: true }) }
 })

@@ -24,6 +24,7 @@ const targets = [
   'scripts/authorization-local-migrate.mjs',
   'scripts/accounting-migrate.mjs',
   'scripts/authorization-migration.mjs',
+  'scripts/authorization-transfer.mjs',
   'scripts/licensing-init.mjs',
   'scripts/test-licensing-mysql.mjs',
   'scripts/test-authorization-resources.mjs',

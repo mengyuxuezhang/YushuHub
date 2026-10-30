@@ -398,7 +398,7 @@ async function getSupplierLicense(options = {}) {
   if (options.force) await authorizationClient.refresh(true).catch(() => {})
   const license = await authorizationClient.license()
   if (license.verified) await organizationRepository.syncLocalRootAuthorization({
-    organizationId: license.id, externalId: license.id, name: license.name, status: 'enabled', expiresAt: license.expiresAt,
+    organizationId: license.id, externalId: license.id, name: license.name, status: 'enabled', preserveBusinessStatus: true, expiresAt: license.expiresAt,
     authorizationVersion: license.version, capabilities: license.capabilities,
   }, { userId: 'license-center-sync' })
   return license
