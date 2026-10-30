@@ -158,6 +158,8 @@
 
 ## 验证命令
 
+New API可选`okpa-v1`供货协议已接入调用前关联、受限文本用量回执、持久拉取事件及查询恢复；不再依赖收到响应头才保存编号。接口、模型/服务凭据配置、失败边界和验收工具见[New API结算协议](NEWAPI_SETTLEMENT.md)。未启用该协议的原接入保持原行为；未宣称已兼容流式及所有模态。
+
 ```text
 npm run test:licensing
 npm run test:licensing:mysql

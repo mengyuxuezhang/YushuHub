@@ -21,6 +21,7 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
     return validateSupplyPrice(versions.filter(p => p.effectiveAt <= now()).at(-1) || model.price)
   }
   async function finish(claims, operation, outcome) {
+    if (outcome.receipt) await ledger.confirmReceipt(operation.requestId, outcome.receipt)
     if (outcome.state === 'pending') return ledger.pending(operation.requestId, outcome.job)
     if (!Array.isArray(outcome.usage)) return ledger.unknown(operation.requestId, 'MISSING_USAGE')
     const amount = quoteSupply(operation.snapshot.price, outcome.usage)
@@ -32,6 +33,12 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
     const operation = await ledger.find(requestId, claims.rootId)
     if (operation.snapshot.organizationId !== claims.sub) throw failure('NOT_FOUND', '任务不存在', 404)
     return { claims, operation }
+  }
+  async function acknowledgeUpstream(operation) {
+    if (operation.upstreamReceipt?.provider !== 'okpa-new-api' || operation.state !== 'settled') return
+    const model = catalog.get(operation.snapshot.modelId), adapter = model && adapters[model.adapter]
+    if (!model || model.version !== operation.snapshot.version || !adapter?.acknowledge) throw failure('CONFIG_CHANGED', '原供货配置不可用，结算事件保留待确认', 409)
+    await adapter.acknowledge(model, operation)
   }
   return {
     async catalog(token) {
@@ -67,6 +74,7 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
       if (!reserved.created || !(await ledger.start(requestId))) return reserved.operation
       try {
         return await finish(claims, reserved.operation, await adapter.submit(model, prepared.request, {
+          requestId,
           recordReceipt: receipt => ledger.receipt(requestId, receipt),
         }))
       } catch (error) {
@@ -78,29 +86,31 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
     async status(token, requestId, poll = false) {
       const claims = await check(token), operation = await ledger.find(requestId, claims.rootId)
       if (operation.snapshot.organizationId !== claims.sub) throw failure('NOT_FOUND', '任务不存在', 404)
-      if (!poll || operation.state !== 'pending') return operation
+      if (!poll || !['pending', 'unknown'].includes(operation.state)) return operation
       const { model, adapter } = select(claims, operation.snapshot.modelId)
-      if (model.version !== operation.snapshot.version || !adapter.poll) throw failure('CONFIG_CHANGED', '异步任务配置变更，需要对账处理', 409)
-      try { return await finish(claims, operation, await adapter.poll(model, operation.job)) }
+      if (model.version !== operation.snapshot.version || (operation.state === 'pending' ? !adapter.poll : !adapter.recover)) throw failure('CONFIG_CHANGED', '异步任务配置变更，需要对账处理', 409)
+      try { return await finish(claims, operation, await (operation.state === 'pending' ? adapter.poll(model, operation.job) : adapter.recover(model, operation))) }
       catch { return ledger.unknown(requestId, 'POLL_OUTCOME_UNKNOWN') }
     },
     async acknowledge(token, requestId) {
       const claims = await check(token), operation = await ledger.find(requestId, claims.rootId)
       if (operation.snapshot.organizationId !== claims.sub) throw failure('NOT_FOUND', '任务不存在', 404)
+      await acknowledgeUpstream(operation)
       return ledger.acknowledge(requestId, claims.rootId)
     },
     async recover(token, requestId, poll = false) {
       const { claims, operation } = await recovery(token, requestId, poll ? 'poll' : 'status')
-      if (!poll || operation.state !== 'pending') return operation
+      if (!poll || !['pending', 'unknown'].includes(operation.state)) return operation
       // Accepted jobs retain their model/version and price snapshot even if the
       // current grant no longer lists this model. Only query the original job.
       const model = catalog.get(operation.snapshot.modelId), adapter = model && adapters[model.adapter]
-      if (!model || model.version !== operation.snapshot.version || !adapter?.poll) throw failure('CONFIG_CHANGED', '原任务配置不可用，需要人工对账', 409)
-      try { return await finish(claims, operation, await adapter.poll(model, operation.job)) }
+      if (!model || model.version !== operation.snapshot.version || (operation.state === 'pending' ? !adapter?.poll : !adapter?.recover)) throw failure('CONFIG_CHANGED', '原任务配置不可用，需要人工对账', 409)
+      try { return await finish(claims, operation, await (operation.state === 'pending' ? adapter.poll(model, operation.job) : adapter.recover(model, operation))) }
       catch { return ledger.unknown(requestId, 'POLL_OUTCOME_UNKNOWN') }
     },
     async acknowledgeRecovery(token, requestId) {
-      const { claims } = await recovery(token, requestId, 'ack')
+      const { claims, operation } = await recovery(token, requestId, 'ack')
+      await acknowledgeUpstream(operation)
       return ledger.acknowledge(requestId, claims.rootId)
     },
     async reconcile(requestId, input, actor) {

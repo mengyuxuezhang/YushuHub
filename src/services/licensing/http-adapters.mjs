@@ -1,5 +1,6 @@
 import { failure } from './protocol.mjs'
 import { MiniMaxAdapter } from '../minimax-adapter.mjs'
+import { withNewApiSettlement } from './newapi-settlement.mjs'
 import { normalizeImageGenerationRequest, buildUpstreamImagePayload, resolveResolutionTier } from '../image-generation.mjs'
 
 const event = (meter, quantity, extra = {}) => ({ meter, quantity: String(quantity), ...extra })
@@ -14,8 +15,9 @@ async function upstream(model, endpoint, body, fetcher, context) {
   const origin = new URL(model.baseUrl)
   if (origin.protocol !== 'https:' || origin.username || origin.password || origin.search || origin.hash) throw Object.assign(failure('INVALID_UPSTREAM', '供应商必须使用 HTTPS'), { noCharge: true })
   const response = await fetcher(`${model.baseUrl.replace(/\/$/, '')}${endpoint}`, { method: 'POST', redirect: 'error',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env[model.keyEnv] || ''}` }, body: JSON.stringify(body), signal: AbortSignal.timeout(180_000) })
-  if (model.adapter === 'newapi.chat') {
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env[model.keyEnv] || ''}`,
+      ...(model.adapter === 'newapi.chat' && model.settlementProtocol === 'okpa-v1' ? { 'X-OKPA-Service-Key': process.env[model.settlementKeyEnv], 'X-OKPA-Request-ID': context?.requestId } : {}) }, body: JSON.stringify(body), signal: AbortSignal.timeout(180_000) })
+  if (model.adapter === 'newapi.chat' && model.settlementProtocol !== 'okpa-v1') {
     const requestId = response.headers.get('x-oneapi-request-id')
     if (!requestId || !/^[A-Za-z0-9_.:-]{1,128}$/.test(requestId)) {
       await response.body?.cancel()
@@ -91,6 +93,6 @@ export function httpGatewayAdapters(fetcher = fetch) {
       },
     },
   }
-  adapters['newapi.chat'] = adapters['openai.chat']
+  adapters['newapi.chat'] = withNewApiSettlement(adapters['openai.chat'], fetcher)
   return adapters
 }

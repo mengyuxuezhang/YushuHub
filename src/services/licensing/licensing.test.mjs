@@ -247,6 +247,50 @@ test('New API rejects management credentials and missing receipt without asserti
   await assert.rejects(adapter.submit(model, {}), error => error.code === 'MISSING_UPSTREAM_RECEIPT' && error.noCharge !== true)
 })
 
+test('OKPA receipt survives loss before response headers and settles/acks once without inference retry', async t => {
+  process.env.OKPA_TEST_INFERENCE = 'sk-test-only'; process.env.OKPA_TEST_SETTLEMENT = `okpa_${'a'.repeat(64)}`
+  t.after(() => { delete process.env.OKPA_TEST_INFERENCE; delete process.env.OKPA_TEST_SETTLEMENT })
+  const { center, now, advance } = setup(), first = await root(center)
+  const store = memoryStateStore(emptyLedgerState()), ledger = createSupplyLedger({ store, now })
+  await ledger.open('first', 'first'); await ledger.credit('first', '100', 'okpa-credit', 'operator', 'okpa-receipt')
+  let submits = 0, acknowledgements = 0, ready = false, mismatch = false, failAck = true
+  const model = { id: 'chat', model: 'chat', status: 'enabled', version: 1, adapter: 'newapi.chat', settlementProtocol: 'okpa-v1',
+    keyEnv: 'OKPA_TEST_INFERENCE', settlementKeyEnv: 'OKPA_TEST_SETTLEMENT', baseUrl: 'https://newapi.example.com/v1', contextWindow: 100, maxOutputTokens: 10,
+    price: { version: 1, components: [{ meter: 'request', phase: 'request', unitSize: '1', amount: '1' },
+      ...['input_tokens', 'cached_tokens', 'output_tokens'].map(meter => ({ meter, unitSize: '1', amount: '0.1' }))] } }
+  const adapters = httpGatewayAdapters(async (url, options) => {
+    if (url.endsWith('/chat/completions')) {
+      submits++; assert.equal(options.headers['X-OKPA-Request-ID'], 'okpa-lost')
+      assert.equal((await ledger.find('okpa-lost', 'first')).upstreamReceipt.provider, 'okpa-new-api')
+      throw new Error('connection lost before headers')
+    }
+    assert.equal(options.headers.Authorization, `Bearer ${process.env.OKPA_TEST_SETTLEMENT}`)
+    if (url.endsWith('/ack')) { acknowledgements++; return new Response(JSON.stringify({ success: !failAck, data: { acknowledged: true } }), { status: failAck ? 503 : 200 }) }
+    return new Response(JSON.stringify({ success: true, data: { protocolVersion: 1,
+      receipt: { eventId: 'b'.repeat(64), requestId: mismatch ? 'wrong' : 'okpa-lost', upstreamRequestId: 'newapi-original', model: 'chat', state: ready ? 'settled' : 'accepted' },
+      usage: ready ? { inputTokens: 6, cachedTokens: 2, outputTokens: 3 } : null } }))
+  })
+  const gateway = createModelGateway({ ledger, models: [model], adapters, now, authorize: (token, aud) => center.introspect(token, aud) })
+  const token = (await center.serviceToken(first.credential, 'official-models')).token
+  const input = { modelId: 'chat', requestId: 'okpa-lost', request: { messages: [{ role: 'user', content: 'hello' }] } }
+  assert.equal((await gateway.submit(token, input)).state, 'unknown')
+  await gateway.submit(token, input); assert.equal(submits, 1)
+  await center.update('first', { expectedVersion: 1, expiresAt: new Date(now() + 1000).toISOString() }, 'operator'); advance(2000)
+  const recovery = (await center.recoveryToken(first.credential, 'first', 'okpa-lost')).token
+  assert.equal((await gateway.recover(recovery, 'okpa-lost', true)).state, 'pending')
+  ready = true; mismatch = true
+  assert.equal((await gateway.recover(recovery, 'okpa-lost', true)).state, 'unknown')
+  mismatch = false
+  assert.equal((await gateway.recover(recovery, 'okpa-lost', true)).state, 'settled')
+  await gateway.recover(recovery, 'okpa-lost', true)
+  assert.equal((await ledger.view('first')).balance, '97.900000'); assert.equal((await ledger.view('first')).reserved, '0.000000')
+  assert.equal((await ledger.find('okpa-lost', 'first')).result.resultUnavailable, true)
+  await assert.rejects(gateway.acknowledgeRecovery(recovery, 'okpa-lost'), { code: 'RECEIPT_UNAVAILABLE' })
+  assert.equal((await store.read()).outbox['okpa-lost'].delivered, false)
+  failAck = false; await gateway.acknowledgeRecovery(recovery, 'okpa-lost'); await gateway.acknowledgeRecovery(recovery, 'okpa-lost')
+  assert.equal((await store.read()).outbox['okpa-lost'].delivered, true); assert.equal(submits, 1); assert.equal(acknowledgements, 3)
+})
+
 test('accounting import compares values at six decimals and rejects broken request identities', () => {
   const state = emptyLedgerState()
   state.wallets.first = { id: 'first', ownerId: 'first', balance: '1', reserved: '0', status: 'enabled' }

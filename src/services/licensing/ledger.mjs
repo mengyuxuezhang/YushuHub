@@ -108,21 +108,32 @@ export function createSupplyLedger({ store, now = Date.now }) {
     pending(requestId, job) {
       return transact({ requestId }, state => {
         const operation = state.operations[identifier(requestId)]
-        if (!operation || !['running', 'pending'].includes(operation.state)) throw failure('INVALID_TRANSITION', '任务状态不允许更新', 409)
+        if (!operation || !['running', 'pending', 'unknown'].includes(operation.state)) throw failure('INVALID_TRANSITION', '任务状态不允许更新', 409)
         operation.state = 'pending'; operation.job = structuredClone(job); operation.updatedAt = now()
         return operation
       })
     },
     receipt(requestId, receipt) {
-      if (receipt?.provider !== 'new-api' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(receipt.requestId || '')
-        || !Number.isInteger(receipt.httpStatus) || receipt.httpStatus < 100 || receipt.httpStatus > 599) throw failure('INVALID_RECEIPT', '上游请求凭证无效')
+      const managed = receipt?.provider === 'okpa-new-api' && receipt.requestId === requestId
+      if (!managed && (receipt?.provider !== 'new-api' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(receipt.requestId || '')
+        || !Number.isInteger(receipt.httpStatus) || receipt.httpStatus < 100 || receipt.httpStatus > 599)) throw failure('INVALID_RECEIPT', '上游请求凭证无效')
       return transact({ requestId }, state => {
         const operation = state.operations[identifier(requestId)]
         if (!operation || operation.state !== 'running') throw failure('INVALID_TRANSITION', '请求状态不允许登记上游凭证', 409)
         if (operation.upstreamReceipt && operation.upstreamReceipt.requestId !== receipt.requestId) throw failure('RECEIPT_CONFLICT', '请求已登记其他上游凭证', 409)
-        operation.upstreamReceipt = { provider: 'new-api', requestId: receipt.requestId, httpStatus: receipt.httpStatus }
+        operation.upstreamReceipt = { provider: receipt.provider, requestId: receipt.requestId, ...(managed ? {} : { httpStatus: receipt.httpStatus }) }
         operation.updatedAt = now()
         return operation.upstreamReceipt
+      })
+    },
+    confirmReceipt(requestId, receipt) {
+      if (!/^[a-f0-9]{64}$/.test(receipt?.eventId || '') || !/^[A-Za-z0-9_.:-]{1,128}$/.test(receipt?.upstreamRequestId || '')) throw failure('INVALID_RECEIPT', '上游结算事件凭证无效')
+      return transact({ requestId }, state => {
+        const operation = state.operations[identifier(requestId)], saved = operation?.upstreamReceipt
+        if (saved?.provider !== 'okpa-new-api' || saved.requestId !== requestId) throw failure('RECEIPT_CONFLICT', '缺少原供货请求关联', 409)
+        if ((saved.eventId && saved.eventId !== receipt.eventId) || (saved.upstreamRequestId && saved.upstreamRequestId !== receipt.upstreamRequestId)) throw failure('RECEIPT_CONFLICT', '上游事件或请求映射发生变化', 409)
+        Object.assign(saved, { eventId: receipt.eventId, upstreamRequestId: receipt.upstreamRequestId })
+        return saved
       })
     },
     unknown(requestId, reason) {

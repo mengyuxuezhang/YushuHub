@@ -66,7 +66,8 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
         },
         lookup: async (tenant, operation) => {
           if (operation.snapshot.model.source !== 'official') throw failure('RECONCILIATION_REQUIRED', '自接模型未知结果需人工核对，禁止自动重发', 409)
-          return gateway(tenant, `/recovery/requests/${encodeURIComponent(operation.requestId)}${operation.state === 'pending' ? '/poll' : ''}`, operation.state === 'pending' ? {} : undefined, operation.requestId)
+          const poll = ['pending', 'unknown'].includes(operation.state)
+          return gateway(tenant, `/recovery/requests/${encodeURIComponent(operation.requestId)}${poll ? '/poll' : ''}`, poll ? {} : undefined, operation.requestId)
         },
       })
     },
