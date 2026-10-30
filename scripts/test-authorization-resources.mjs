@@ -169,9 +169,20 @@ try{
  // through real HTTP, with no center preregistration of local model identities.
  const provider=ok(await request('local','/api/model-providers',{id:'review-provider',name:'虚构自接供应商',baseUrl:'https://review-provider.example/v1'},'POST',rootCookie))
  const localModel=ok(await request('local','/api/provider-models',{providerId:provider.id,modelId:'vendor-reviewed',displayName:'虚构审核文本',modelType:'text',contextWindow:100},'POST',rootCookie))
- ok(await request('local',`/api/model-providers/${provider.id}/keys`,{apiKey:'fictional-review-key',providerModelId:localModel.id},'POST',rootCookie))
+ const managedKey=ok(await request('local',`/api/model-providers/${provider.id}/keys`,{apiKey:'fictional-review-key',providerModelId:localModel.id},'POST',rootCookie))
+ const modelMaster=envLocal.AI_MODEL_CREDENTIAL_KEY_PATH||`${dir}/local-model-credentials.key`,parkedMaster=modelMaster+'.parked',originalMaster=await fs.readFile(modelMaster)
+ await fs.rename(modelMaster,parkedMaster)
+ try{
+  assert.equal((await request('local',`/api/model-providers/${provider.id}/keys`,{apiKey:'fictional-new-key',providerModelId:localModel.id},'POST',rootCookie)).status,503)
+  await assert.rejects(fs.stat(modelMaster),{code:'ENOENT'})
+  await fs.writeFile(modelMaster,crypto.randomBytes(32),{mode:0o600})
+  assert.equal((await request('local',`/api/model-providers/${provider.id}/keys`,{apiKey:'fictional-new-key',providerModelId:localModel.id},'POST',rootCookie)).status,503)
+ }finally{await fs.rm(modelMaster,{force:true});await fs.rename(parkedMaster,modelMaster)}
+ assert.deepEqual(await fs.readFile(modelMaster),originalMaster)
+ assert.equal(Number((await localPool.query('SELECT COUNT(*) n FROM ai_model_provider_keys WHERE provider_id=?',[provider.id]))[0][0].n),1)
+ assert.equal(ok(await request('local',`/api/model-providers/${provider.id}/keys`,{id:managedKey.id,apiKey:'fictional-review-rotated',providerModelId:localModel.id},'POST',rootCookie)).id,managedKey.id)
  const review=ok(await request('local','/api/supply/custom-models',undefined,'GET',rootCookie)), candidate=review.candidates.find(item=>item.id===localModel.id)
- assert(candidate);assert.equal(JSON.stringify(review).includes('fictional-review-key'),false);assert.equal(JSON.stringify(review).includes('review-provider.example'),false)
+ assert(candidate);assert.equal(JSON.stringify(review).includes('fictional-review-key'),false);assert.equal(JSON.stringify(review).includes('fictional-review-rotated'),false);assert.equal(JSON.stringify(review).includes('review-provider.example'),false)
  const reviewInput={providerModelId:localModel.id,expectedRevision:0,adapter:'openai.chat',status:'enabled',currency:'CNY',memo:'虚构报价审核',contextWindow:100,maxOutputTokens:5,clientId:'vendor-reviewed',costComponents:candidate.costComponents.map(item=>({...item,amount:'0.1'})),organizationId:'forged-child'}
  assert.equal(ok(await request('local','/api/supply/custom-models',reviewInput,'PUT',rootCookie)).revision,1)
  assert.equal((await request('local','/api/supply/custom-models',reviewInput,'PUT',rootCookie)).status,409)
@@ -251,7 +262,7 @@ try{
  await restartLocal()
  assert(ok(await request('local','/api/client/skill-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.skill))
  assert(ok(await request('local','/api/client/agent-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.agent))
- const report={actualOfficialAndLocalProcesses:true,legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,officialScopeBackfillCli:true,oldBuildReadableByRootOnly:true,legacyPriceReviewCli:true,legacyUsageShadowCli:true,cachedLegacyPricePreserved:true,sourcePriceMutationRejected:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,inactiveTerminalRefundHttp:true,terminalRefundDoesNotCreditSupply:true,paidSupplierCalls:0,productionChanged:false}
+ const report={actualOfficialAndLocalProcesses:true,legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,officialScopeBackfillCli:true,oldBuildReadableByRootOnly:true,legacyPriceReviewCli:true,legacyUsageShadowCli:true,cachedLegacyPricePreserved:true,sourcePriceMutationRejected:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,masterKeyReplacementDenied:true,restoredMasterAllowsRotation:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,inactiveTerminalRefundHttp:true,terminalRefundDoesNotCreditSupply:true,paidSupplierCalls:0,productionChanged:false}
  await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2),{mode:0o600});console.log('Resource HTTP regression: '+JSON.stringify(report));completed=true
 }finally{
  await stop('local');await stop('official');if(centerServer){centerServer.closeAllConnections();await new Promise(r=>centerServer.close(r))}

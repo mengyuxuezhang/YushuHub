@@ -57,6 +57,7 @@ export async function saveModelProviderKey(deps, providerId, input = {}, actor =
   const rawKey = String(input.apiKey || input.key || '').trim()
   const managedVoice = provider.id === SYSTEM_AUDIO_PROVIDER_ID || await isManagedVoiceProvider(db(), provider.id, organizationId)
   await assertManagedVoiceKeyWriteAllowed(db(), provider.id, input.id, rawKey, ownerUserId, Boolean(input.confirmKeyReplacement), organizationId)
+  if (rawKey) await voiceCredentialVault.assertWritable?.()
   if (managedVoice && rawKey) {
     try {
       await new MiniMaxAdapter().systemVoices({ baseUrl: provider.baseUrl, timeoutMs: provider.timeoutMs, apiKey: rawKey })
@@ -96,7 +97,7 @@ export async function saveModelProviderKey(deps, providerId, input = {}, actor =
     const status = normalizeRecordStatus(input.status)
     const weight = managedVoice ? 1 : Math.max(1, Math.min(1000, normalizePositiveInt(input.weight, 1)))
     const notes = String(input.notes || '').trim().slice(0, 255)
-    const ciphertext = rawKey ? await voiceCredentialVault.seal(rawKey, accountId) : existing?.secret_ciphertext
+    const ciphertext = rawKey ? await voiceCredentialVault.seal(rawKey, accountId, { connection: keyConnection }) : existing?.secret_ciphertext
     const legacyPlaintext = !rawKey && !ciphertext ? String(existing?.api_key || '') : ''
     await keyConnection.query(
       `INSERT INTO ai_model_provider_keys

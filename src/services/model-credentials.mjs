@@ -2,6 +2,23 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import { mkdir, open, readFile } from 'node:fs/promises'
 import path from 'node:path'
 
+export async function sealModelCredential(secret, accountId, loadKey) {
+  if (typeof secret !== 'string' || !secret.trim() || secret.length > 16384 || !accountId) throw new Error('模型凭据无效')
+  const nonce = randomBytes(12), cipher = createCipheriv('aes-256-gcm', await loadKey(), nonce)
+  cipher.setAAD(Buffer.from(accountId))
+  const ciphertext = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()])
+  return ['v1', nonce.toString('base64'), cipher.getAuthTag().toString('base64'), ciphertext.toString('base64')].join('.')
+}
+export async function unsealModelCredential(value, accountId, loadKey) {
+  const [version, nonce, tag, ciphertext, extra] = String(value).split('.')
+  if (version !== 'v1' || !nonce || !tag || !ciphertext || extra) throw new Error('模型凭据密文无效')
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', await loadKey(), Buffer.from(nonce, 'base64'))
+    decipher.setAAD(Buffer.from(accountId)); decipher.setAuthTag(Buffer.from(tag, 'base64'))
+    return Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64')), decipher.final()]).toString('utf8')
+  } catch { throw new Error('模型凭据无法解密，请检查账号绑定与密钥备份') }
+}
+
 // A separate key file is retained with deployment data and never synchronized.
 export class ModelCredentialVault {
   constructor(keyFile) { this.keyFile = keyFile }
@@ -27,21 +44,9 @@ export class ModelCredentialVault {
     }
   }
   async seal(secret, accountId) {
-    if (typeof secret !== 'string' || !secret.trim() || secret.length > 16384 || !accountId) throw new Error('模型凭据无效')
-    const nonce = randomBytes(12)
-    const cipher = createCipheriv('aes-256-gcm', await this.key(true), nonce)
-    cipher.setAAD(Buffer.from(accountId))
-    const ciphertext = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()])
-    return ['v1', nonce.toString('base64'), cipher.getAuthTag().toString('base64'), ciphertext.toString('base64')].join('.')
+    return sealModelCredential(secret, accountId, () => this.key(true))
   }
   async unseal(value, accountId) {
-    const [version, nonce, tag, ciphertext, extra] = String(value).split('.')
-    if (version !== 'v1' || !nonce || !tag || !ciphertext || extra) throw new Error('模型凭据密文无效')
-    try {
-      const decipher = createDecipheriv('aes-256-gcm', await this.key(false), Buffer.from(nonce, 'base64'))
-      decipher.setAAD(Buffer.from(accountId))
-      decipher.setAuthTag(Buffer.from(tag, 'base64'))
-      return Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64')), decipher.final()]).toString('utf8')
-    } catch { throw new Error('模型凭据无法解密，请检查账号绑定与密钥备份') }
+    return unsealModelCredential(value, accountId, () => this.key(false))
   }
 }

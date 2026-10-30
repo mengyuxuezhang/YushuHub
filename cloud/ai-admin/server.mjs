@@ -88,7 +88,7 @@ import { registerModelTaskRoutes } from '../../src/routes/model-tasks.mjs'
 import { registerUpstreamAccountRoutes } from '../../src/routes/upstream-accounts.mjs'
 import { saveProviderModelRecord } from '../../src/services/provider-model-save.mjs'
 import { VoiceConfigurationService } from '../../src/services/voice-configuration.mjs'
-import { ModelCredentialVault } from '../../src/services/model-credentials.mjs'
+import { createProviderCredentialVault } from '../../src/services/model-credential-safety.mjs'
 import { VoiceModelContext } from '../../src/services/voice-model-context.mjs'
 import { VoiceOperationRepository } from '../../src/repositories/voice-operations.mjs'
 import { VoiceArtifactStore } from '../../src/services/voice-artifacts.mjs'
@@ -6865,7 +6865,7 @@ const voicePool = {
   getConnection: (...args) => db().getConnection(...args),
 }
 registerUpstreamAccountRoutes(app, new UpstreamAccountService(voicePool))
-const voiceCredentialVault = new ModelCredentialVault(MODEL_CREDENTIAL_KEY_PATH)
+const voiceCredentialVault = createProviderCredentialVault({ keyFile: MODEL_CREDENTIAL_KEY_PATH, database: () => voicePool })
 const voiceOperations = new VoiceOperationRepository(voicePool)
 const pricingPlanRepository = new PricingPlanRepository(voicePool)
 const voiceContexts = new VoiceModelContext({ pool: voicePool, vault: voiceCredentialVault, allowedModels: allowedProviderModelIdSetForUser, pricingPlans: pricingPlanRepository })

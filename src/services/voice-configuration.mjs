@@ -51,6 +51,7 @@ export class VoiceConfigurationService {
     if (!account) throw fail('上游账号不存在')
     const [voices] = await this.pool.query("SELECT provider_voice_id,status FROM ai_private_voices WHERE upstream_account_id=? AND status NOT IN ('deleted','failed')", [accountId])
     if (voices.length) throw fail('该账号已有私有音色，不能添加或覆盖 Key。请勿更换 MiniMax 账号，以免音色不可用')
+    await this.vault.assertWritable?.()
     const connection = { baseUrl: account.base_url, timeoutMs: account.timeout_ms, apiKey: input.key.trim() }
     // Probe using the new Key, without creating or charging any voice resource.
     await this.adapter.systemVoices(connection)
