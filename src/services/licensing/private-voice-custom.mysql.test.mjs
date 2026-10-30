@@ -13,8 +13,9 @@ import { mysqlStateStore } from '../../repositories/licensing-state.mjs'
 import { emptyCustomDefinitions } from './custom-definitions.mjs'
 import { registerClientVoiceSupplyRoutes } from '../../routes/client-voice-supply.mjs'
 import { setAuthDependencies } from '../../middleware/auth.mjs'
+import { ModelCredentialVault } from '../model-credentials.mjs'
 
-test('real MySQL custom private voice client lifecycle recovers immutable actual usage after lost local completion without a live definition or Key', { skip: !process.env.LICENSING_TEST_DB }, async () => {
+for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice client lifecycle recovers immutable actual usage after lost local completion without a live definition or Key`, { skip: !process.env.LICENSING_TEST_DB }, async () => {
   const { gatewayDatabase, licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
   if (config.host !== '127.0.0.1') throw new Error('Disposable local database required')
   const name = `yushu_voice_custom_${crypto.randomBytes(5).toString('hex')}`, admin = await mysql.createConnection(config)
@@ -31,15 +32,33 @@ test('real MySQL custom private voice client lifecycle recovers immutable actual
     const components = [{ meter: 'request', phase: 'request', unitSize: '1', amount: '0' }, ...['preview', 'activation', 'usage'].map(phase => ({ meter: 'billable_characters', phase, unitSize: '1', amount: '2' })), { meter: 'resource_activation', phase: 'activation', unitSize: '1', amount: '7' }]
     const model = { id: 'custom-voice-model', clientId: 'custom-speech', version: 1, status: 'enabled', adapter: 'minimax.private_voice', taskType: 'speech_synthesis', model: 'upstream-custom-speech', baseUrl: 'https://custom-voice.example.com', apiKey: 'fictional-custom-voice-key', allowedVoiceIds: [],
       price: { version: 1, currency: 'CNY', components }, supplierCost: { version: 1, currency: 'CNY', components: components.map(item => ({ ...item, amount: item.meter === 'request' ? '0' : item.meter === 'resource_activation' ? '5' : '1' })) } }
-    await fs.writeFile(file, JSON.stringify([model]), { mode: 0o600 })
-    const counts = { uploads: 0, clones: 0, syntheses: 0, deletes: 0 }, voices = new Set()
+    await fs.writeFile(file, JSON.stringify(mode === 'file' ? [model] : []), { mode: 0o600 })
+    const secrets = mode === 'file' ? [model.apiKey] : ['fictional-pool-a', 'fictional-pool-b']
+    if (mode === 'keypool') {
+      await pool.query('CREATE TABLE ai_organizations(id VARCHAR(64) PRIMARY KEY,external_id VARCHAR(64),agent_level INT,status VARCHAR(16),legacy_owner_user_id VARCHAR(64))')
+      await pool.query('CREATE TABLE ai_model_providers(id VARCHAR(64) PRIMARY KEY,organization_id VARCHAR(64),status VARCHAR(16),base_url VARCHAR(255))')
+      await pool.query('CREATE TABLE ai_provider_models(id VARCHAR(64) PRIMARY KEY,provider_id VARCHAR(64),organization_id VARCHAR(64),model_id VARCHAR(120),model_type VARCHAR(16),display_name VARCHAR(120),endpoint_path VARCHAR(120),context_window INT,status VARCHAR(16),archived_at DATETIME)')
+      await pool.query('CREATE TABLE ai_model_upstream_accounts(id VARCHAR(64) PRIMARY KEY,provider_id VARCHAR(64),organization_id VARCHAR(64),status VARCHAR(16))')
+      await pool.query('CREATE TABLE ai_model_provider_keys(id VARCHAR(64) PRIMARY KEY,provider_id VARCHAR(64),provider_model_id VARCHAR(64),organization_id VARCHAR(64),owner_user_id VARCHAR(64),upstream_account_id VARCHAR(64),status VARCHAR(16),secret_ciphertext TEXT,api_key TEXT,last_used_at DATETIME(3),failure_count INT,created_at DATETIME(3))')
+      await pool.query('CREATE TABLE ai_system_voices(id VARCHAR(64) PRIMARY KEY,organization_id VARCHAR(64),provider_model_id VARCHAR(64),upstream_account_id VARCHAR(64),provider_voice_id VARCHAR(120),display_name VARCHAR(120),status VARCHAR(16))')
+      await pool.query("INSERT INTO ai_organizations VALUES ('custom-local-root',?,1,'enabled','custom-owner')", [root.id])
+      await pool.query("INSERT INTO ai_model_providers VALUES ('custom-provider','custom-local-root','enabled',?)", [model.baseUrl])
+      await pool.query("INSERT INTO ai_provider_models VALUES (?,'custom-provider','custom-local-root',?,'audio','虚构密钥池音色','/v1/t2a_v2',10000,'enabled',NULL)", [model.id, model.model])
+      const vault = new ModelCredentialVault(path.join(dir, 'credentials.key'))
+      for (const [index, letter] of ['a', 'b'].entries()) {
+        await pool.query("INSERT INTO ai_model_upstream_accounts VALUES (?,'custom-provider','custom-local-root','enabled')", [`account-${letter}`])
+        await pool.query("INSERT INTO ai_model_provider_keys VALUES (?,'custom-provider',?,'custom-local-root','custom-owner',?,'enabled',?,NULL,NULL,0,?)", [`key-${letter}`, model.id, `account-${letter}`, await vault.seal(secrets[index], `account-${letter}`), `2026-01-0${index + 1} 00:00:00`])
+      }
+    }
+    const counts = { uploads: 0, clones: 0, syntheses: 0, deletes: 0 }, accounts = new Map(secrets.map(secret => [secret, new Set()]))
     let missingUsage = false
     const ok = value => Response.json({ base_resp: { status_code: 0 }, ...value })
     const fetchImpl = async (url, options = {}) => {
       const parsed = new URL(url)
       if (parsed.hostname === 'minimax-algeng-chat-tts.oss-accelerate.aliyuncs.com') return new Response('fictional custom preview')
       assert.equal(parsed.hostname, 'custom-voice.example.com')
-      assert.equal(options.headers.authorization, 'Bearer fictional-custom-voice-key')
+      const secret = options.headers.authorization?.replace(/^Bearer /, ''), voices = accounts.get(secret)
+      assert(voices, 'Only the original simulated account may access its voice')
       if (parsed.pathname === '/v1/files/upload') { counts.uploads++; return ok({ file: { file_id: String(9_000_000_000_000_000_000n + BigInt(counts.uploads)) } }) }
       if (parsed.pathname === '/v1/files/delete') return ok({})
       const body = JSON.parse(options.body)
@@ -52,18 +71,21 @@ test('real MySQL custom private voice client lifecycle recovers immutable actual
     const make = () => agentCommerceRuntime({ client: { claims: async () => root, recoveryIdentity: async () => root }, database: () => pool, fetchImpl, benefits: async () => ({ discount: '1' }), inspectPrivateVoiceAudio: async () => ({ duration: 10 }),
       env: { AI_AGENT_CUSTOM_MODELS_FILE: file, AI_SUPPLY_PRIVATE_VOICE_ENABLED: '1', AI_SUPPLY_PRIVATE_VOICE_DIRECTORY: path.join(dir, 'storage'), AI_MODEL_CREDENTIAL_KEY_PATH: path.join(dir, 'credentials.key'), AI_PRICE_NOTIFICATIONS_KEY_FILE: path.join(dir, 'price.key'), AI_ACCOUNTING_MONITOR_KEY_FILE: path.join(dir, 'monitor.key') } })
     runtime = make()
+    if (mode === 'keypool') await runtime.customReview.save(root, { providerModelId: model.id, clientId: model.clientId, expectedRevision: 0, status: 'enabled', adapter: model.adapter, currency: 'CNY', memo: '虚构密钥池私有音色成本审核', allowedVoiceIds: [], costComponents: model.supplierCost.components }, 'custom-owner')
     setAuthDependencies({ getEndUserByToken: async token => ['custom-voice-client', 'custom-voice-peer'].includes(token) ? { id: token === 'custom-voice-client' ? 'custom-voice-user' : 'custom-voice-other', status: 'enabled' } : null, getClientAuthorization: async () => true })
-    const app = serviceApp(); registerClientVoiceSupplyRoutes(app, { runtime: { get privateVoiceReady() { return runtime.privateVoiceReady }, service: (...args) => runtime.service(...args), privateVoice: (...args) => runtime.privateVoice(...args), privateVoiceRoute: (...args) => runtime.privateVoiceRoute(...args), privateVoiceInventory: (...args) => runtime.privateVoiceInventory(...args) }, tenantForUser: async () => child }); serviceErrors(app)
+    const app = serviceApp(); registerClientVoiceSupplyRoutes(app, { runtime: { get privateVoiceReady() { return runtime.privateVoiceReady }, service: (...args) => runtime.service(...args), privateVoice: (...args) => runtime.privateVoice(...args), privateVoiceRoute: (...args) => runtime.privateVoiceRoute(...args), privateVoiceInventory: (...args) => runtime.privateVoiceInventory(...args), privateVoiceWarnings: (...args) => runtime.privateVoiceWarnings(...args) }, tenantForUser: async () => child }); serviceErrors(app)
     server = await new Promise(resolve => { const result = app.listen(0, '127.0.0.1', () => resolve(result)) })
     const request = (route = '', body, token = 'custom-voice-client') => fetch(`http://127.0.0.1:${server.address().port}/api/client/voices${route}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, ...(body === undefined || body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) }) })
     let service = await runtime.service()
-    const markup = components.filter(item => item.meter !== 'request').map(({ meter, phase }) => ({ meter, phase, amount: '1' }))
+    const markup = components.filter(item => item.meter !== 'request').map(({ meter, phase }) => ({ meter, phase, amount: mode === 'file' ? '1' : meter === 'resource_activation' ? '8' : '3' }))
     await service.configure(root, { modelId: model.id, expectedVersion: 0, enabled: true, pointsPerCny: '1', saleMarkup: markup, supplyMarkup: markup }, 'root-owner')
-    await service.configure(child, { modelId: model.id, expectedVersion: 0, enabled: true, pointsPerCny: '1', saleMarkup: markup }, 'child-owner')
+    await service.configure(child, { modelId: model.id, expectedVersion: 0, enabled: true, pointsPerCny: '1', saleMarkup: markup.map(item => ({ ...item, amount: '1' })) }, 'child-owner')
     await service.credit(root, child.id, '100', 'custom-voice-credit', 'fictional-custom-voice-receipt', 'root-owner')
     const recording = requestId => { const form = new FormData(); form.set('audio', new Blob(['fictional custom recording']), 'recording.wav'); for (const [key, value] of Object.entries({ idempotencyKey: requestId, modelId: model.clientId, name: '虚构自接音色', text: '你好', consent: 'true', confirmedPoints: '16' })) form.set(key, value); return form }
     const cloned = await request('/train', recording('custom-voice-clone')); assert.equal(cloned.status, 200)
     const clone = (await cloned.json()).data; assert.equal(clone.status, 'succeeded'); assert.equal(clone.settledPoints, 16)
+    let originalKey
+    if (mode === 'keypool') { const [[resource]] = await pool.query("SELECT JSON_UNQUOTE(JSON_EXTRACT(payload,'$.credentialId')) AS credential FROM supply_voice_resources WHERE book='commerce-v2' AND id=?", [clone.voiceId]); originalKey = resource.credential; assert.equal(originalKey, 'key-a') }
     await request('/train', recording('custom-voice-clone')); assert.equal(counts.clones, 1)
     assert.equal((await request(`/${clone.voiceId}/preview`)).status, 200)
     assert.equal((await request(`/${clone.voiceId}/preview`, undefined, 'custom-voice-peer')).status, 404)
@@ -82,12 +104,16 @@ test('real MySQL custom private voice client lifecycle recovers immutable actual
     assert.equal(counts.clones, before + 1)
     await runtime.store.scopeTransaction({ requestId: 'custom-voice-recover' }, state => { delete state.requests['custom-voice-recover'].job })
     assert((await runtime.store.pending()).some(operation => operation.requestId === 'custom-voice-recover'))
-    runtime.stop(); await fs.writeFile(file, '[]'); runtime = make(); service = await runtime.service({ recovery: true })
+    runtime.stop(); await fs.writeFile(file, '[]')
+    if (mode === 'keypool') await pool.query("UPDATE ai_model_provider_keys SET status='disabled'")
+    runtime = make(); service = await runtime.service({ recovery: true })
     const settled = await service.recover(child, 'custom-voice-user', 'custom-voice-recover'); assert.equal(settled.state, 'settled'); assert.equal(settled.points, '16.000000'); assert.equal(settled.upstreamAmount, '4.000000')
     await service.recover(child, 'custom-voice-user', 'custom-voice-recover'); assert.equal(counts.clones, before + 1)
     assert.equal((await service.balance(child)).wallet.balance, '47.000000')
     assert.equal(String((await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='custom-voice-user'"))[0][0].credit_balance), '31.000000')
-    runtime.stop(); await fs.writeFile(file, JSON.stringify([model])); runtime = make(); service = await runtime.service()
+    runtime.stop(); await fs.writeFile(file, JSON.stringify(mode === 'file' ? [model] : []))
+    if (mode === 'keypool') await pool.query("UPDATE ai_model_provider_keys SET status='enabled'")
+    runtime = make(); service = await runtime.service()
     missingUsage = true
     const unknown = await request('/train', recording('custom-voice-unknown')); assert.equal(unknown.status, 200); assert.equal((await unknown.json()).data.status, 'outcome_unknown')
     const calls = counts.clones; await service.recover(child, 'custom-voice-user', 'custom-voice-unknown'); assert.equal(counts.clones, calls)
@@ -95,6 +121,13 @@ test('real MySQL custom private voice client lifecycle recovers immutable actual
     assert.equal(String((await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='custom-voice-user'"))[0][0].credit_balance), '15.000000')
     const catalog = (await (await request()).json()).data
     assert.equal(JSON.stringify(catalog).includes(model.apiKey), false); assert.equal(JSON.stringify(catalog).includes('upstream-custom-speech'), false)
+    for (const secret of secrets) assert.equal(JSON.stringify(catalog).includes(secret), false)
+    if (mode === 'keypool') {
+      await pool.query("UPDATE ai_model_provider_keys SET status='disabled' WHERE id=?", [originalKey])
+      const beforeDenied = counts.syntheses
+      assert.equal((await request('/synthesize', { modelId: model.clientId, voiceId: clone.voiceId, text: 'abc', idempotencyKey: 'custom-disabled-voice' })).status, 409)
+      assert.equal(counts.syntheses, beforeDenied); assert.equal(await runtime.store.readRequest('custom-disabled-voice'), null)
+    }
     assert.equal((await request('/delete', { voiceId: clone.voiceId, idempotencyKey: 'custom-voice-delete' })).status, 200)
     assert.equal((await (await request('/tasks/custom-voice-delete')).json()).data.status, 'succeeded')
     auditAccounting(await runtime.store.read(), 'commerce')
