@@ -95,6 +95,18 @@ export function createSupplyLedger({ store, now = Date.now }) {
         return operation
       })
     },
+    receipt(requestId, receipt) {
+      if (receipt?.provider !== 'new-api' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(receipt.requestId || '')
+        || !Number.isInteger(receipt.httpStatus) || receipt.httpStatus < 100 || receipt.httpStatus > 599) throw failure('INVALID_RECEIPT', '上游请求凭证无效')
+      return store.transaction(state => {
+        const operation = state.operations[identifier(requestId)]
+        if (!operation || operation.state !== 'running') throw failure('INVALID_TRANSITION', '请求状态不允许登记上游凭证', 409)
+        if (operation.upstreamReceipt && operation.upstreamReceipt.requestId !== receipt.requestId) throw failure('RECEIPT_CONFLICT', '请求已登记其他上游凭证', 409)
+        operation.upstreamReceipt = { provider: 'new-api', requestId: receipt.requestId, httpStatus: receipt.httpStatus }
+        operation.updatedAt = now()
+        return operation.upstreamReceipt
+      })
+    },
     unknown(requestId, reason) {
       return store.transaction(state => {
         const operation = state.operations[identifier(requestId)]

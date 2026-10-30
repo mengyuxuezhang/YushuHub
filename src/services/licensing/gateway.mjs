@@ -59,7 +59,9 @@ export function createModelGateway({ ledger, authorize, models, adapters, now = 
         snapshot: { modelId: model.id, organizationId: claims.sub, version: model.version, price, licenseVersion: claims.version } })
       if (!reserved.created || !(await ledger.start(requestId))) return reserved.operation
       try {
-        return await finish(claims, reserved.operation, await adapter.submit(model, prepared.request))
+        return await finish(claims, reserved.operation, await adapter.submit(model, prepared.request, {
+          recordReceipt: receipt => ledger.receipt(requestId, receipt),
+        }))
       } catch (error) {
         // Only an explicit adapter assertion of no billed usage may release a hold.
         if (error.noCharge === true) return ledger.settle(requestId, '0.000000', [], { error: 'PROVIDER_REJECTED' })

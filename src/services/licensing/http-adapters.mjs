@@ -9,11 +9,22 @@ function boundedInteger(value, max, fallback) {
   if (!Number.isSafeInteger(number) || number < 1 || number > max) throw failure('INVALID_BOUND', '请求规格超出模型上限')
   return number
 }
-async function upstream(model, endpoint, body, fetcher) {
+async function upstream(model, endpoint, body, fetcher, context) {
+  if (model.adapter === 'newapi.chat' && (!process.env[model.keyEnv] || process.env[model.keyEnv].startsWith('nap_'))) throw Object.assign(failure('INVALID_INFERENCE_KEY', 'New API 供货调用需要专用模型令牌，不能使用管理访问令牌'), { noCharge: true })
   const origin = new URL(model.baseUrl)
   if (origin.protocol !== 'https:' || origin.username || origin.password || origin.search || origin.hash) throw Object.assign(failure('INVALID_UPSTREAM', '供应商必须使用 HTTPS'), { noCharge: true })
   const response = await fetcher(`${model.baseUrl.replace(/\/$/, '')}${endpoint}`, { method: 'POST', redirect: 'error',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env[model.keyEnv] || ''}` }, body: JSON.stringify(body), signal: AbortSignal.timeout(180_000) })
+  if (model.adapter === 'newapi.chat') {
+    const requestId = response.headers.get('x-oneapi-request-id')
+    if (!requestId || !/^[A-Za-z0-9_.:-]{1,128}$/.test(requestId)) {
+      await response.body?.cancel()
+      throw failure('MISSING_UPSTREAM_RECEIPT', 'New API 未提供可核对的请求编号', 502)
+    }
+    // Persist before reading the body: a truncated response must remain traceable.
+    try { await context?.recordReceipt?.({ provider: 'new-api', requestId, httpStatus: response.status }) }
+    catch (error) { await response.body?.cancel(); throw error }
+  }
   if (!response.ok) throw failure('PROVIDER_ERROR', '供应商调用结果需要核对', 502)
   const reader = response.body.getReader(), chunks = []; let length = 0
   for (;;) {
@@ -27,7 +38,7 @@ async function upstream(model, endpoint, body, fetcher) {
 }
 
 export function httpGatewayAdapters(fetcher = fetch) {
-  return {
+  const adapters = {
     'openai.chat': {
       prepare(model, request) {
         if (!Array.isArray(request.messages) || !request.messages.length || !Number.isSafeInteger(model.contextWindow) || !Number.isSafeInteger(model.maxOutputTokens)) throw failure('UNBOUNDED_REQUEST', '文本模型需配置上下文和输出上限')
@@ -37,8 +48,8 @@ export function httpGatewayAdapters(fetcher = fetch) {
         return { request: { ...request, model: model.model, max_tokens: max, max_completion_tokens: undefined, n: 1, stream: false, stream_options: undefined },
           upperUsage: [requestEvent(), event('input_tokens', model.contextWindow), event('cached_tokens', model.contextWindow), event('output_tokens', max)] }
       },
-      async submit(model, request) {
-        const result = await upstream(model, '/chat/completions', request, fetcher), usage = result.usage
+      async submit(model, request, context) {
+        const result = await upstream(model, '/chat/completions', request, fetcher, context), usage = result.usage
         if (!usage || !Number.isSafeInteger(usage.prompt_tokens) || !Number.isSafeInteger(usage.completion_tokens)) throw failure('MISSING_USAGE', '缺少供应商用量', 502)
         const cached = Number(usage.prompt_tokens_details?.cached_tokens || 0)
         if (!Number.isSafeInteger(cached) || cached < 0 || cached > usage.prompt_tokens) throw failure('INVALID_USAGE', '供应商缓存用量无效', 502)
@@ -80,4 +91,6 @@ export function httpGatewayAdapters(fetcher = fetch) {
       },
     },
   }
+  adapters['newapi.chat'] = adapters['openai.chat']
+  return adapters
 }

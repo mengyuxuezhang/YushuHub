@@ -196,3 +196,47 @@ test('speech rejects arbitrary private upstream voice identifiers before reserva
   const prepared = adapter.prepare({ model: 'speech-model', allowedVoiceIds: ['approved-system-voice'] }, { text: '你好', voiceId: 'approved-system-voice' })
   assert.equal(prepared.upperUsage.find(item => item.meter === 'billable_characters').quantity, '4')
 })
+
+test('New API receipts survive response loss and repeated requests never resubmit inference', async t => {
+  process.env.LICENSING_NEWAPI_TEST_KEY = 'sk-test-only'
+  t.after(() => { delete process.env.LICENSING_NEWAPI_TEST_KEY })
+  const { center, now } = setup(), first = await root(center), ledger = createSupplyLedger({ store: memoryStateStore(emptyLedgerState()), now })
+  await ledger.open('first', 'first'); await ledger.credit('first', '10', 'newapi-credit', 'operator', 'newapi-receipt')
+  let calls = 0, truncate = false
+  const adapters = httpGatewayAdapters(async () => {
+    calls++
+    const response = new Response(JSON.stringify({ choices: [], usage: { prompt_tokens: 4, completion_tokens: 2 } }), { headers: { 'x-oneapi-request-id': `newapi-${calls}` } })
+    if (truncate) response.body.getReader = () => ({ read: async () => { throw new Error('connection lost') } })
+    return response
+  })
+  const gateway = createModelGateway({ ledger, authorize: (token, aud) => center.introspect(token, aud), now, adapters,
+    models: [{ id: 'chat', status: 'enabled', version: 1, adapter: 'newapi.chat', baseUrl: 'https://example.com/v1', model: 'chat',
+      keyEnv: 'LICENSING_NEWAPI_TEST_KEY', contextWindow: 100, maxOutputTokens: 10, price: { version: 1, components: [
+        { meter: 'request', phase: 'request', unitSize: '1', amount: '1' },
+        ...['input_tokens', 'cached_tokens', 'output_tokens'].map(meter => ({ meter, unitSize: '1', amount: '0' })),
+      ] } }] })
+  const { token } = await center.serviceToken(first.credential, 'official-models')
+  const input = { modelId: 'chat', requestId: 'newapi-ok', request: { messages: [{ role: 'user', content: 'hello' }] } }
+  const settled = await gateway.submit(token, input)
+  assert.equal(settled.state, 'settled'); assert.equal(settled.upstreamReceipt.requestId, 'newapi-1')
+  await gateway.submit(token, input); assert.equal(calls, 1)
+  truncate = true
+  const unknownInput = { ...input, requestId: 'newapi-lost' }
+  assert.equal((await gateway.submit(token, unknownInput)).state, 'unknown')
+  const saved = await ledger.find('newapi-lost', 'first')
+  assert.equal(saved.upstreamReceipt.requestId, 'newapi-2')
+  await gateway.submit(token, unknownInput); assert.equal(calls, 2)
+  assert.equal((await ledger.view('first')).reserved, '1.000000')
+  assert.equal((await ledger.reconciliation()).unknown.length, 1)
+})
+
+test('New API rejects management credentials and missing receipt without asserting no-charge', async t => {
+  const adapter = httpGatewayAdapters(async () => new Response('{}'))['newapi.chat']
+  const model = { adapter: 'newapi.chat', keyEnv: 'UNCONFIGURED_NEWAPI_TEST_KEY', baseUrl: 'https://example.com/v1' }
+  await assert.rejects(adapter.submit(model, {}), { code: 'INVALID_INFERENCE_KEY', noCharge: true })
+  process.env.UNCONFIGURED_NEWAPI_TEST_KEY = 'nap_test-management-only'
+  t.after(() => { delete process.env.UNCONFIGURED_NEWAPI_TEST_KEY })
+  await assert.rejects(adapter.submit(model, {}), { code: 'INVALID_INFERENCE_KEY', noCharge: true })
+  process.env.UNCONFIGURED_NEWAPI_TEST_KEY = 'sk-test-only'
+  await assert.rejects(adapter.submit(model, {}), error => error.code === 'MISSING_UPSTREAM_RECEIPT' && error.noCharge !== true)
+})

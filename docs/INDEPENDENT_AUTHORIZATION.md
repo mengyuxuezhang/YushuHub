@@ -67,6 +67,10 @@
 
 ### 官方网关
 
+官方供货服务可复用现有New API作为模型上游：配置`adapter: "newapi.chat"`及其`/v1`地址、公共模型名和专用推理令牌。New API继续负责渠道调度；本服务是代理预付钱包的唯一记账位置。New API技术账户额度仅作官方侧上游可用额度，不能同时作为代理可支用余额，也不能将整数quota直接当六位人民币金额。New API动态价格不自动改写本服务供货价和历史快照。
+
+该适配器禁止使用`nap_`管理访问令牌推理，并在读取响应正文前保存New API的`X-Oneapi-Request-Id`和HTTP状态到供货请求的`upstreamReceipt`，便于运营对账。断连仍保留预占，相同本地请求ID不再次推理；缺少凭证或日志不足时需人工核对，不能把“查不到日志”解释成无需付费。当前仅接入Chat Completions，不能据此宣称New API所有模态和实时流已全部适配。
+
 业务接口位于 `/api/model-gateway/v1`，使用中心签发的 `official-models` 令牌。消费账户从中心确认的 `rootId` 派生，不能由请求参数指定。
 
 - `GET /catalog`、`GET /balance`：授权模型、计费项和供货账户。
