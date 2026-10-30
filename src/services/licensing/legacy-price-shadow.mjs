@@ -5,6 +5,27 @@ import { benefitFactor } from './benefits.mjs'
 import { decimal, failure, micros } from './protocol.mjs'
 import { migrationHash } from './legacy-import.mjs'
 
+export function generateLegacyPriceShadowCases(review) {
+  const cases = []
+  for (const [modelIndex, model] of review.models.filter(row => row.proposal).entries()) {
+    const priced = model.proposal.sale.components.filter(component => micros(component.amount) > 0n)
+    for (const [componentIndex, component] of (priced.length ? priced : model.proposal.sale.components.slice(0, 1)).entries()) {
+      const unit = micros(component.unitSize), step = ['audio_seconds', 'video_seconds'].includes(component.meter) ? 1n : 1_000_000n
+      const minimum = micros(component.minimumUnits || '0') * unit / 1_000_000n
+      const half = unit / 2n
+      const quantities = [...new Set([0n, step, unit - step, unit, unit + step, half - step, half, half + step,
+        ...(minimum > 0n ? [minimum - step, minimum, minimum + step] : [])].filter(value => value >= 0n).map(value => value / step * step).map(String))]
+      for (const [quantityIndex, quantity] of quantities.entries()) for (const [discountIndex, discount] of ['1', '0.8', '0'].entries()) {
+        if (cases.length >= 1000) throw failure('SHADOW_CASE_LIMIT', '自动边界矩阵超过1000项，请按审核后的模型/规格分批准备样本，不得截断矩阵', 409)
+        cases.push({ id: `m${modelIndex}-p${componentIndex}-q${quantityIndex}-d${discountIndex}`, sourcePlanId: model.sourcePlanId, discount,
+          events: [{ meter: component.meter, phase: component.phase || 'usage', dimensions: component.dimensions || {}, quantity: decimal(BigInt(quantity)) }] })
+      }
+    }
+  }
+  if (!cases.length) throw failure('NO_PRICE_CANDIDATES', '没有已审核的旧报价候选，不能生成空白通过矩阵', 409)
+  return { modelPreviewDigest: review.previewDigest, generatedBy: 'arithmetic-boundaries-v1', databaseChanged: false, cutoverReady: false, scope: 'component arithmetic only; actual request specifications and membership eligibility still require runtime acceptance', cases }
+}
+
 // Read-only numerical evidence, never a second debit path. The old local model
 // backend quotes raw compound points; applying discounts/multipliers is separately
 // reported rather than silently assuming those fields were previously enforced.

@@ -14,7 +14,7 @@ import { migrationHash } from './legacy-import.mjs'
 import { writeMigrationArtifact } from './migration-artifacts.mjs'
 import { verifyLegacyImportReceipt } from './local-legacy-binding.mjs'
 import { shadowLegacyAuthorization } from './migration-safety.mjs'
-import { shadowLegacyModelPrices } from './legacy-price-shadow.mjs'
+import { generateLegacyPriceShadowCases, shadowLegacyModelPrices } from './legacy-price-shadow.mjs'
 import { legacyPriceProposal } from './legacy-model-review.mjs'
 
 import { modelPriceAt, offerFor, offerKey } from './offer-pricing.mjs'
@@ -1120,4 +1120,23 @@ test('exact legacy price samples never imply cutover and invalid samples cannot 
   const negative = shadowLegacyModelPrices(review, { ...input, cases: [{ ...input.cases[0], events: [{ meter: 'input_tokens', quantity: '-1' }] }] })
   assert(negative.blockers.some(item => item.code === 'INVALID_USAGE'))
   assert.throws(() => shadowLegacyModelPrices(review, { ...input, cases: [...input.cases, ...input.cases] }), { code: 'INVALID_SHADOW_CASES' })
+})
+
+test('generated legacy price matrix covers integer boundaries and discount extremes without changing reviewed definitions', () => {
+  const review = priceShadowFixture([{ meter: 'input_tokens', salePoints: '10' }]), before = migrationHash(review)
+  const input = generateLegacyPriceShadowCases(review)
+  assert.equal(migrationHash(review), before); assert.equal(input.modelPreviewDigest, review.previewDigest)
+  assert.equal(new Set(input.cases.map(row => row.id)).size, input.cases.length)
+  assert.deepEqual([...new Set(input.cases.map(row => row.discount))].sort(), ['0', '0.8', '1'])
+  for (const quantity of ['0.000000', '1.000000', '999999.000000', '1000000.000000', '1000001.000000', '500000.000000']) assert(input.cases.some(row => row.events[0].quantity === quantity))
+  assert(shadowLegacyModelPrices(review, input).blockers.some(row => row.code === 'LEGACY_CHARGE_CHANGED'))
+  assert.throws(() => generateLegacyPriceShadowCases({ models: [] }), { code: 'NO_PRICE_CANDIDATES' })
+})
+test('legacy shadow explicitly records old multiplier normalization and fractional minimum boundaries', () => {
+  const review = priceShadowFixture([{ meter: 'input_tokens', salePoints: '10' }], '2.123456')
+  const result = shadowLegacyModelPrices(review, { modelPreviewDigest: review.previewDigest, cases: [{ id: 'multiplier', sourcePlanId: 'old-price', events: [{ meter: 'input_tokens', quantity: '1000000' }] }] })
+  assert.equal(result.results[0].oldNormalizedMultiplier, '2.12'); assert.equal(result.results[0].oldBenefitReferencePoints, '21.200000')
+  assert.equal(result.results[0].newBenefitPoints, '21.234560')
+  const matrix = generateLegacyPriceShadowCases({ previewDigest: 'audio-boundary', models: [{ sourcePlanId: 'audio', proposal: { sale: { components: [{ meter: 'audio_seconds', amount: '1', unitSize: '60', minimumUnits: '1.5', rounding: 'nearest' }] } } }] })
+  for (const quantity of ['89.999999', '90.000000', '90.000001', '29.999999', '30.000000', '30.000001']) assert(matrix.cases.some(row => row.events[0].quantity === quantity))
 })
