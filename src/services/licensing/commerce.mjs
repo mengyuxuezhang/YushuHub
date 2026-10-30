@@ -11,6 +11,7 @@ function userPoints(amount, pointsPerCny, discount, multiplier = '1') {
   const numerator = micros(amount) * micros(pointsPerCny) * micros(discount) * micros(multiplier)
   return decimal((numerator + 999_999_999_999_999_999n) / 1_000_000_000_000_000_000n)
 }
+export { userPoints as quoteTerminalSupplyPoints }
 export function emptyCommerceState() {
   return { offers: {}, wallets: {}, requests: {}, entries: [], commands: {}, outbox: {} }
 }
@@ -161,6 +162,9 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
         totals,
         entries: state.entries.filter(e => e.organizationId === tenant.id || (tenant.level === 1 && e.kind !== 'terminal_refund')).slice(-200).reverse(),
         usage: operations.slice(-100).map(operation => ({ requestId: operation.requestId, state: operation.state,
+          canReconcilePrivateVoice: tenant.level === 1 && operation.organizationId === tenant.id && operation.state === 'unknown' && operation.snapshot.model.source === 'custom'
+            && operation.snapshot.model.adapter === 'minimax.private_voice' && ['clone', 'activate', 'synthesize'].includes(operation.snapshot.voiceOperation),
+          ...(['clone', 'activate', 'synthesize'].includes(operation.snapshot.voiceOperation) && tenant.level === 1 ? { reconcileAction: operation.snapshot.voiceOperation } : {}),
           points: operation.points || null, canRefundPoints: operation.organizationId === tenant.id && operation.state === 'settled' && Boolean(operation.points) && micros(operation.points) > 0n
             && !(state.refundedRequests || []).includes(operation.requestId) && !state.entries.some(entry => entry.reverses === `terminal:${digest(operation.requestId)}`),
           salesAmount: operation.salesAmount, listSalesAmount: operation.listSalesAmount || operation.salesAmount, marketingSubsidy: operation.marketingSubsidy || '0.000000', supplyAmount: operation.supplyAmount,

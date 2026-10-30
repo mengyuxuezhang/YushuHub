@@ -79,7 +79,7 @@ export class MiniMaxAdapter {
     if (typeof result.demo_audio !== 'string' || !result.demo_audio.startsWith('https://')) throw new MiniMaxError('MINIMAX_INVALID_RESPONSE', true)
     const characters = result.extra_info?.usage_characters, durationSec = Number(result.extra_info?.audio_length) / 1000
     const metered = Number.isSafeInteger(characters) && characters >= 0 && Number.isFinite(durationSec) && durationSec > 0 && durationSec <= 86400
-    if (requireUsage && !metered) throw new MiniMaxError('MINIMAX_CLONE_USAGE_UNCONFIRMED', true)
+    if (requireUsage && !metered) { const error = new MiniMaxError('MINIMAX_CLONE_USAGE_UNCONFIRMED', true); error.previewSource = result.demo_audio; throw error }
     return { previewUrl: result.demo_audio, ...(metered ? { characters, durationSec } : {}) }
   }
 

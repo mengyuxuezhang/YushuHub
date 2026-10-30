@@ -4,12 +4,12 @@ import { mysqlAccountingStore } from '../../repositories/accounting.mjs'
 import { mysqlStateStore } from '../../repositories/licensing-state.mjs'
 import { ModelCredentialVault } from '../model-credentials.mjs'
 import { createAccountingMonitor } from './accounting-monitor.mjs'
-import { createAgentCommerce, sqlUserBank } from './commerce.mjs'
+import { createAgentCommerce, quoteTerminalSupplyPoints, sqlUserBank } from './commerce.mjs'
 import { httpGatewayAdapters } from './http-adapters.mjs'
 import { digest, failure } from './protocol.mjs'
 import { chatStreamCollector, emitChunk, readSse } from './streaming.mjs'
 import { supplyMembershipBenefit } from './benefits.mjs'
-import { validateSupplyPrice } from './pricing.mjs'
+import { quoteSupply, validateSupplyPrice } from './pricing.mjs'
 import { createPriceNotifications, emptyPriceNotificationState, priceAnnouncementEvents } from './price-notifications.mjs'
 import { managedCustomModels } from './managed-custom-models.mjs'
 import { customDefinitionService, emptyCustomDefinitions } from './custom-definitions.mjs'
@@ -150,6 +150,24 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     async privateVoiceWarnings(tenant, userId) {
       const root = await client.claims(), slots = await voiceSlots.pending({ rootId: root.id, organizationId: tenant.id, subjectHash: digest(JSON.stringify([tenant.id, userId])) })
       return slots.map(slot => ({ requestId: slot.requestId, modelId: slot.model.clientId || slot.model.id, code: 'VOICE_UPLOAD_UNCONFIRMED', message: '上传尚未确认，仍占用音色额度；请按原请求重试或核对后清理' }))
+    },
+    async reconcilePrivate(tenant, requestId, input, actor) {
+      const root = await client.recoveryIdentity()
+      if (tenant.level !== 1 || tenant.id !== root.id) throw failure('OWNER_REQUIRED', '仅所属一级可核对自己的自接调用', 403)
+      const operation = await store.readRequest(requestId), original = operation?.snapshot.model
+      if (!operation || operation.organizationId !== tenant.id) throw failure('NOT_FOUND', '本组织调用不存在；二级明细核对须另有受控授权', 404)
+      if (!privateVoiceStore || original?.source !== 'custom' || original.adapter !== 'minimax.private_voice') throw failure('VOICE_RESOLUTION_DENIED', '此入口仅核对本组织自接私有音色；官方费用由官方供货方核对', 403)
+      const context = { rootId: root.id, organizationId: operation.organizationId, subjectHash: digest(JSON.stringify([operation.organizationId, operation.userId])), modelId: original.id,
+        validateUsage: usage => {
+          for (const plan of [original.supplierCost, operation.snapshot.supply, operation.snapshot.sale].filter(Boolean)) quoteSupply(plan, usage)
+          quoteTerminalSupplyPoints(quoteSupply(operation.snapshot.sale, usage), operation.snapshot.pointsPerCny, operation.snapshot.discount, operation.snapshot.consumptionMultiplier || '1')
+        } }
+      const job = await privateVoiceStore.voices.job(context, requestId)
+      const config = job.state === 'done' ? { id: original.id, adapter: 'minimax.private_voice' }
+        : await customExecution(await definitionFor(root.id, original, true), root, { credentials: true, credentialId: job.credentialId, recovery: true })
+      if (!config || config.adapter !== original.adapter) throw failure('VOICE_RESOLUTION_UNAVAILABLE', '原音色配置不可用，保留待核对状态', 409)
+      await adapters['minimax.private_voice'].reconcileOriginal(config, operation, input, context, actor)
+      return (await runtime.service({ recovery: true })).recover(tenant, operation.userId, requestId)
     },
     async privateVoiceModels(tenant, userId) {
       const root = await client.claims()

@@ -51,7 +51,7 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
       }
     }
     const counts = { uploads: 0, clones: 0, syntheses: 0, deletes: 0, fileDeletes: 0, fileLists: 0, vendorRequests: 0 }, accounts = new Map(secrets.map(secret => [secret, new Set()])), files = new Map(secrets.map(secret => [secret, new Map()]))
-    let missingUsage = false, clock = Date.now(), failFileDelete = true, loseFileDeleteReply = true, loseFileUploadReply = false, failFileList = false, rejectVendor = false
+    let missingUsage = false, missingSpeechUsage = false, clock = Date.now(), failFileDelete = true, loseFileDeleteReply = true, loseFileUploadReply = false, failFileList = false, rejectVendor = false
     const ok = value => Response.json({ base_resp: { status_code: 0 }, ...value })
     const fetchImpl = async (url, options = {}) => {
       const parsed = new URL(url)
@@ -78,7 +78,7 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
       }
       const body = JSON.parse(options.body)
       if (parsed.pathname === '/v1/voice_clone') { counts.clones++; voices.add(body.voice_id); return ok({ input_sensitive: false, demo_audio: `https://minimax-algeng-chat-tts.oss-accelerate.aliyuncs.com/${body.voice_id}.mp3`, ...(missingUsage ? {} : { extra_info: { usage_characters: 4, audio_length: 1000 } }) }) }
-      if (parsed.pathname === '/v1/t2a_v2') { counts.syntheses++; assert(voices.has(body.voice_setting.voice_id)); return ok({ data: { audio: '494433ff', status: 2 }, extra_info: { usage_characters: body.text === '你好' ? 4 : [...body.text].length, audio_length: 1000 } }) }
+      if (parsed.pathname === '/v1/t2a_v2') { counts.syntheses++; assert(voices.has(body.voice_setting.voice_id)); return ok({ data: { audio: '494433ff', status: 2 }, ...(missingSpeechUsage ? {} : { extra_info: { usage_characters: body.text === '你好' ? 4 : [...body.text].length, audio_length: 1000 } }) }) }
       if (parsed.pathname === '/v1/get_voice') return ok({ voice_cloning: [...voices].map(voice_id => ({ voice_id })) })
       if (parsed.pathname === '/v1/delete_voice') { counts.deletes++; voices.delete(body.voice_id); return ok({}) }
       throw new Error('Unexpected simulated custom voice endpoint')
@@ -189,6 +189,37 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
     }
     assert.equal((await request('/delete', { voiceId: clone.voiceId, idempotencyKey: 'custom-voice-delete' })).status, 200)
     assert.equal((await (await request('/tasks/custom-voice-delete')).json()).data.status, 'succeeded')
+    const resolution = { commandId: 'custom-root-resolution', providerFinal: true, evidence: '虚构供应商最终账单和原账号核对凭证', resultState: 'succeeded', usage: [{ meter: 'request', phase: 'request', quantity: '1' }, { meter: 'billable_characters', phase: 'preview', quantity: '4' }] }
+    await assert.rejects(runtime.reconcilePrivate(root, 'custom-voice-unknown', resolution, 'root-owner'), { code: 'NOT_FOUND' })
+    await assert.rejects(runtime.reconcilePrivate(child, 'custom-voice-unknown', resolution, 'child-owner'), { code: 'OWNER_REQUIRED' })
+    await pool.query("INSERT INTO ai_end_users VALUES ('custom-root-voice-user','enabled',100,'custom-local-root')")
+    const rootResource = await runtime.privateVoice(root, 'custom-root-voice-user', model.id, 'upload', { requestId: 'custom-root-unknown', consent: true, format: 'wav', bytes: Buffer.from('fictional root recording') })
+    const rootUnknown = await service.submit(root, 'custom-root-voice-user', { requestId: 'custom-root-unknown', modelId: model.id, request: { action: 'clone', resourceId: rootResource.id, name: '虚构一级音色', consent: true, text: '你好' } })
+    assert.equal(rootUnknown.state, 'unknown')
+    const paidBeforeManual = counts.clones
+    const rootResolved = await runtime.reconcilePrivate(root, rootUnknown.requestId, resolution, 'root-owner')
+    assert.equal(rootResolved.state, 'settled'); assert.equal(rootResolved.points, '12.000000'); assert.equal(rootResolved.upstreamAmount, '4.000000')
+    assert.equal((await runtime.privateVoice(root, 'custom-root-voice-user', undefined, 'preview', { resourceId: rootResource.id })).bytes.toString(), 'fictional custom preview')
+    await runtime.reconcilePrivate(root, rootUnknown.requestId, resolution, 'root-owner')
+    await assert.rejects(runtime.reconcilePrivate(root, rootUnknown.requestId, { ...resolution, commandId: 'different-root-resolution' }, 'root-owner'), { code: 'IDEMPOTENCY_CONFLICT' })
+    assert.equal(counts.clones, paidBeforeManual)
+    assert.equal(String((await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='custom-root-voice-user'"))[0][0].credit_balance), '88.000000')
+    missingSpeechUsage = true
+    const unknownActivation = await service.submit(root, 'custom-root-voice-user', { requestId: 'custom-root-activation-unknown', modelId: model.id, request: { action: 'activate', resourceId: rootResource.id } })
+    assert.equal(unknownActivation.state, 'unknown')
+    const speechCallsBeforeResolution = counts.syntheses
+    const failedActivation = { ...resolution, commandId: 'root-activation-billed-no-audio', resultState: 'failed', usage: [{ meter: 'request', phase: 'request', quantity: '1' }, { meter: 'resource_activation', phase: 'activation', quantity: '1' }, { meter: 'billable_characters', phase: 'activation', quantity: '4' }] }
+    const activatedWithoutAudio = await runtime.reconcilePrivate(root, unknownActivation.requestId, failedActivation, 'root-owner')
+    assert.equal(activatedWithoutAudio.state, 'settled'); assert.equal(activatedWithoutAudio.result.error, 'VOICE_MANUAL_CONFIRMED_FAILURE')
+    assert.equal(activatedWithoutAudio.upstreamAmount, '9.000000'); assert.equal(activatedWithoutAudio.points, '20.000000')
+    await runtime.reconcilePrivate(root, unknownActivation.requestId, failedActivation, 'root-owner')
+    assert.equal(counts.syntheses, speechCallsBeforeResolution)
+    assert.equal((await runtime.privateVoice(root, 'custom-root-voice-user', model.id, 'list')).find(voice => voice.id === rootResource.id).status, 'active')
+    await assert.rejects(service.submit(root, 'custom-root-voice-user', { requestId: 'custom-root-repeat-activation', modelId: model.id, request: { action: 'activate', resourceId: rootResource.id } }), { code: 'VOICE_NOT_READY' })
+    assert.equal(counts.syntheses, speechCallsBeforeResolution)
+    missingSpeechUsage = false
+    const afterActivation = await service.submit(root, 'custom-root-voice-user', { requestId: 'custom-root-after-activation', modelId: model.id, request: { action: 'synthesize', resourceId: rootResource.id, text: 'abc' } })
+    assert.equal(afterActivation.state, 'settled'); assert.equal(afterActivation.upstreamAmount, '3.000000')
     auditAccounting(await runtime.store.read(), 'commerce')
   } finally {
     runtime?.stop(); if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }

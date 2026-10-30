@@ -16,7 +16,7 @@ export function privateVoiceOperation(operation) {
   }
   return { id: operation.requestId, voiceId: operation.snapshot.privateVoiceId || result?.voiceId || '', operation: action,
     status: succeeded ? 'succeeded' : operation.state === 'settled' ? 'failed' : operation.state === 'unknown' ? 'outcome_unknown' : 'pending',
-    reservedPoints: Number(operation.reservedPoints), settledPoints: Number(operation.points || 0), errorCode: result?.error ? 'VOICE_REQUEST_NOT_ACCEPTED' : '', ...(speech ? { speech } : {}) }
+    reservedPoints: Number(operation.reservedPoints), settledPoints: Number(operation.points || 0), errorCode: result?.error ? result.error === 'VOICE_MANUAL_CONFIRMED_FAILURE' ? 'VOICE_RESULT_UNAVAILABLE' : 'VOICE_REQUEST_NOT_ACCEPTED' : '', ...(speech ? { speech } : {}) }
 }
 export function privateDeletionOperation(requestId, resourceId, result) {
   return { id: requestId, voiceId: resourceId, operation: 'delete', status: result.state === 'done' ? 'succeeded' : 'outcome_unknown', reservedPoints: 0, settledPoints: 0, errorCode: '' }

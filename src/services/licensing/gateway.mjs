@@ -148,7 +148,7 @@ export function createModelGateway({ ledger, authorize, models, adapters, privat
       const price = await currentPrice(model)
       if (input.priceHash && input.priceHash !== digest(JSON.stringify(price))) throw failure('PRICE_CHANGED', '供货价已变化，请刷新报价', 409)
       const reserved = await ledger.reserve({ walletId: claims.rootId, requestId, amount: quoteSupply(price, prepared.upperUsage), fingerprint,
-        snapshot: { modelId: model.id, organizationId: claims.sub, version: model.version, price, licenseVersion: claims.version, ...(claims.subjectHash ? { subjectHash: claims.subjectHash } : {}) } })
+        snapshot: { modelId: model.id, adapter: model.adapter, ...(model.adapter === 'minimax.private_voice' ? { voiceOperation: prepared.request.action } : {}), organizationId: claims.sub, version: model.version, price, licenseVersion: claims.version, ...(claims.subjectHash ? { subjectHash: claims.subjectHash } : {}) } })
       if (!reserved.created || !(await ledger.start(requestId))) return reserved.operation
       await emitChunk(onAccepted, { requestId })
       try {
@@ -202,6 +202,14 @@ export function createModelGateway({ ledger, authorize, models, adapters, privat
       const operation = ledger.store.readRequest ? await ledger.store.readRequest(identifier(requestId)) : (await ledger.store.read()).operations[identifier(requestId)]
       if (!operation) throw failure('NOT_FOUND', '请求不存在', 404)
       if (!Array.isArray(input.usage)) throw failure('INVALID_USAGE', '须提交核对后的实际用量')
+      const model = catalog.get(operation.snapshot.modelId)
+      if ((operation.snapshot.adapter === 'minimax.private_voice' && operation.snapshot.voiceOperation !== 'public-synthesize') || operation.job?.provider === 'minimax-private' || (!operation.snapshot.adapter && model?.adapter === 'minimax.private_voice')) {
+        const adapter = adapters['minimax.private_voice']
+        if (!adapter?.reconcileOriginal) throw failure('VOICE_RESOLUTION_UNAVAILABLE', '原音色核对存储不可用，保留原预占', 503)
+        const outcome = await adapter.reconcileOriginal(model?.adapter === 'minimax.private_voice' ? model : { id: operation.snapshot.modelId, adapter: 'minimax.private_voice' }, operation, input,
+          { rootId: operation.walletId, organizationId: operation.snapshot.organizationId, subjectHash: operation.snapshot.subjectHash, validateUsage: usage => quoteSupply(operation.snapshot.price, usage) }, actor)
+        return ledger.settle(requestId, quoteSupply(operation.snapshot.price, outcome.usage), outcome.usage, outcome.result, { operator: actor, evidence: input.evidence, commandId: input.commandId, privateVoice: true })
+      }
       return ledger.settle(requestId, quoteSupply(operation.snapshot.price, input.usage), input.usage, operation.result,
         { operator: actor, evidence: input.evidence })
     },

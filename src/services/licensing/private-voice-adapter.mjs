@@ -2,6 +2,7 @@ import { MiniMaxAdapter } from '../minimax-adapter.mjs'
 import crypto from 'node:crypto'
 import { digest, failure, identifier } from './protocol.mjs'
 import { privateVoiceArtifactId } from '../../repositories/supply-voice-artifacts.mjs'
+import { normalizeVoiceResolution, sameVoiceUsage } from './private-voice-reconciliation.mjs'
 
 const previewHosts = new Set(['minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com', 'minimax-algeng-chat-tts.oss-accelerate.aliyuncs.com'])
 const activationText = '你好'
@@ -142,11 +143,42 @@ export function privateVoiceAdapter({ voices, artifacts, book, speech, fetcher =
           await cleanup(model, identity, resource.id, context.requestId).catch(() => {})
           return rejected
         }
+        if (input.action === 'clone' && previewSource(error.previewSource)) await voices.checkpoint(identity, resource.id, context.requestId, { previewSource: error.previewSource })
         await voices.finish(identity, resource.id, context.requestId, { state: 'unknown' })
         return { state: 'unknown', job }
       }
     },
     recover,
+    async reconcileOriginal(model, operation, input, context, actor) {
+      const identity = scope(model, context), job = await voices.job(identity, operation.requestId)
+      const resolution = normalizeVoiceResolution(input, job.action, actor)
+      if (typeof context.validateUsage !== 'function') throw failure('VOICE_RESOLUTION_INVALID', '核对须使用原价格快照校验实际用量')
+      await context.validateUsage(resolution.usage)
+      if (job.state === 'done') {
+        if (job.resolution) {
+          if (job.resolution.fingerprint !== resolution.fingerprint) throw failure('IDEMPOTENCY_CONFLICT', '原核对编号、审核人或内容不一致', 409)
+          return job.outcome
+        }
+        if (!sameVoiceUsage(job.outcome.usage, resolution.usage) || (job.outcome.result?.error ? 'failed' : 'succeeded') !== resolution.resultState) throw failure('VOICE_SETTLEMENT_IMMUTABLE', '供应商已有明确结果，不能人工改写', 409)
+        return job.outcome
+      }
+      if (job.state !== 'unknown') throw failure('VOICE_BUSY', '原操作尚未进入可人工核对的未知状态', 409)
+      const resource = await voices.get(identity, job.resourceId), config = connection(model)
+      if (job.bindingHash !== config.hash) throw failure('VOICE_BINDING_CHANGED', '只能通过原供应商账号核对', 409)
+      const resourceAvailable = (await vendor.privateVoiceIds(config)).has(resource.providerVoiceId)
+      let result = { error: 'VOICE_MANUAL_CONFIRMED_FAILURE', voiceId: resource.id, resourceAvailable,
+        ...(job.action === 'activate' && resolution.usage.some(item => item.meter === 'resource_activation') ? { resourceActivated: resourceAvailable } : {}) }
+      if (resolution.resultState === 'succeeded') {
+        if (!resourceAvailable) throw failure('VOICE_RESOURCE_UNCONFIRMED', '原账号未确认此音色仍可用，不能记为成功', 409)
+        if (job.action !== 'clone' || !previewSource(job.previewSource)) throw failure('VOICE_AUDIO_UNCONFIRMED', '没有原始可验证音频，只能核对实际费用及失败结果，不能重新生成', 409)
+        const file = await artifacts.save(identity, resource.id, operation.requestId, 'preview', await vendor.previewAudio(job.previewSource))
+        result = { kind: 'private-voice-preview', voiceId: resource.id, audioArtifactId: file.artifactId, resourceAvailable: true }
+      }
+      const outcome = { state: 'done', usage: resolution.usage, result }
+      await voices.finish(identity, resource.id, operation.requestId, outcome, { resolution: { ...resolution, resourceAvailable } })
+      await cleanup(model, identity, resource.id, operation.requestId).catch(() => {})
+      return outcome
+    },
     async cleanOriginal(model, operation, context) {
       const identity = scope(model, context), job = await voices.job(identity, operation.requestId)
       if (job.state !== 'done') throw failure('VOICE_CLEANUP_UNCONFIRMED', '原付费结果未确认，不能清理凭证', 409)

@@ -7,6 +7,7 @@ import { createAgentCommerce, emptyCommerceState } from './commerce.mjs'
 import { createPriceNotifications, emptyPriceNotificationState } from './price-notifications.mjs'
 import { managedCustomModels } from './managed-custom-models.mjs'
 import { privateVoiceCostTemplate } from './private-voice-pricing.mjs'
+import { normalizeVoiceResolution } from './private-voice-reconciliation.mjs'
 import { customDefinitionService, emptyCustomDefinitions } from './custom-definitions.mjs'
 import { legacySnapshotFixture } from './fixtures/legacy-snapshot.mjs'
 import { migrationHash } from './legacy-import.mjs'
@@ -1010,4 +1011,15 @@ test('gateway subjects are signed, separate peer results and preserve legacy rep
   await center.activate({ code: childIssued.code, instanceId: 'instance-one', domain: 'https://agent.example.com', requestId: 'billing-child-activation' }, first.credential)
   const childToken = (await center.serviceToken(first.credential, 'official-models', childIssued.grant.id)).token
   await assert.rejects(gateway.balance(childToken), { code: 'ROOT_REQUIRED' })
+})
+
+
+test('private voice manual resolution requires final evidence and original action meters without client-selected actors', () => {
+  const input = { commandId: 'manual-voice-command', providerFinal: true, evidence: '虚构最终账单及资源核对', resultState: 'succeeded', actor: 'forged-actor', usage: [{ meter: 'request', phase: 'request', quantity: '1' }, { meter: 'billable_characters', phase: 'preview', quantity: '4' }] }
+  const result = normalizeVoiceResolution(input, 'clone', 'trusted-operator'); assert.equal(result.actor, 'trusted-operator')
+  assert.equal(result.fingerprint, normalizeVoiceResolution({ ...input, usage: [...input.usage].reverse() }, 'clone', 'trusted-operator').fingerprint)
+  for (const invalid of [{ ...input, providerFinal: false }, { ...input, evidence: '' }]) assert.throws(() => normalizeVoiceResolution(invalid, 'clone', 'trusted-operator'), { code: 'EVIDENCE_REQUIRED' })
+  for (const usage of [[], [input.usage[1]], [...input.usage, input.usage[1]], input.usage.map(item => ({ ...item, quantity: 1 })), input.usage.map(item => item.meter === 'billable_characters' ? { ...item, phase: 'usage' } : item), input.usage.map(item => ({ ...item, quantity: '-1' }))]) assert.throws(() => normalizeVoiceResolution({ ...input, usage }, 'clone', 'trusted-operator'), { code: 'INVALID_USAGE' })
+  assert.deepEqual(normalizeVoiceResolution({ ...input, resultState: 'failed', usage: [] }, 'clone', 'trusted-operator').usage, [])
+  assert.throws(() => normalizeVoiceResolution(input, 'activate', 'trusted-operator'), { code: 'INVALID_USAGE' })
 })

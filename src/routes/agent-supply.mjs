@@ -37,6 +37,12 @@ export function registerAgentSupplyRoutes(app, { runtime, resolveUserContext, cl
   }))
   app.post('/api/supply/offers', requireAuth, requirePermission('pricing_rules.manage'), endpoint(async req => (await runtime.service()).configure(await context(req), req.body, req.user.id)))
   app.get('/api/supply/balance', requireAuth, requireAnyPermission(['pricing_rules.manage', 'credits.manage']), endpoint(async req => (await runtime.service({ recovery: true })).balance(await runtime.recordTenant(req.organizationContext))))
+  app.post('/api/supply/requests/:id/reconcile-private-voice', requireAuth, requirePermission('credits.manage'), requirePermission('pricing_rules.manage'), endpoint(async req => {
+    const local = req.organizationContext
+    if (local.organizationLevel !== 1 || !local.isOwner || local.memberStatus !== 'enabled') throw failure('OWNER_REQUIRED', '自接音色核对须由所属一级的启用所有者处理', 403)
+    const input = req.body || {}, tenant = await runtime.recordTenant(local)
+    return publicSupplyOperation(await runtime.reconcilePrivate(tenant, req.params.id, { commandId: input.commandId, providerFinal: input.providerFinal, evidence: input.evidence, resultState: input.resultState, usage: input.usage }, req.user.id))
+  }))
   app.post('/api/supply/requests/:id/refund-points', requireAuth, requirePermission('credits.manage'), endpoint(async req => {
     const local = req.organizationContext
     if (!local.isOwner || local.memberStatus !== 'enabled') throw failure('OWNER_REQUIRED', '退积分须由所属组织的启用所有者处理', 403)

@@ -227,33 +227,38 @@ export function supplyVoiceRepository({ pool, book, directory, inspectAudio = in
         if (credentialId) resource.credentialId ||= credentialId
         if (action === 'clone') { resource.name = name.trim(); resource.cloneRequestId = requestId; resource.providerVoiceId = `Agent${crypto.randomUUID().replaceAll('-', '')}` }
         const claimed = await update(connection, resource, ({ clone: 'cloning', activate: 'activating', synthesize: 'active', delete: 'deleting' })[action])
-        const job = { stage: 'dispatch-ready', paidDispatch: false, resourceId: id, previousStatus: resource.status, bindingHash, ...(credentialId ? { credentialId } : {}) }
+        const job = { stage: 'dispatch-ready', acceptedAt: now(), paidDispatch: false, resourceId: id, previousStatus: resource.status, bindingHash, ...(credentialId ? { credentialId } : {}) }
         await connection.query('INSERT INTO supply_voice_jobs(book,id,resource_id,organization_id,subject_hash,action,state,fingerprint,updated_at,payload) VALUES (?,?,?,?,?,?,?,?,?,?)',
           [book, requestId, id, scope.organizationId, scope.subjectHash, action, 'dispatch', fingerprint, now(), JSON.stringify(job)])
         return { created: true, resource: claimed, job: { ...job, requestId, action, state: 'dispatch' } }
       })
     },
-    async finish(input, id, requestId, outcome) {
+    async finish(input, id, requestId, outcome, { resolution } = {}) {
       const scope = scopeOf(input); identifier(requestId)
-      if (!outcome || !['done', 'unknown'].includes(outcome.state) || JSON.stringify(outcome).length > 262144 || (outcome.state === 'done' && (!Array.isArray(outcome.usage) || (outcome.result?.error && outcome.usage.length)))) throw failure('VOICE_OUTCOME_INVALID', '须持久化明确用量或未知状态')
+      if (resolution && (outcome?.state !== 'done' || !sha(resolution.fingerprint) || !resolution.commandId || !resolution.actor || resolution.providerFinal !== true || typeof resolution.evidence !== 'string' || resolution.evidence.trim().length < 5)) throw failure('VOICE_RESOLUTION_INVALID', '须记录最终供应商凭证、审核人及幂等编号')
+      if (!outcome || !['done', 'unknown'].includes(outcome.state) || JSON.stringify(outcome).length > 262144 || (outcome.state === 'done' && (!Array.isArray(outcome.usage) || (outcome.result?.error && outcome.usage.length && !resolution)))) throw failure('VOICE_OUTCOME_INVALID', '须持久化明确用量或未知状态')
       return transaction(async connection => {
         const resource = await find(connection, scope, id, true)
         const [[row]] = await connection.query('SELECT * FROM supply_voice_jobs WHERE book=? AND id=? AND resource_id=? AND organization_id=? AND subject_hash=? FOR UPDATE', [book, requestId, id, scope.organizationId, scope.subjectHash])
         if (!row) throw failure('VOICE_JOB_NOT_FOUND', '原音色操作不存在', 404)
         const previous = parse(row.payload)
         if (row.state === 'done') {
+          if (resolution && (previous.resolution?.fingerprint !== resolution.fingerprint || previous.resolution?.commandId !== resolution.commandId)) throw failure('VOICE_SETTLEMENT_IMMUTABLE', '已有结果或核对记录不可替换', 409)
           if (digest(JSON.stringify(previous.outcome)) !== digest(JSON.stringify(outcome))) throw failure('VOICE_SETTLEMENT_IMMUTABLE', '已确认音色结果不能改写', 409)
           return previous.outcome
         }
+        if (resolution && row.state !== 'unknown') throw failure('VOICE_BUSY', '仅允许核对已进入未知状态的原操作', 409)
         let status = resource.status, expiry = resource.expiresAt
         if (outcome.state === 'done') {
           if (outcome.result?.error) status = row.action === 'clone' ? 'failed' : previous.previousStatus
-          else if (row.action === 'clone') { status = 'preview_ready'; expiry = now() + 7 * 86_400_000 }
+          else if (row.action === 'clone') { status = 'preview_ready'; expiry = Math.min(now(), previous.acceptedAt || resource.createdAt) + 7 * 86_400_000 }
           else if (row.action === 'activate') { status = 'active'; expiry = 0 }
           else if (row.action === 'delete') { status = 'deleted'; expiry = 0 }
+          if (resolution && outcome.result?.resourceAvailable === false) { status = 'failed'; expiry = 0 }
+          else if (resolution && row.action === 'activate' && outcome.result?.resourceActivated === true) { status = 'active'; expiry = 0 }
         } else if (row.action !== 'synthesize') status = 'unknown'
         await update(connection, resource, status, expiry)
-        await connection.query('UPDATE supply_voice_jobs SET state=?,updated_at=?,payload=? WHERE book=? AND id=?', [outcome.state, now(), JSON.stringify({ ...previous, ...(outcome.state === 'done' ? { stage: 'result-received' } : {}), outcome }), book, requestId])
+        await connection.query('UPDATE supply_voice_jobs SET state=?,updated_at=?,payload=? WHERE book=? AND id=?', [outcome.state, now(), JSON.stringify({ ...previous, ...(outcome.state === 'done' ? { stage: 'result-received' } : {}), ...(resolution ? { resolution: { ...resolution, at: now() } } : {}), outcome }), book, requestId])
         return outcome
       })
     },

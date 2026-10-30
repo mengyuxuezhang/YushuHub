@@ -1394,7 +1394,9 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     const officialStore = mysqlAccountingStore(officialPool, 'official-v2', 'ledger'), ledger = createSupplyLedger({ store: officialStore }); await ledger.open(root.id, root.id); await ledger.credit(root.id, '100', 'private-official-credit', 'fixture', 'fictional-private-official-receipt')
     const gateway = createModelGateway({ ledger, authorize: (token, audience) => center.introspect(token, audience), models: [model], adapters: { 'minimax.private_voice': core }, privateVoiceStore })
     const privateApp = serviceApp()
-    registerModelGatewayRoutes(privateApp, { gateway, ledger, operators: { authenticate: async () => { throw Object.assign(new Error('test operator disabled'), { statusCode: 403 }) } } })
+    const privateOtpSecret = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', privatePassword = 'fictional-private-reviewer-password'
+    const privateOperators = createOperatorAuth({ store: memoryStateStore({ audit: [] }), operators: [{ id: 'voice-reviewer', passwordHash: passwordHash(privatePassword), totpSecret: privateOtpSecret }] })
+    registerModelGatewayRoutes(privateApp, { gateway, ledger, operators: privateOperators })
     registerPrivateVoiceGatewayRoutes(privateApp, { gateway }); serviceErrors(privateApp)
     privateServer = await new Promise(resolve => { const server = privateApp.listen(0, '127.0.0.1', () => resolve(server)) })
     const privateUrl = `http://127.0.0.1:${privateServer.address().port}/api/model-gateway/v1/private-voices/${model.id}`
@@ -1490,7 +1492,7 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     await assert.rejects(artifacts.read(identity, spoken.result.audioArtifactId), { code: 'VOICE_ARTIFACT_EXPIRED' })
     model.status = 'enabled'
     missingUsage = true
-    const uncertainResource = await voices.upload(identity, { ...upload, requestId: 'private-unknown' }), uncertainInput = { requestId: 'private-unknown', modelId: model.id, request: { ...cloneRequest, resourceId: uncertainResource.id } }
+    const uncertainResource = await firstRuntime.privateVoice(child, 'private-core-user', model.id, 'upload', { ...upload, requestId: 'private-unknown', consent: true }), uncertainInput = { requestId: 'private-unknown', modelId: model.id, request: { ...cloneRequest, resourceId: uncertainResource.id } }
     assert.equal((await service.submit(child, 'private-core-user', uncertainInput)).state, 'unknown')
     await service.submit(child, 'private-core-user', uncertainInput); await service.recover(child, 'private-core-user', uncertainInput.requestId)
     assert.equal(counts.clones, 2); assert.equal(fileIds.size, 1)
@@ -1498,6 +1500,28 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     await assert.rejects(core.recover({ ...model, apiKey: 'different-account-key' }, { requestId: 'private-unknown' }, identity), { code: 'VOICE_BINDING_CHANGED' })
     assert.equal(counts.clones, 2)
     assert.equal(String((await localPool.query("SELECT credit_balance FROM ai_end_users WHERE id='private-core-user'"))[0][0].credit_balance), '48.000000')
+    const operatorRequest = (route, body, token = '') => fetch(`http://127.0.0.1:${privateServer.address().port}/api/model-gateway/v1/operator${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) })
+    const resolution = { commandId: 'voice-resolve-unknown', providerFinal: true, evidence: '虚构供应商最终账单和原账号音色核对', resultState: 'succeeded', usage: [{ meter: 'request', phase: 'request', quantity: '1' }, { meter: 'billable_characters', phase: 'preview', quantity: '4' }] }
+    assert.equal((await operatorRequest('/requests/private-unknown/resolve', resolution, privateToken)).status, 401)
+    assert.equal((await operatorRequest('/login', { username: 'voice-reviewer', password: privatePassword })).status, 401)
+    const loggedIn = await operatorRequest('/login', { username: 'voice-reviewer', password: privatePassword, code: totp(privateOtpSecret, Math.floor(Date.now() / 30000)) }); assert.equal(loggedIn.status, 200)
+    const operatorToken = (await loggedIn.json()).data.token
+    assert.equal((await operatorRequest('/requests/private-unknown/resolve', { ...resolution, providerFinal: false }, operatorToken)).status, 400)
+    model.apiKey = 'different-account-key'
+    assert.equal((await operatorRequest('/requests/private-unknown/resolve', resolution, operatorToken)).status, 409)
+    model.apiKey = 'fictional-private-key'
+    const resolved = await operatorRequest('/requests/private-unknown/resolve', resolution, operatorToken); assert.equal(resolved.status, 200)
+    assert.equal((await resolved.json()).data.state, 'settled')
+    await service.recover(child, 'private-core-user', 'private-unknown')
+    assert.equal((await ledger.view(root.id)).balance, '80.000000'); assert.equal((await ledger.view(root.id)).reserved, '0.000000')
+    assert.equal((await service.balance(child)).wallet.balance, '64.000000'); assert.equal((await service.balance(child)).wallet.reserved, '0.000000')
+    assert.equal(String((await localPool.query("SELECT credit_balance FROM ai_end_users WHERE id='private-core-user'"))[0][0].credit_balance), '48.000000')
+    assert.equal((await firstRuntime.privateVoice(child, 'private-core-user', undefined, 'preview', { resourceId: uncertainResource.id })).bytes.toString(), 'fictional private preview mp3')
+    model.apiKey = 'different-account-key'
+    assert.equal((await operatorRequest('/requests/private-unknown/resolve', resolution, operatorToken)).status, 200)
+    model.apiKey = 'fictional-private-key'
+    assert.equal((await operatorRequest('/requests/private-unknown/resolve', { ...resolution, commandId: 'another-resolution' }, operatorToken)).status, 409)
+    assert.equal(counts.clones, 2); assert.equal((await ledger.view(root.id)).balance, '80.000000')
     const beforeDispatch = await voices.upload(identity, { ...upload, requestId: 'private-before-dispatch' }), originalJob = await voices.job(identity, 'private-clone')
     await voices.claim(identity, beforeDispatch.id, { requestId: 'private-before-dispatch', action: 'clone', inputHash: hash('accepted before dispatch'), bindingHash: originalJob.bindingHash, name: '虚构崩溃恢复音色' })
     assert.equal((await core.recover(model, { requestId: 'private-before-dispatch' }, identity)).state, 'pending')

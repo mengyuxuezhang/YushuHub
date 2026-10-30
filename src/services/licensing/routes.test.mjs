@@ -273,3 +273,21 @@ test('inactive owners refund only server-resolved terminal requests and staff or
     assert.equal(calls.length, 1)
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
 })
+
+
+test('private voice operator resolution uses the enabled first owner session and strips forged organization and actor fields', async () => {
+  let context = { organizationId: 'local-root', externalId: 'central-root', organizationLevel: 1, authorizationSource: 'license-center', centralLicenseActive: true, memberStatus: 'enabled', organizationStatus: 'enabled', isOwner: true }
+  let permissions = ['credits.manage', 'pricing_rules.manage']
+  const calls = [], runtime = { recordTenant: async value => ({ id: value.externalId, level: value.organizationLevel }), reconcilePrivate: async (...args) => { calls.push(args); return { requestId: args[1], state: 'settled', points: '1' } } }
+  setAuthDependencies({ getUserBySession: async () => ({ id: 'trusted-first-owner', organizationContext: context }), getEffectivePermissionKeys: async () => permissions, permissionByKey: () => null })
+  const app = express(); app.use(express.json()); registerAgentSupplyRoutes(app, { runtime }); app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ code: error.code }))
+  const server = await new Promise(resolve => { const result = app.listen(0, '127.0.0.1', () => resolve(result)) })
+  const input = { commandId: 'voice-resolution', providerFinal: true, evidence: '虚构核对凭证', resultState: 'failed', usage: [] }
+  const resolve = () => fetch(`http://127.0.0.1:${server.address().port}/api/supply/requests/original-request/reconcile-private-voice`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...input, organizationId: 'forged-child', requestId: 'forged-request', actor: 'forged-actor', allowChildReconciliation: true }) })
+  try {
+    assert.equal((await resolve()).status, 200)
+    assert.deepEqual(calls[0], [{ id: 'central-root', level: 1 }, 'original-request', input, 'trusted-first-owner'])
+    for (const patch of [{ organizationLevel: 2 }, { isOwner: false }, { memberStatus: 'disabled' }]) { const previous = context; context = { ...context, ...patch }; assert.equal((await resolve()).status, 403); context = previous }
+    permissions = ['credits.manage']; assert.equal((await resolve()).status, 403); assert.equal(calls.length, 1)
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+})
