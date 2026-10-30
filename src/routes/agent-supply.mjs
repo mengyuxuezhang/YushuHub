@@ -4,13 +4,18 @@ import { failure } from '../services/licensing/protocol.mjs'
 import { registerClientSupplyBridge } from './client-supply-bridge.mjs'
 
 export const publicSupplyOperation = operation => ({ requestId: operation.requestId, state: operation.state, points: operation.points || null, result: operation.result || null })
+export function publicSupplyCatalogRow(row, level) {
+  if (level !== 2) return row
+  const { supplierCost, ...model } = row.model
+  return { ...row, model: { ...model, price: row.supply || model.price } }
+}
 
 export function registerAgentSupplyRoutes(app, { runtime, resolveUserContext, client }) {
   if (!runtime) return
   const context = async req => runtime.tenant(req.organizationContext)
   app.get('/api/supply/catalog', requireAuth, requirePermission('pricing_rules.manage'), endpoint(async req => {
     const tenant = await context(req), rows = await (await runtime.service()).list(tenant)
-    return rows.map(row => tenant.level === 2 ? { ...row, model: { ...row.model, price: row.supply || row.model.price } } : row)
+    return rows.map(row => publicSupplyCatalogRow(row, tenant.level))
   }))
   app.post('/api/supply/offers', requireAuth, requirePermission('pricing_rules.manage'), endpoint(async req => (await runtime.service()).configure(await context(req), req.body, req.user.id)))
   app.get('/api/supply/balance', requireAuth, requirePermission('pricing_rules.manage'), endpoint(async req => (await runtime.service()).balance(await context(req))))

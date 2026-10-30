@@ -6,7 +6,7 @@ import { filterOrganizationPermissions } from '../organization-expiry.mjs'
 import { supplierLicenseAllowsPermission } from '../supplier-license-contract.mjs'
 import { registerOrganizationRoutes } from '../../routes/organizations.mjs'
 import { buildOrganizationContext } from '../organizations.mjs'
-import { publicSupplyOperation } from '../../routes/agent-supply.mjs'
+import { publicSupplyOperation, publicSupplyCatalogRow } from '../../routes/agent-supply.mjs'
 import { chatCompletionChunks, projectSupplyCatalog } from '../../routes/client-supply-bridge.mjs'
 import { registerDeploymentAuthorizationRoutes } from '../../routes/deployment-authorization.mjs'
 
@@ -124,4 +124,13 @@ test('inactive central authorization retains assigned historical access while bl
     assert.equal((await fetch(url + '/api/client/payment-orders', { method: 'POST', headers: { Authorization: 'Bearer customer-token' } })).status, 403)
     assert.equal(writes, 0)
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+})
+
+
+test('secondary catalog hides self-supplied vendor cost and shows only inherited supply price', () => {
+  const row = { model: { id: 'self', price: { components: [] }, supplierCost: { privateCost: 'hidden' } }, supply: { inheritedPrice: 'visible' } }
+  const result = publicSupplyCatalogRow(row, 2)
+  assert.equal(JSON.stringify(result).includes('privateCost'), false)
+  assert.deepEqual(result.model.price, row.supply)
+  assert.equal(publicSupplyCatalogRow(row, 1), row)
 })

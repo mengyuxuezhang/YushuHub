@@ -725,3 +725,63 @@ test('real MySQL historical usage includes settled supply points and metering wi
     const list = await repo.users(actor, q); assert.equal(list.items.length, 1)
   } finally { await pool.end() }
 })
+
+
+test('real MySQL custom async speech: persistent original jobs, restart/expiry recovery and immutable provider binding', { skip: !configured }, async () => {
+  const { gatewayDatabase = 'yushu_gateway_test', licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable test database required')
+  const pool = mysql.createPool({ ...config, database: gatewayDatabase }), dir = await fs.mkdtemp(path.join(os.tmpdir(), 'custom-async-'))
+  let runtime, creates = 0, queries = 0, active = true, fixed = false, cutReply = false, blockQuery = false
+  const root = { id: 'stream-root', level: 1, version: 7, instanceId: 'custom-instance', modelMode: 'custom', modelIds: ['custom-async'] }, child = { ...root, id: 'stream-child', level: 2, parentId: root.id, parentVersion: 7, billingOwnerUserId: 'fixture-owner' }
+  const client = { claims: async id => { if (!active) throw Error('License expired'); return { ...(id === child.id ? child : root), modelMode: fixed ? 'fixed' : 'custom' } }, recoveryIdentity: async () => ({ id: root.id }) }
+  process.env.CUSTOM_ASYNC_TEST_KEY = 'isolated-fixture-key'
+  const model = { id: 'custom-async', status: 'enabled', clientId: 'custom-async-client', taskType: 'speech_synthesis', version: 1, adapter: 'minimax.speech_async', model: 'speech-02-turbo', baseUrl: 'https://custom-speech.example.com', keyEnv: 'CUSTOM_ASYNC_TEST_KEY', allowedVoiceIds: ['public-voice'], publicVoices: [{ id: 'public-voice', name: 'Public', secret: 'never-publish' }], price: { version: 1, components: [{ meter: 'request', phase: 'request', amount: '0', unitSize: '1' }, { meter: 'billable_characters', amount: '0.1', unitSize: '1' }] } }
+  model.supplierCost = { version: 1, components: [{ meter: 'request', phase: 'request', amount: '0', unitSize: '1' }, { meter: 'billable_characters', amount: '0.05', unitSize: '1' }] }
+  const file = path.join(dir, 'models.json'); await fs.writeFile(file, JSON.stringify([model]))
+  const archive = Buffer.alloc(1024); archive.write('ustar', 257)
+  const fetchImpl = async (url, options) => {
+    url = String(url)
+    if (url.endsWith('/v1/t2a_async_v2')) { creates++; if (cutReply) throw Error('Accepted response lost'); return new Response('{"task_id":9876543210123456789,"usage_characters":5,"base_resp":{"status_code":0}}') }
+    if (url.includes('/v1/query/t2a_async_query_v2?')) { queries++; if (blockQuery) throw Error('Temporary query outage'); return new Response('{"task_id":9876543210123456789,"file_id":9876543210123456790,"status":"Success","base_resp":{"status_code":0}}') }
+    if (url.includes('/v1/files/retrieve?')) return new Response(JSON.stringify({ file: { file_id: '9876543210123456790', download_url: 'https://minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com/custom.tar' }, base_resp: { status_code: 0 } }))
+    if (url.endsWith('/custom.tar')) { assert.equal(options.headers, undefined); return new Response(archive) }
+    throw Error('Unexpected endpoint')
+  }
+  const make = () => agentCommerceRuntime({ client, database: () => pool, env: { AI_AGENT_CUSTOM_MODELS_FILE: file }, fetchImpl })
+  try {
+    runtime = make(); let service = await runtime.service()
+    fixed = true; assert.equal((await service.list(root)).length, 0); fixed = false
+    await service.configure(root, { modelId: model.id, enabled: true, saleMarkup: [], supplyMarkup: [{ meter: 'billable_characters', amount: '0.1' }], pointsPerCny: '1', expectedVersion: 0 }, 'test')
+    await service.configure(child, { modelId: model.id, enabled: true, saleMarkup: [{ meter: 'billable_characters', amount: '0.1' }], pointsPerCny: '1', expectedVersion: 0 }, 'test')
+    const input = { requestId: 'custom-async-original', modelId: model.id, request: { text: 'hello', voiceId: 'public-voice' } }
+    const catalog = await service.list(child)
+    assert.equal(catalog[0].model.executor, 'async_job'); assert.equal(JSON.stringify(catalog).includes('never-publish'), false)
+    const { supplierCost, ...uncosted } = model
+    await fs.writeFile(file, JSON.stringify([uncosted]))
+    let restricted = make()
+    try { await assert.rejects((await restricted.service()).submit(child, 'stream-user', { ...input, requestId: 'missing-custom-cost' }), { code: 'SUPPLIER_COST_REQUIRED' }) } finally { restricted.stop() }
+    await fs.writeFile(file, JSON.stringify([{ ...model, status: 'disabled' }]))
+    restricted = make()
+    try { assert.equal((await (await restricted.service()).list(root)).length, 0) } finally { restricted.stop() }
+    await fs.writeFile(file, JSON.stringify([model])); assert.equal(creates, 0)
+    const original = await service.submit(child, 'stream-user', input)
+    assert.equal(original.state, 'pending'); assert.equal(original.job.taskId, '9876543210123456789')
+    assert.equal(original.snapshot.authorization.version, 7)
+    await service.submit(child, 'stream-user', input); assert.equal(creates, 1)
+    model.supplierCost.components[1].amount = '0.09'; await fs.writeFile(file, JSON.stringify([model]))
+    runtime.stop(); runtime = make(); service = await runtime.service()
+    blockQuery = true; await assert.rejects(service.recover(child, 'stream-user', input.requestId))
+    const beforeQuery = queries; process.env.CUSTOM_ASYNC_TEST_KEY = 'different-account'
+    await assert.rejects(service.recover(child, 'stream-user', input.requestId), { code: 'ASYNC_BINDING_CHANGED' }); assert.equal(queries, beforeQuery)
+    process.env.CUSTOM_ASYNC_TEST_KEY = 'isolated-fixture-key'; blockQuery = false; active = false
+    await runtime.flush()
+    const settled = await runtime.store.readRequest(input.requestId)
+    assert.equal(settled.state, 'settled'); assert.equal(settled.points, '1.500000'); assert.equal(settled.supplyAmount, '1.000000'); assert.equal(settled.upstreamAmount, '0.250000'); assert.equal(settled.firstMargin, '0.750000'); assert.equal(settled.result.kind, 'speech_archive'); assert.equal(creates, 1)
+    assert.equal((await runtime.store.readRequest(input.requestId)).snapshot.authorization.instanceId, 'custom-instance')
+    active = true; service = await runtime.service(); cutReply = true
+    const unknown = await service.submit(child, 'stream-user', { ...input, requestId: 'custom-async-response-lost' })
+    assert.equal(unknown.state, 'unknown'); assert.equal(unknown.job, undefined)
+    await service.submit(child, 'stream-user', { ...input, requestId: 'custom-async-response-lost' }); await runtime.flush()
+    assert.equal(creates, 2); assert.equal((await runtime.store.readRequest('custom-async-response-lost')).state, 'unknown')
+  } finally { runtime?.stop(); await pool.end(); delete process.env.CUSTOM_ASYNC_TEST_KEY; await fs.rm(dir, { recursive: true, force: true }) }
+})

@@ -4,6 +4,7 @@ const canonicalDimensions = value => JSON.stringify(Object.fromEntries(Object.en
 export const componentKey = item => `${item.meter}:${item.phase || 'usage'}:${canonicalDimensions(item.dimensions)}`
 
 export function validateSupplyPrice(input) {
+  if (input?.currency && input.currency !== 'CNY') throw failure('INVALID_CURRENCY', '供货及成本价格必须显式换算为人民币后配置')
   if (!Array.isArray(input.components) || !input.components.length) throw failure('INVALID_PRICE', '至少需要一个计量项')
   const seen = new Set()
   const components = input.components.map(item => {

@@ -200,7 +200,7 @@ export function mysqlAccountingStore(pool, book, kind) {
     },
     async pending() {
       await ready(pool)
-      const [rows] = await pool.query("SELECT payload FROM accounting_requests WHERE book=? AND state IN ('reserved','running','pending','unknown') AND source='official' AND next_recovery_at<=? ORDER BY next_recovery_at,updated_at,id LIMIT 50", [book, Date.now()])
+      const [rows] = await pool.query("SELECT payload FROM accounting_requests WHERE book=? AND state IN ('reserved','running','pending','unknown') AND (source='official' OR (source='custom' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.snapshot.model.adapter'))='minimax.speech_async' AND JSON_EXTRACT(payload,'$.job') IS NOT NULL)) AND next_recovery_at<=? ORDER BY next_recovery_at,updated_at,id LIMIT 50", [book, Date.now()])
       return rows.map(r => decode(r.payload))
     },
     async events() {

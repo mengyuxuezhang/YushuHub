@@ -9,6 +9,7 @@ import { httpGatewayAdapters } from './http-adapters.mjs'
 import { digest, failure } from './protocol.mjs'
 import { chatStreamCollector, emitChunk, readSse } from './streaming.mjs'
 import { supplyMembershipBenefit } from './benefits.mjs'
+import { validateSupplyPrice } from './pricing.mjs'
 
 export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch, benefits = supplyMembershipBenefit }) {
   if (!client) return null
@@ -49,16 +50,19 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
   }
   async function catalog(tenant) {
     const root = await client.claims(), official = gatewayUrl ? await gateway(tenant, '/catalog') : []
-    const own = root.modelMode === 'custom' ? customModels.filter(model => tenant.modelIds.includes(model.id)).map(model => ({
+    const own = root.modelMode === 'custom' ? customModels.filter(model => model.status === 'enabled' && tenant.modelIds.includes(model.id)).map(model => ({
       id: model.id, clientId: model.clientId || model.id, name: model.name, taskType: model.taskType, version: model.version, adapter: model.adapter,
       contextWindow: model.contextWindow, maxOutputTokens: model.maxOutputTokens, maxImages: model.maxImages, allowedVoiceIds: model.allowedVoiceIds,
-      publicVoices: model.publicVoices, price: model.price, source: 'custom',
+      executor: model.adapter === 'minimax.speech_async' ? 'async_job' : 'sync',
+      supplierCost: model.supplierCost ? validateSupplyPrice(model.supplierCost) : null,
+      publicVoices: (model.publicVoices || []).filter(voice => model.allowedVoiceIds?.includes(voice.id)).map(voice => ({ id: voice.id, name: String(voice.name || voice.id).slice(0, 120), description: String(voice.description || '').slice(0, 512) })), price: model.price, source: 'custom',
     })) : []
     return [...official.map(model => ({ ...model, source: 'official' })), ...own].map(model => ({ ...model,
       prepare: async request => {
         const adapter = adapters[model.adapter]
         if (!adapter) throw failure('ADAPTER_UNAVAILABLE', '该模型尚未接入供货计费上界', 503)
-        const prepared = await adapter.prepare({ ...model, model: model.id }, request)
+        const execution = model.source === 'custom' ? customModels.find(config => config.id === model.id) : { ...model, model: model.id }
+        const prepared = await adapter.prepare(execution, request)
         return { upperUsage: prepared.upperUsage, request }
       },
     }))
@@ -77,12 +81,17 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
         invoke: async (tenant, model, input, options) => {
           if (model.source === 'official') return gateway(tenant, '/requests', { ...input, modelId: model.id, priceHash: digest(JSON.stringify(model.price)) }, undefined, options)
           const config = customModels.find(item => item.id === model.id)
-          if (!config || root.modelMode !== 'custom') throw failure('MODEL_UNAVAILABLE', '自接模型配置不可用', 403)
+          if (!config || root.modelMode !== 'custom' || config.version !== model.version || config.adapter !== model.adapter) throw failure('MODEL_UNAVAILABLE', '自接模型配置不可用', 403)
           const adapter = adapters[config.adapter], prepared = await adapter.prepare(config, input.request)
-          return adapter.submit(config, prepared.request)
+          return adapter.submit(config, prepared.request, options)
         },
-        lookup: async (tenant, operation) => {
-          if (operation.snapshot.model.source !== 'official') throw failure('RECONCILIATION_REQUIRED', '自接模型未知结果需人工核对，禁止自动重发', 409)
+        lookup: async (tenant, operation, options) => {
+          if (operation.snapshot.model.source !== 'official') {
+            const original = operation.snapshot.model, config = customModels.find(item => item.id === original.id)
+            const adapter = config && adapters[config.adapter]
+            if (!config || config.version !== original.version || config.adapter !== original.adapter || config.adapter !== 'minimax.speech_async' || !adapter?.recover) throw failure('RECONCILIATION_REQUIRED', '自接模型原配置或查询适配器不可用，禁止自动重发', 409)
+            return adapter.recover(config, operation, options)
+          }
           const poll = ['pending', 'unknown'].includes(operation.state)
           return gateway(tenant, `/recovery/requests/${encodeURIComponent(operation.requestId)}${poll ? '/poll' : ''}`, poll ? {} : undefined, operation.requestId)
         },
@@ -96,7 +105,7 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     reconciling = true
     try {
       const service = await runtime.service({ recovery: true })
-      for (const operation of (await store.pending()).filter(op => op.snapshot.model.source === 'official')) {
+      for (const operation of await store.pending()) {
         try { await service.recover({ id: operation.organizationId }, operation.userId, operation.requestId) }
         catch { monitor.recoveryError(); await store.deferRequest(operation.requestId) }
       }
