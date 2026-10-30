@@ -52,13 +52,20 @@ export async function preparePrivateVoice(model, input, context, { speech, voice
 export function privateVoiceAdapter({ voices, artifacts, book, speech, fetcher = fetch, now = Date.now }) {
   const vendor = new MiniMaxAdapter({ fetchImpl: fetcher })
   async function cleanup(model, identity, resourceId, requestId) {
-    const job = await voices.job(identity, requestId)
+    let job = await voices.job(identity, requestId)
     if (job.state !== 'done') return
     const config = connection(model)
-    if (config.hash !== job.bindingHash) return // Never clean another account.
+    if (config.hash !== job.bindingHash) throw failure('VOICE_BINDING_CHANGED', '原文件清理不能更换供应商账号', 409)
+    if (job.cleanupPending && !job.upstreamFileId) {
+      const resource = await voices.get(identity, resourceId)
+      const proof = await vendor.findCloneFile(config, { fileName: job.uploadName, byteLength: resource.byteLength, notBefore: Math.max(0, Math.floor(resource.createdAt / 1000) - 60) })
+      if (!proof) throw failure('VOICE_FILE_OUTCOME_UNKNOWN', '原上传文件仍待核对，保留清理标记', 409)
+      await voices.recoverFile(identity, resourceId, requestId, proof)
+      job = await voices.job(identity, requestId)
+    }
     if (job.upstreamFileId && job.cleanupPending) {
       await voices.checkpoint(identity, resourceId, requestId, { stage: 'cleanup-pending', cleanupPending: true })
-      await vendor.deleteFile(config, job.upstreamFileId)
+      await vendor.deleteFileConfirmed(config, job.upstreamFileId)
       await voices.checkpoint(identity, resourceId, requestId, { stage: 'clean', cleanupPending: false })
     }
     await voices.releaseSource(identity, resourceId).catch(() => {})
@@ -139,6 +146,11 @@ export function privateVoiceAdapter({ voices, artifacts, book, speech, fetcher =
       }
     },
     recover,
+    async cleanOriginal(model, operation, context) {
+      const identity = scope(model, context), job = await voices.job(identity, operation.requestId)
+      if (job.state !== 'done') throw failure('VOICE_CLEANUP_UNCONFIRMED', '原付费结果未确认，不能清理凭证', 409)
+      await cleanup(model, identity, job.resourceId, operation.requestId)
+    },
     poll: (model, job, context) => recover(model, { requestId: job.taskId }, context),
     async remove(model, resourceId, context) {
       const identity = scope(model, context), config = connection(model)

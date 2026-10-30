@@ -19,6 +19,7 @@ import { guardCustomVoiceBinding } from './private-voice-binding.mjs'
 import { supplyVoiceRouting } from '../../repositories/supply-voice-routing.mjs'
 import { supplyVoiceSlots } from '../../repositories/supply-voice-slots.mjs'
 import { inspectVoiceAudio } from '../voice-audio.mjs'
+import { privateVoiceFileCleaner } from './private-voice-cleanup.mjs'
 
 export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch, benefits = supplyMembershipBenefit, inspectPrivateVoiceAudio, now = Date.now }) {
   if (!client) return null
@@ -50,6 +51,15 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     return customModels.find(item => item.id === model.id)
   }
   const customExecution = (definition, root, options) => definition?.providerModelId ? managed.resolve(definition, root, options) : Promise.resolve(definition)
+  const voiceFileCleaner = privateVoiceStore && privateVoiceFileCleaner({ voices: privateVoiceStore.voices, now, rootId: async () => (await client.recoveryIdentity()).id, onError: () => monitor.recoveryError(),
+    resolve: async task => {
+      const root = await client.recoveryIdentity(), operation = await store.readRequest(task.requestId), original = operation?.snapshot.model
+      if (root.id !== task.rootId || operation?.organizationId !== task.organizationId || digest(JSON.stringify([operation.organizationId, operation.userId])) !== task.subjectHash
+        || original?.id !== task.modelId || original.source !== 'custom' || original.adapter !== 'minimax.private_voice') throw failure('VOICE_CLEANUP_UNAVAILABLE', '原清理请求归属无法核对', 409)
+      const config = await customExecution(await definitionFor(root.id, original, true), root, { credentials: true, credentialId: task.credentialId, recovery: true })
+      if (!config || config.version !== original.version || config.bindingHash !== original.bindingHash) throw failure('VOICE_CLEANUP_UNAVAILABLE', '原清理连接不可用', 409)
+      return { model: config, adapter: adapters[config.adapter] }
+    } })
   async function privateCredential(modelId, request, context) {
     if (!privateVoiceStore) throw failure('VOICE_PRIVATE_SUPPLY_UNAVAILABLE', '私有音色受控存储尚未配置', 503)
     if (!request?.resourceId) return undefined
@@ -329,6 +339,9 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     } finally { reconciling = false }
   }
   const timer = setInterval(() => runtime.flush().catch(() => monitor.recoveryError()), 30_000); timer.unref()
-  runtime.stop = () => { clearInterval(timer); clearInterval(priceTimer); monitor.stop() }
+  runtime.cleanPrivateFiles = () => voiceFileCleaner ? voiceFileCleaner.run() : Promise.resolve({ cleaned: 0, blocked: 0 })
+  const voiceCleanupTimer = voiceFileCleaner && setInterval(() => runtime.cleanPrivateFiles().catch(() => monitor.recoveryError()), 60_000)
+  voiceCleanupTimer?.unref()
+  runtime.stop = () => { clearInterval(timer); clearInterval(priceTimer); clearInterval(voiceCleanupTimer); monitor.stop() }
   return runtime
 }

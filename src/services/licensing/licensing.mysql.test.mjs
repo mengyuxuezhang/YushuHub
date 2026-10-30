@@ -1379,7 +1379,7 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
       if (pathname.startsWith('/preview/')) { assert.equal(options.headers, undefined); return new Response(Buffer.from('fictional private preview mp3')) }
       assert.equal(options.headers.authorization, 'Bearer fictional-private-key')
       if (pathname === '/v1/files/upload') { counts.uploads++; const id = String(9223372036854775700n + BigInt(counts.uploads)); fileIds.add(id); return new Response(`{"base_resp":{"status_code":0},"file":{"file_id":${id}}}`) }
-      if (pathname === '/v1/files/delete') { fileIds.delete(options.body.get('file_id')); return response({}) }
+      if (pathname === '/v1/files/delete') { const id = /"file_id":(\d+)/.exec(options.body)?.[1]; assert(id); assert.equal(JSON.parse(options.body).purpose, 'voice_clone'); fileIds.delete(id); return response({}) }
       const body = JSON.parse(options.body)
       if (pathname === '/v1/voice_clone') { counts.clones++; voiceIds.add(body.voice_id); return response({ input_sensitive: false, demo_audio: `https://minimax-algeng-chat-tts.oss-accelerate.aliyuncs.com/preview/${body.voice_id}.mp3`, ...(missingUsage ? {} : { extra_info: { usage_characters: 4, audio_length: 1000 } }) }) }
       if (pathname === '/v1/t2a_v2') { counts.syntheses++; assert(voiceIds.has(body.voice_setting.voice_id)); return response({ data: { audio: '494433ff', status: 2 }, extra_info: { usage_characters: body.text === '你好' ? 4 : [...body.text].length, audio_length: 1000 } }) }

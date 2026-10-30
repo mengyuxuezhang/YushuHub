@@ -119,6 +119,40 @@ export function supplyVoiceRepository({ pool, book, directory, inspectAudio = in
       if (!row) throw failure('VOICE_UPLOAD_NOT_FOUND', '本主体原上传尚未确认', 404)
       return publicResource(decode(row))
     },
+    async recoverFile(input, id, requestId, proof) {
+      const scope = scopeOf(input); identifier(requestId)
+      if (!proof || typeof proof.id !== 'string' || !/^\d{1,20}$/.test(proof.id) || BigInt(proof.id) <= 0n || !Number.isSafeInteger(proof.byteLength) || !Number.isSafeInteger(proof.createdAt)) throw failure('VOICE_FILE_PROOF_INVALID', '须提供原账号文件核对结果', 409)
+      return transaction(async connection => {
+        const resource = await find(connection, scope, id, true)
+        const [[row]] = await connection.query('SELECT * FROM supply_voice_jobs WHERE book=? AND id=? AND resource_id=? FOR UPDATE', [book, requestId, id])
+        const job = row && parse(row.payload)
+        if (!job || row.state !== 'done' || !job.cleanupPending || !job.uploadName || job.uploadName !== proof.fileName || resource.byteLength !== proof.byteLength || proof.createdAt * 1000 < resource.createdAt - 60_000 || proof.createdAt * 1000 > now() + 300_000) throw failure('VOICE_FILE_PROOF_INVALID', '原上传文件无法唯一核对', 409)
+        if (job.upstreamFileId) { if (job.upstreamFileId !== proof.id) throw failure('VOICE_CHECKPOINT_IMMUTABLE', '原供应商文件不能替换', 409); return }
+        job.upstreamFileId = proof.id
+        job.fileRecovery = { source: 'minimax-files-list', id: proof.id, fileName: proof.fileName, byteLength: proof.byteLength, createdAt: proof.createdAt, observedAt: now() }
+        await connection.query('UPDATE supply_voice_jobs SET updated_at=?,payload=? WHERE book=? AND id=?', [now(), JSON.stringify(job), book, requestId])
+      })
+    },
+    async pendingCleanup({ rootId, at = now() } = {}) {
+      if (rootId !== undefined) identifier(rootId)
+      const [rows] = await pool.query(`SELECT j.id,j.resource_id,j.payload,r.root_id,r.organization_id,r.subject_hash,r.model_id FROM supply_voice_jobs j
+        JOIN supply_voice_resources r ON r.book=j.book AND r.id=j.resource_id WHERE j.book=? AND j.state='done'
+        AND JSON_EXTRACT(j.payload,'$.cleanupPending')=true AND j.updated_at<=?${rootId === undefined ? '' : ' AND r.root_id=?'} ORDER BY j.updated_at,j.id LIMIT 50`, [book, at - 60_000, ...(rootId === undefined ? [] : [rootId])])
+      return rows.map(row => ({ requestId: row.id, resourceId: row.resource_id, rootId: row.root_id, organizationId: row.organization_id, subjectHash: row.subject_hash, modelId: row.model_id, credentialId: parse(row.payload).credentialId }))
+    },
+    async deferCleanup(input, requestId) {
+      const scope = scopeOf(input); identifier(requestId)
+      await transaction(async connection => {
+        await find(connection, scope, identifier(input.resourceId), true)
+        const [[row]] = await connection.query(`SELECT j.payload FROM supply_voice_jobs j JOIN supply_voice_resources r ON r.book=j.book AND r.id=j.resource_id
+          WHERE j.book=? AND j.id=? AND j.resource_id=? AND j.state='done' AND r.root_id=? AND r.organization_id=? AND r.subject_hash=? AND r.model_id=? FOR UPDATE`, [book, requestId, input.resourceId, ...scopeValues(scope)])
+        if (!row) return
+        const job = parse(row.payload)
+        if (!job.cleanupPending) return
+        job.cleanupAttempts = Math.min(1_000_000, (Number.isSafeInteger(job.cleanupAttempts) ? job.cleanupAttempts : 0) + 1)
+        await connection.query('UPDATE supply_voice_jobs SET updated_at=?,payload=? WHERE book=? AND id=?', [now(), JSON.stringify(job), book, requestId])
+      })
+    },
     async discardUpload(input, id, requestId) {
       const scope = scopeOf(input); identifier(requestId)
       const fingerprint = digest(JSON.stringify([scope, id, requestId, 'discard-upload']))

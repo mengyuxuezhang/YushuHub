@@ -106,3 +106,39 @@ test('voice upload supports a recorded opaque filename but never accepts caller 
   assert.equal(uploaded, 'voice-fixture-123.wav')
   await assert.rejects(adapter.upload(context, Buffer.from('fictional audio'), 'wav', { fileName: '../private.wav' }), { code: 'VOICE_AUDIO_INVALID' })
 })
+
+
+test('file deletion uses documented JSON with exact int64 identifiers', async () => {
+  let sent
+  const adapter = new MiniMaxAdapter({ fetchImpl: async (url, request) => { assert(String(url).endsWith('/v1/files/delete')); sent = request; return response({}) } })
+  await adapter.deleteFile(context, '9999999999999999999')
+  assert.equal(sent.headers['content-type'], 'application/json'); assert.equal(sent.body, '{"file_id":9999999999999999999,"purpose":"voice_clone"}')
+  await assert.rejects(adapter.deleteFile(context, 9999999999999999999), { code: 'VOICE_INPUT_INVALID' })
+})
+
+test('original uploaded file discovery requires a unique exact anonymous name, size and creation bound', async () => {
+  let files = [{ file_id: '9999999999999999999', filename: 'voice-anonymous.wav', bytes: 123, created_at: 200, purpose: 'voice_clone' }]
+  const adapter = new MiniMaxAdapter({ fetchImpl: async (url, request) => {
+    assert.equal(new URL(url).pathname, '/v1/files/list'); assert.equal(new URL(url).searchParams.get('purpose'), 'voice_clone')
+    assert.equal(request.method, 'GET'); assert.equal(request.body, undefined); return response({ files })
+  } })
+  const input = { fileName: 'voice-anonymous.wav', byteLength: 123, notBefore: 100 }
+  assert.equal((await adapter.findCloneFile(context, input)).id, '9999999999999999999')
+  await assert.rejects(adapter.findCloneFile(context, { ...input, byteLength: 124 }), { code: 'MINIMAX_FILE_MATCH_UNCONFIRMED' })
+  files = [...files, { ...files[0], file_id: '9999999999999999998' }]
+  await assert.rejects(adapter.findCloneFile(context, input), { code: 'MINIMAX_FILE_MATCH_UNCONFIRMED' })
+  files = []; assert.equal(await adapter.findCloneFile(context, input), null)
+})
+
+test('lost file deletion replies require an authenticated unpaginated original listing', async () => {
+  let malformed = false, paginated = false, calls = 0
+  const adapter = new MiniMaxAdapter({ fetchImpl: async (url, request) => {
+    calls++
+    if (new URL(url).pathname.endsWith('/delete')) { assert.equal(request.method, 'POST'); throw new Error('simulated deletion reply loss') }
+    return response(malformed ? {} : { files: [], ...(paginated ? { has_more: true } : {}) })
+  } })
+  await adapter.deleteFileConfirmed(context, '9999999999999999999'); assert.equal(calls, 2)
+  malformed = true; await assert.rejects(adapter.deleteFileConfirmed(context, '9999999999999999999'), { code: 'MINIMAX_FILE_LIST_UNCONFIRMED' })
+  malformed = false; paginated = true; await assert.rejects(adapter.deleteFileConfirmed(context, '9999999999999999999'), { code: 'MINIMAX_FILE_LIST_UNCONFIRMED' })
+  const previous = calls; await assert.rejects(adapter.deleteFileConfirmed(context, 123), { code: 'VOICE_INPUT_INVALID' }); assert.equal(calls, previous)
+})

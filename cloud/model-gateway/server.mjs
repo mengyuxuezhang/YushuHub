@@ -14,6 +14,7 @@ import { ModelCredentialVault } from '../../src/services/model-credentials.mjs'
 import path from 'node:path'
 import { privateVoiceStorage } from '../../src/services/licensing/private-voice-runtime.mjs'
 import { registerPrivateVoiceGatewayRoutes } from '../../src/routes/private-voice-gateway.mjs'
+import { privateVoiceFileCleaner } from '../../src/services/licensing/private-voice-cleanup.mjs'
 
 const { pool } = await serviceDatabase('AI_GATEWAY', emptyLedgerState())
 const store = mysqlAccountingStore(pool, 'official-v2', 'ledger')
@@ -43,8 +44,15 @@ if (process.argv.includes('--migrate')) {
   }
   const privateVoiceStore = privateVoiceStorage({ pool, book: 'official-v2', directory: process.env.AI_GATEWAY_PRIVATE_VOICE_DIRECTORY, retentionDays: process.env.AI_GATEWAY_PRIVATE_VOICE_RETENTION_DAYS || 30 })
   if (privateVoiceStore) await privateVoiceStore.assertReady()
-  const ledger = createSupplyLedger({ store }), gateway = createModelGateway({ ledger, authorize, models: await jsonFile(process.env.AI_GATEWAY_MODELS_FILE), adapters: httpGatewayAdapters(fetch, { privateVoiceStore }), privateVoiceStore })
-  const voiceCleanup = privateVoiceStore && setInterval(() => privateVoiceStore.clean().catch(() => monitor.recoveryError()), 60_000)
+  const models = await jsonFile(process.env.AI_GATEWAY_MODELS_FILE), adapters = httpGatewayAdapters(fetch, { privateVoiceStore })
+  const ledger = createSupplyLedger({ store }), gateway = createModelGateway({ ledger, authorize, models, adapters, privateVoiceStore })
+  const fileCleaner = privateVoiceStore && privateVoiceFileCleaner({ voices: privateVoiceStore.voices, onError: () => monitor.recoveryError(), resolve: async task => {
+    const operation = await store.readRequest(task.requestId), model = models.find(row => row.id === task.modelId)
+    if (!operation || operation.walletId !== task.rootId || operation.snapshot.organizationId !== task.organizationId || operation.snapshot.subjectHash !== task.subjectHash
+      || operation.snapshot.modelId !== model?.id || operation.snapshot.version !== model.version) throw failure('VOICE_CLEANUP_UNAVAILABLE', '原音色清理请求或配置不可用', 409)
+    return { model, adapter: adapters[model.adapter] }
+  } })
+  const voiceCleanup = privateVoiceStore && setInterval(() => (async () => { await fileCleaner.run(); await privateVoiceStore.clean() })().catch(() => monitor.recoveryError()), 60_000)
   voiceCleanup?.unref()
   const stopRecovery = startAccountingRecovery(ledger, () => monitor.recoveryError())
   monitor.start()

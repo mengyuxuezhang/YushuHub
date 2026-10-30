@@ -36,7 +36,7 @@ async function boundedJson(response) {
 export class MiniMaxAdapter {
   constructor({ fetchImpl = fetch } = {}) { this.fetch = fetchImpl }
 
-  async request(context, endpoint, body, multipart = false) {
+  async request(context, endpoint, body, multipart = false, method = 'POST') {
     const base = new URL(context.baseUrl)
     if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw new MiniMaxError('MINIMAX_CONFIGURATION_INVALID')
     const target = new URL(endpoint, base)
@@ -44,9 +44,9 @@ export class MiniMaxAdapter {
     let response
     try {
       response = await this.fetch(target, {
-        method: 'POST', redirect: 'error', cache: 'no-store',
-        headers: { authorization: `Bearer ${context.apiKey}`, accept: 'application/json', ...(!multipart ? { 'content-type': 'application/json' } : {}) },
-        body: multipart ? body : JSON.stringify(body).replace(/("file_id":)"(\d{1,20})"/g, '$1$2'),
+        method, redirect: 'error', cache: 'no-store',
+        headers: { authorization: `Bearer ${context.apiKey}`, accept: 'application/json', ...(!multipart && method !== 'GET' ? { 'content-type': 'application/json' } : {}) },
+        ...(method === 'GET' ? {} : { body: multipart ? body : JSON.stringify(body).replace(/("file_id":)"(\d{1,20})"/g, '$1$2') }),
         signal: AbortSignal.timeout(Math.min(300000, Math.max(10000, context.timeoutMs || 120000))),
       })
     } catch { throw new MiniMaxError('MINIMAX_OUTCOME_UNKNOWN', true) }
@@ -148,9 +148,38 @@ export class MiniMaxAdapter {
 
   async deleteVoice(context, voiceId) { await this.request(context, '/v1/delete_voice', { voice_type: 'voice_cloning', voice_id: voiceId }) }
   async deleteFile(context, fileId) {
-    const body = new FormData()
-    body.set('file_id', fileId)
-    body.set('purpose', 'voice_clone')
-    await this.request(context, '/v1/files/delete', body, true)
+    if (typeof fileId !== 'string' || !/^\d{1,20}$/.test(fileId) || BigInt(fileId) <= 0n) throw new MiniMaxError('VOICE_INPUT_INVALID')
+    await this.request(context, '/v1/files/delete', { file_id: fileId, purpose: 'voice_clone' })
+  }
+
+  async listCloneFiles(context) {
+    const response = await this.request(context, '/v1/files/list?purpose=voice_clone', undefined, false, 'GET')
+    if (!Array.isArray(response.files) || response.files.length > 10000 || (response.has_more !== undefined && response.has_more !== false) || response.next_cursor || response.next_page
+      || (response.total_count !== undefined && response.total_count !== response.files.length)) throw new MiniMaxError('MINIMAX_FILE_LIST_UNCONFIRMED', true)
+    const files = response.files.map(file => {
+      if (typeof file.file_id !== 'string' || !/^\d{1,20}$/.test(file.file_id) || BigInt(file.file_id) <= 0n || file.purpose !== 'voice_clone' || typeof file.filename !== 'string' || !file.filename || file.filename.length > 255
+        || !Number.isSafeInteger(file.bytes) || file.bytes < 0 || !Number.isSafeInteger(file.created_at) || file.created_at < 0) throw new MiniMaxError('MINIMAX_FILE_LIST_UNCONFIRMED', true)
+      return { id: file.file_id, fileName: file.filename, byteLength: file.bytes, createdAt: file.created_at }
+    })
+    if (new Set(files.map(file => file.id)).size !== files.length) throw new MiniMaxError('MINIMAX_FILE_LIST_UNCONFIRMED', true)
+    return files
+  }
+
+  async findCloneFile(context, { fileName, byteLength, notBefore }) {
+    if (typeof fileName !== 'string' || !/^[A-Za-z0-9_-]{1,80}\.(?:wav|mp3|m4a)$/.test(fileName) || !Number.isSafeInteger(byteLength) || byteLength <= 0 || !Number.isSafeInteger(notBefore) || notBefore < 0) throw new MiniMaxError('VOICE_INPUT_INVALID')
+    const matches = (await this.listCloneFiles(context)).filter(file => file.fileName === fileName)
+    if (!matches.length) return null
+    if (matches.length !== 1 || matches[0].byteLength !== byteLength || matches[0].createdAt < notBefore) throw new MiniMaxError('MINIMAX_FILE_MATCH_UNCONFIRMED', true)
+    return matches[0]
+  }
+
+  async deleteFileConfirmed(context, fileId) {
+    if (typeof fileId !== 'string' || !/^\d{1,20}$/.test(fileId) || BigInt(fileId) <= 0n) throw new MiniMaxError('VOICE_INPUT_INVALID')
+    try { await this.deleteFile(context, fileId) }
+    catch (error) {
+      // An authenticated complete original-account listing can confirm a lost
+      // deletion reply. It says nothing about paid synthesis usage.
+      if ((await this.listCloneFiles(context)).some(file => file.id === fileId)) throw error
+    }
   }
 }

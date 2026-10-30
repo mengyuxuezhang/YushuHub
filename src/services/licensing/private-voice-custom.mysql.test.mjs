@@ -50,8 +50,8 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
         await pool.query("INSERT INTO ai_model_provider_keys VALUES (?,'custom-provider',?,'custom-local-root','custom-owner',?,'enabled',?,NULL,NULL,0,?)", [`key-${letter}`, model.id, `account-${letter}`, await vault.seal(secrets[index], `account-${letter}`), `2026-01-0${index + 1} 00:00:00`])
       }
     }
-    const counts = { uploads: 0, clones: 0, syntheses: 0, deletes: 0 }, accounts = new Map(secrets.map(secret => [secret, new Set()]))
-    let missingUsage = false
+    const counts = { uploads: 0, clones: 0, syntheses: 0, deletes: 0, fileDeletes: 0, fileLists: 0 }, accounts = new Map(secrets.map(secret => [secret, new Set()])), files = new Map(secrets.map(secret => [secret, new Map()]))
+    let missingUsage = false, clock = Date.now(), failFileDelete = true, loseFileDeleteReply = true, loseFileUploadReply = false, failFileList = false
     const ok = value => Response.json({ base_resp: { status_code: 0 }, ...value })
     const fetchImpl = async (url, options = {}) => {
       const parsed = new URL(url)
@@ -59,8 +59,21 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
       assert.equal(parsed.hostname, 'custom-voice.example.com')
       const secret = options.headers.authorization?.replace(/^Bearer /, ''), voices = accounts.get(secret)
       assert(voices, 'Only the original simulated account may access its voice')
-      if (parsed.pathname === '/v1/files/upload') { counts.uploads++; return ok({ file: { file_id: String(9_000_000_000_000_000_000n + BigInt(counts.uploads)) } }) }
-      if (parsed.pathname === '/v1/files/delete') return ok({})
+      const accountFiles = files.get(secret)
+      if (parsed.pathname === '/v1/files/upload') {
+        counts.uploads++; const fileId = String(9_000_000_000_000_000_000n + BigInt(counts.uploads)), file = options.body.get('file')
+        accountFiles.set(fileId, { file_id: fileId, filename: file.name, bytes: file.size, created_at: Math.floor(clock / 1000), purpose: 'voice_clone' })
+        if (loseFileUploadReply) { loseFileUploadReply = false; failFileList = true; throw new Error('simulated supplier upload reply loss') }
+        return ok({ file: { file_id: fileId } })
+      }
+      if (parsed.pathname === '/v1/files/list') { counts.fileLists++; if (failFileList) { failFileList = false; throw new Error('simulated list outage') }; assert.equal(options.method, 'GET'); return ok({ files: [...accountFiles.values()] }) }
+      if (parsed.pathname === '/v1/files/delete') {
+        counts.fileDeletes++; const fileId = /"file_id":(\d+)/.exec(options.body)?.[1]; assert(fileId); assert.equal(JSON.parse(options.body).purpose, 'voice_clone')
+        if (failFileDelete) { failFileDelete = false; throw new Error('simulated file deletion before acceptance') }
+        accountFiles.delete(fileId)
+        if (loseFileDeleteReply) { loseFileDeleteReply = false; throw new Error('simulated file deletion reply loss') }
+        return ok({})
+      }
       const body = JSON.parse(options.body)
       if (parsed.pathname === '/v1/voice_clone') { counts.clones++; voices.add(body.voice_id); return ok({ input_sensitive: false, demo_audio: `https://minimax-algeng-chat-tts.oss-accelerate.aliyuncs.com/${body.voice_id}.mp3`, ...(missingUsage ? {} : { extra_info: { usage_characters: 4, audio_length: 1000 } }) }) }
       if (parsed.pathname === '/v1/t2a_v2') { counts.syntheses++; assert(voices.has(body.voice_setting.voice_id)); return ok({ data: { audio: '494433ff', status: 2 }, extra_info: { usage_characters: body.text === '你好' ? 4 : [...body.text].length, audio_length: 1000 } }) }
@@ -68,7 +81,7 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
       if (parsed.pathname === '/v1/delete_voice') { counts.deletes++; voices.delete(body.voice_id); return ok({}) }
       throw new Error('Unexpected simulated custom voice endpoint')
     }
-    const make = () => agentCommerceRuntime({ client: { claims: async () => root, recoveryIdentity: async () => root }, database: () => pool, fetchImpl, benefits: async () => ({ discount: '1' }), inspectPrivateVoiceAudio: async () => ({ duration: 10 }),
+    const make = () => agentCommerceRuntime({ client: { claims: async () => root, recoveryIdentity: async () => root }, database: () => pool, fetchImpl, benefits: async () => ({ discount: '1' }), inspectPrivateVoiceAudio: async () => ({ duration: 10 }), now: () => clock,
       env: { AI_AGENT_CUSTOM_MODELS_FILE: file, AI_SUPPLY_PRIVATE_VOICE_ENABLED: '1', AI_SUPPLY_PRIVATE_VOICE_DIRECTORY: path.join(dir, 'storage'), AI_MODEL_CREDENTIAL_KEY_PATH: path.join(dir, 'credentials.key'), AI_PRICE_NOTIFICATIONS_KEY_FILE: path.join(dir, 'price.key'), AI_ACCOUNTING_MONITOR_KEY_FILE: path.join(dir, 'monitor.key') } })
     runtime = make()
     if (mode === 'keypool') await runtime.customReview.save(root, { providerModelId: model.id, clientId: model.clientId, expectedRevision: 0, status: 'enabled', adapter: model.adapter, currency: 'CNY', memo: '虚构密钥池私有音色成本审核', allowedVoiceIds: [], costComponents: model.supplierCost.components }, 'custom-owner')
@@ -86,6 +99,22 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
     const clone = (await cloned.json()).data; assert.equal(clone.status, 'succeeded'); assert.equal(clone.settledPoints, 16)
     let originalKey
     if (mode === 'keypool') { const [[resource]] = await pool.query("SELECT JSON_UNQUOTE(JSON_EXTRACT(payload,'$.credentialId')) AS credential FROM supply_voice_resources WHERE book='commerce-v2' AND id=?", [clone.voiceId]); originalKey = resource.credential; assert.equal(originalKey, 'key-a') }
+    assert.equal([...files.values()].reduce((sum, value) => sum + value.size, 0), 1)
+    const walletBeforeCleanup = (await service.balance(child)).wallet
+    let originalCipher
+    if (mode === 'file') { runtime.stop(); await fs.writeFile(file, JSON.stringify([{ ...model, apiKey: 'fictional-wrong-account-key' }])); runtime = make() }
+    else {
+      const [[key]] = await pool.query('SELECT secret_ciphertext FROM ai_model_provider_keys WHERE id=?', [originalKey]); originalCipher = key.secret_ciphertext
+      const vault = new ModelCredentialVault(path.join(dir, 'credentials.key'))
+      await pool.query('UPDATE ai_model_provider_keys SET secret_ciphertext=? WHERE id=?', [await vault.seal('fictional-wrong-account-key', 'account-a'), originalKey])
+    }
+    clock += 60_001; assert.equal((await runtime.cleanPrivateFiles()).blocked, 1); assert.equal(counts.fileDeletes, 1)
+    if (mode === 'file') { runtime.stop(); await fs.writeFile(file, JSON.stringify([model])); runtime = make() }
+    else await pool.query('UPDATE ai_model_provider_keys SET secret_ciphertext=? WHERE id=?', [originalCipher, originalKey])
+    clock += 60_001; assert.equal((await runtime.cleanPrivateFiles()).cleaned, 1); clock = Date.now()
+    assert.deepEqual((await service.balance(child)).wallet, walletBeforeCleanup)
+    assert.equal([...files.values()].reduce((sum, value) => sum + value.size, 0), 0); assert.equal(counts.clones, 1)
+    assert.equal(counts.fileDeletes, 2)
     await request('/train', recording('custom-voice-clone')); assert.equal(counts.clones, 1)
     assert.equal((await request(`/${clone.voiceId}/preview`)).status, 200)
     assert.equal((await request(`/${clone.voiceId}/preview`, undefined, 'custom-voice-peer')).status, 404)
@@ -114,11 +143,26 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
     runtime.stop(); await fs.writeFile(file, JSON.stringify(mode === 'file' ? [model] : []))
     if (mode === 'keypool') await pool.query("UPDATE ai_model_provider_keys SET status='enabled'")
     runtime = make(); service = await runtime.service()
+    loseFileUploadReply = true
+    const callsBeforeUploadLoss = counts.clones, failedUpload = await request('/train', recording('custom-upload-unknown'))
+    assert.equal(failedUpload.status, 200); assert.equal((await failedUpload.json()).data.status, 'failed'); assert.equal(counts.clones, callsBeforeUploadLoss)
+    const [[beforeFileProof]] = await pool.query("SELECT payload FROM supply_voice_jobs WHERE book='commerce-v2' AND id='custom-upload-unknown'")
+    const fileJob = typeof beforeFileProof.payload === 'string' ? JSON.parse(beforeFileProof.payload) : beforeFileProof.payload
+    assert.equal(fileJob.upstreamFileId, undefined); assert.equal(fileJob.cleanupPending, true)
+    clock += 60_001; assert.equal((await runtime.cleanPrivateFiles()).cleaned, 1); clock = Date.now()
+    const [[afterFileProof]] = await pool.query("SELECT payload FROM supply_voice_jobs WHERE book='commerce-v2' AND id='custom-upload-unknown'")
+    const recoveredFileJob = typeof afterFileProof.payload === 'string' ? JSON.parse(afterFileProof.payload) : afterFileProof.payload
+    assert.equal(recoveredFileJob.cleanupPending, false); assert.equal(recoveredFileJob.fileRecovery.source, 'minimax-files-list')
+    assert.equal(counts.clones, callsBeforeUploadLoss); assert.equal((await service.balance(child)).wallet.balance, '47.000000')
+    assert.equal(String((await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='custom-voice-user'"))[0][0].credit_balance), '31.000000')
     missingUsage = true
     const unknown = await request('/train', recording('custom-voice-unknown')); assert.equal(unknown.status, 200); assert.equal((await unknown.json()).data.status, 'outcome_unknown')
     const calls = counts.clones; await service.recover(child, 'custom-voice-user', 'custom-voice-unknown'); assert.equal(counts.clones, calls)
     assert.equal((await service.balance(child)).wallet.reserved, '12.000000')
     assert.equal(String((await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='custom-voice-user'"))[0][0].credit_balance), '15.000000')
+    const filesBeforeUnknown = counts.fileDeletes
+    clock += 60_001; assert.equal((await runtime.cleanPrivateFiles()).cleaned, 0); clock = Date.now()
+    assert.equal(counts.fileDeletes, filesBeforeUnknown); assert.equal([...files.values()].reduce((sum, value) => sum + value.size, 0), 1)
     const catalog = (await (await request()).json()).data
     assert.equal(JSON.stringify(catalog).includes(model.apiKey), false); assert.equal(JSON.stringify(catalog).includes('upstream-custom-speech'), false)
     for (const secret of secrets) assert.equal(JSON.stringify(catalog).includes(secret), false)
