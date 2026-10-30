@@ -60,23 +60,27 @@ export class MiniMaxAdapter {
     return result
   }
 
-  async upload(context, bytes, format) {
+  async upload(context, bytes, format, { fileName = `recording.${format}` } = {}) {
     if (!Buffer.isBuffer(bytes) || !bytes.length || bytes.length > 20 * 1024 * 1024 || !['wav', 'mp3', 'm4a'].includes(format)) throw new MiniMaxError('VOICE_AUDIO_INVALID')
+    if (typeof fileName !== 'string' || !/^[A-Za-z0-9_-]{1,80}\.(?:wav|mp3|m4a)$/.test(fileName) || !fileName.endsWith(`.${format}`)) throw new MiniMaxError('VOICE_AUDIO_INVALID')
     const form = new FormData()
     form.set('purpose', 'voice_clone')
-    form.set('file', new Blob([bytes]), `recording.${format}`)
+    form.set('file', new Blob([bytes]), fileName)
     const response = await this.request(context, '/v1/files/upload', form, true)
     const fileId = String(response.file?.file_id || '')
     if (!/^\d{1,20}$/.test(fileId)) throw new MiniMaxError('MINIMAX_INVALID_RESPONSE', true)
     return fileId
   }
 
-  async clone(context, { fileId, voiceId, text, model }) {
+  async clone(context, { fileId, voiceId, text, model, requireUsage = false }) {
     if (!/^[a-zA-Z][a-zA-Z0-9_-]{6,254}[a-zA-Z0-9]$/.test(voiceId) || !/^\d{1,20}$/.test(fileId) || !text || [...text].length > 1000 || !model) throw new MiniMaxError('VOICE_INPUT_INVALID')
     const result = await this.request(context, '/v1/voice_clone', { file_id: fileId, voice_id: voiceId, text, model, aigc_watermark: true })
-    if (result.input_sensitive === true) throw new MiniMaxError('VOICE_AUDIO_REJECTED')
+    if (result.input_sensitive === true) throw new MiniMaxError('VOICE_AUDIO_REJECTED', requireUsage)
     if (typeof result.demo_audio !== 'string' || !result.demo_audio.startsWith('https://')) throw new MiniMaxError('MINIMAX_INVALID_RESPONSE', true)
-    return { previewUrl: result.demo_audio }
+    const characters = result.extra_info?.usage_characters, durationSec = Number(result.extra_info?.audio_length) / 1000
+    const metered = Number.isSafeInteger(characters) && characters >= 0 && Number.isFinite(durationSec) && durationSec > 0 && durationSec <= 86400
+    if (requireUsage && !metered) throw new MiniMaxError('MINIMAX_CLONE_USAGE_UNCONFIRMED', true)
+    return { previewUrl: result.demo_audio, ...(metered ? { characters, durationSec } : {}) }
   }
 
   async invoke(context, { model, voiceId, text, speed = 1, includeTimings = false, timingGranularity = 'sentence' }) {
@@ -122,8 +126,9 @@ export class MiniMaxAdapter {
 
   async previewAudio(url) {
     const target = new URL(url)
-    if (target.protocol !== 'https:' || target.username || target.password || target.hostname !== 'minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com') throw new MiniMaxError('MINIMAX_PREVIEW_HOST_UNSUPPORTED', true)
-    const response = await this.fetch(target, { redirect: 'error', signal: AbortSignal.timeout(30000) })
+    if (target.protocol !== 'https:' || target.username || target.password || target.hash || (target.port && target.port !== '443')
+      || !['minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com', 'minimax-algeng-chat-tts.oss-accelerate.aliyuncs.com'].includes(target.hostname)) throw new MiniMaxError('MINIMAX_PREVIEW_HOST_UNSUPPORTED', true)
+    const response = await this.fetch(target, { redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(30000) })
     if (!response.ok || !response.body) throw new MiniMaxError('MINIMAX_PREVIEW_UNAVAILABLE', true)
     const reader = response.body.getReader()
     const chunks = []

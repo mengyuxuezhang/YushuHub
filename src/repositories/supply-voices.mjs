@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { digest, failure, identifier } from '../services/licensing/protocol.mjs'
 import { inspectVoiceAudio } from '../services/voice-audio.mjs'
+import { SUPPLY_VOICE_ARTIFACT_SCHEMA } from './supply-voice-artifacts.mjs'
 
 const table = (name, columns) => `CREATE TABLE IF NOT EXISTS supply_voice_${name} (${columns}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin`
 const bookColumn = 'book VARCHAR(80) CHARACTER SET ascii COLLATE ascii_bin NOT NULL'
@@ -19,7 +20,7 @@ export const SUPPLY_VOICE_SCHEMA = [
     action VARCHAR(24) NOT NULL,state VARCHAR(24) NOT NULL,fingerprint CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     updated_at BIGINT NOT NULL,payload JSON NOT NULL,PRIMARY KEY(book,id),KEY active_jobs(book,resource_id,state)`),
 ]
-export async function migrateSupplyVoiceSchema(pool) { for (const sql of SUPPLY_VOICE_SCHEMA) await pool.query(sql) }
+export async function migrateSupplyVoiceSchema(pool) { for (const sql of [...SUPPLY_VOICE_SCHEMA, SUPPLY_VOICE_ARTIFACT_SCHEMA]) await pool.query(sql) }
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value
 const decode = row => row ? { ...parse(row.payload), id: row.id, status: row.status, expiresAt: Number(row.expires_at), createdAt: Number(row.created_at) } : null
 const sha = value => /^[a-f0-9]{64}$/.test(value || '')
@@ -68,7 +69,7 @@ export function supplyVoiceRepository({ pool, book, directory, inspectAudio = in
   }
   const api = {
     migrate: () => migrateSupplyVoiceSchema(pool),
-    async assertReady() { for (const table of ['locks', 'resources', 'jobs']) await pool.query(`SELECT id FROM supply_voice_${table} WHERE book=? LIMIT 0`, [book]) },
+    async assertReady() { for (const table of ['locks', 'resources', 'jobs', 'artifacts']) await pool.query(`SELECT id FROM supply_voice_${table} WHERE book=? LIMIT 0`, [book]) },
     async upload(input, { requestId, format, bytes }) {
       const scope = scopeOf(input); identifier(requestId)
       if (requestId.length > 80 || !Buffer.isBuffer(bytes) || !bytes.length || bytes.length > 20 * 1024 * 1024 || !['mp3', 'm4a', 'wav'].includes(format)) throw failure('VOICE_AUDIO_INVALID', '录音规格无效')
@@ -148,7 +149,7 @@ export function supplyVoiceRepository({ pool, book, directory, inspectAudio = in
         }
         resource.bindingHash ||= bindingHash
         if (credentialId) resource.credentialId ||= credentialId
-        if (action === 'clone') { resource.name = name.trim(); resource.providerVoiceId = `Agent${crypto.randomUUID().replaceAll('-', '')}` }
+        if (action === 'clone') { resource.name = name.trim(); resource.cloneRequestId = requestId; resource.providerVoiceId = `Agent${crypto.randomUUID().replaceAll('-', '')}` }
         const claimed = await update(connection, resource, ({ clone: 'cloning', activate: 'activating', synthesize: 'active', delete: 'deleting' })[action])
         const job = { stage: 'dispatch-ready', resourceId: id, previousStatus: resource.status, bindingHash, ...(credentialId ? { credentialId } : {}) }
         await connection.query('INSERT INTO supply_voice_jobs(book,id,resource_id,organization_id,subject_hash,action,state,fingerprint,updated_at,payload) VALUES (?,?,?,?,?,?,?,?,?,?)',
@@ -185,14 +186,20 @@ export function supplyVoiceRepository({ pool, book, directory, inspectAudio = in
       const [[row]] = await pool.query('SELECT * FROM supply_voice_jobs WHERE book=? AND id=? AND organization_id=? AND subject_hash=?', [book, requestId, scope.organizationId, scope.subjectHash])
       if (!row) throw failure('VOICE_JOB_NOT_FOUND', '原主体音色操作不存在', 404)
       await find(pool, scope, row.resource_id)
-      return { ...parse(row.payload), requestId, action: row.action, state: row.state, resourceId: row.resource_id }
+      return { ...parse(row.payload), requestId, action: row.action, state: row.state, resourceId: row.resource_id, updatedAt: Number(row.updated_at) }
     },
     async checkpoint(input, id, requestId, patch) {
       const scope = scopeOf(input); identifier(requestId)
       const stages = ['dispatch-ready', 'file-uploaded', 'submitted', 'result-received', 'cleanup-pending', 'clean']
-      if (!patch || Object.keys(patch).some(key => !['stage', 'upstreamFileId', 'cleanupPending'].includes(key))
+      if (!patch || Object.keys(patch).some(key => !['stage', 'upstreamFileId', 'cleanupPending', 'previewSource', 'uploadName'].includes(key))
         || (patch.stage !== undefined && !stages.includes(patch.stage)) || (patch.upstreamFileId !== undefined && (typeof patch.upstreamFileId !== 'string' || !/^\d{1,20}$/.test(patch.upstreamFileId)))
         || (patch.cleanupPending !== undefined && typeof patch.cleanupPending !== 'boolean')) throw failure('VOICE_CHECKPOINT_INVALID', '上游文件或阶段标记无效')
+      if (patch.uploadName !== undefined && (typeof patch.uploadName !== 'string' || !/^[A-Za-z0-9_-]{1,80}\.(?:wav|mp3|m4a)$/.test(patch.uploadName))) throw failure('VOICE_CHECKPOINT_INVALID', '上游匿名文件名无效')
+      if (patch.previewSource !== undefined) {
+        let url
+        try { url = new URL(patch.previewSource) } catch { throw failure('VOICE_CHECKPOINT_INVALID', '试听来源无效') }
+        if (typeof patch.previewSource !== 'string' || patch.previewSource.length > 8192 || url.protocol !== 'https:' || url.username || url.password || url.hash || (url.port && url.port !== '443')) throw failure('VOICE_CHECKPOINT_INVALID', '试听来源无效')
+      }
       return transaction(async connection => {
         await find(connection, scope, id, true)
         const [[row]] = await connection.query('SELECT * FROM supply_voice_jobs WHERE book=? AND id=? AND resource_id=? AND organization_id=? AND subject_hash=? FOR UPDATE', [book, requestId, id, scope.organizationId, scope.subjectHash])
@@ -201,6 +208,8 @@ export function supplyVoiceRepository({ pool, book, directory, inspectAudio = in
         if (row.state !== 'done' && ((patch.stage !== undefined && stages.indexOf(patch.stage) >= stages.indexOf('cleanup-pending')) || patch.cleanupPending === false)) throw failure('VOICE_CHECKPOINT_INVALID', '结果未知时不能提前清理供应商文件', 409)
         if (patch.upstreamFileId && !previous.upstreamFileId && patch.cleanupPending !== true) throw failure('VOICE_CHECKPOINT_INVALID', '首次登记供应商文件必须保留清理标记', 409)
         if ((patch.stage !== undefined && stages.indexOf(patch.stage) < stages.indexOf(previous.stage))
+          || (patch.previewSource !== undefined && previous.previewSource && patch.previewSource !== previous.previewSource)
+          || (patch.uploadName !== undefined && previous.uploadName && patch.uploadName !== previous.uploadName)
           || (patch.upstreamFileId !== undefined && ((previous.upstreamFileId && patch.upstreamFileId !== previous.upstreamFileId) || (row.state === 'done' && !previous.upstreamFileId)))) throw failure('VOICE_CHECKPOINT_IMMUTABLE', '原上游文件和已受理阶段不能替换或倒退', 409)
         const next = { ...previous, ...patch }
         await connection.query('UPDATE supply_voice_jobs SET updated_at=?,payload=? WHERE book=? AND id=?', [now(), JSON.stringify(next), book, requestId])

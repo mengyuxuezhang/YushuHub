@@ -25,6 +25,8 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
     const operation = state.requests[requestId]
     if (!operation || operation.snapshot.model.source !== 'custom') throw failure('NOT_FOUND', '自接任务不存在', 404)
     if (operation.job && ['provider', 'taskId', 'configHash'].some(key => operation.job[key] !== job[key])) throw failure('ASYNC_BINDING_CHANGED', '任务绑定不能替换', 409)
+    if (job?.provider === 'minimax-private' && (job.taskId !== requestId || !job.resourceId || !['clone', 'activate', 'synthesize'].includes(job.action)
+      || (operation.job && ['resourceId', 'action'].some(key => operation.job[key] !== job[key])))) throw failure('ASYNC_BINDING_CHANGED', '私有音色任务归属不能替换', 409)
     if (operation.state !== 'settled') { operation.job = structuredClone(job); operation.state = 'pending'; operation.updatedAt = now() }
   })
   async function owned(tenant, userId, requestId) {
@@ -151,12 +153,12 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       })
     },
     async balance(tenant) {
-      const state = store.history ? await store.history(tenant.id, tenant.level === 1) : await store.read(), operations = Object.values(state.requests).filter(op => tenant.level === 1 || op.organizationId === tenant.id)
+      const state = store.history ? await store.history(tenant.id, tenant.level === 1, { ownRequests: true }) : await store.read(), operations = Object.values(state.requests).filter(op => op.organizationId === tenant.id)
       const totals = store.commerceTotals ? await store.commerceTotals(tenant.id, tenant.level === 1) : null
       if (totals && tenant.level !== 1) { delete totals.upstreamAmount; delete totals.firstMargin }
       return { wallet: state.wallets[tenant.id] || { balance: '0.000000', reserved: '0.000000' },
         totals,
-        entries: state.entries.filter(e => tenant.level === 1 || e.organizationId === tenant.id).slice(-200).reverse(),
+        entries: state.entries.filter(e => e.organizationId === tenant.id || (tenant.level === 1 && e.kind !== 'terminal_refund')).slice(-200).reverse(),
         usage: operations.slice(-100).map(operation => ({ requestId: operation.requestId, state: operation.state,
           points: operation.points || null, canRefundPoints: operation.organizationId === tenant.id && operation.state === 'settled' && Boolean(operation.points) && micros(operation.points) > 0n
             && !(state.refundedRequests || []).includes(operation.requestId) && !state.entries.some(entry => entry.reverses === `terminal:${digest(operation.requestId)}`),
@@ -176,7 +178,8 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       const state = await configuration(), snapshot = await selected(state, tenant, modelId)
       if (snapshot.model.source === 'custom' && !snapshot.model.supplierCost) throw failure('SUPPLIER_COST_REQUIRED', '自接模型须单独配置人民币供应商成本，不能把基础售价当作成本')
       // Trusted model adapters calculate bounds; client estimatedUsage is ignored.
-      const prepared = await snapshot.model.prepare(request), upperUsage = prepared.upperUsage
+      const subjectContext = { requestId, organizationId: tenant.id, rootId, subjectHash: digest(JSON.stringify([tenant.id, userId])) }
+      const prepared = await snapshot.model.prepare(request, subjectContext), upperUsage = prepared.upperUsage
       if (snapshot.model.supplierCost) quoteSupply(snapshot.model.supplierCost, upperUsage)
       if (snapshot.model.taskType === 'speech_synthesis') snapshot.speechVoiceId = prepared.request.voiceId
       if (prepared.request.stream === true && typeof onChunk !== 'function') throw failure('STREAM_UNAVAILABLE', '实时流式调用需使用流式传输入口')
@@ -210,7 +213,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       })
       if (!reserved.created) return reserved.operation
       await emitChunk(onAccepted, { requestId })
-      try { return await complete(requestId, await invoke(tenant, snapshot.model, { requestId, request: prepared.request }, { onChunk, subjectHash: digest(JSON.stringify([tenant.id, userId])), recordJob: job => recordJob(requestId, job) })) }
+      try { return await complete(requestId, await invoke(tenant, snapshot.model, { requestId, request: prepared.request }, { onChunk, ...subjectContext, recordJob: job => recordJob(requestId, job) })) }
       catch (error) {
         if (error.noCharge === true) return complete(requestId, { state: 'done', usage: [], result: { error: 'REQUEST_NOT_ACCEPTED' } })
         return transact({ requestId }, current => {

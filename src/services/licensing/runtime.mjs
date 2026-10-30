@@ -34,6 +34,6 @@ export function serviceApp() {
 export function serviceErrors(app) {
   app.use((error, _req, res, _next) => {
     const status = Number(error.statusCode || error.status || 500)
-    res.status(status >= 400 && status <= 599 ? status : 500).json({ success: false, code: error.code || 'SERVICE_ERROR', error: status < 500 ? error.message : '服务暂不可用，请联系管理员' })
+    res.status(status >= 400 && status <= 599 ? status : 500).json({ success: false, code: error.code || 'SERVICE_ERROR', error: status < 500 ? error.message : '服务暂不可用，请联系管理员', ...(error.noCharge === true ? { noCharge: true } : {}) })
   })
 }

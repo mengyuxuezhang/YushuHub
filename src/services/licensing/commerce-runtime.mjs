@@ -63,7 +63,7 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     const payload = await response.json()
     if (!response.ok || !payload.success) {
       const error = failure(payload.code || 'GATEWAY_ERROR', payload.error || '官方供货服务不可用', response.status)
-      if (path === '/requests' && ([400, 401, 402, 403].includes(response.status) || payload.code === 'PRICE_CHANGED')) error.noCharge = true
+      if (path === '/requests' && (payload.noCharge === true || [400, 401, 402, 403].includes(response.status) || payload.code === 'PRICE_CHANGED')) error.noCharge = true
       throw error
     }
     return payload.data
@@ -88,11 +88,11 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     const models = [...official.map(model => ({ ...model, source: 'official' })), ...own]
     if (new Set(models.map(model => model.id)).size !== models.length || new Set(models.map(model => model.clientId || model.id)).size !== models.length) throw failure('MODEL_ID_CONFLICT', '官方/自接模型的内部ID或客户端别名冲突，须显式指定唯一标识', 409)
     return models.map(model => ({ ...model,
-      prepare: async request => {
+      prepare: async (request, context) => {
         const adapter = adapters[model.adapter]
         if (!adapter) throw failure('ADAPTER_UNAVAILABLE', '该模型尚未接入供货计费上界', 503)
         const execution = model.source === 'custom' ? await customExecution(availableDefinitions.find(config => config.id === model.id), root, { credentials: Boolean(model.providerModelId) || model.adapter === 'minimax.speech_async' }) : { ...model, model: model.id }
-        const prepared = await adapter.prepare(execution, request)
+        const prepared = await adapter.prepare(execution, request, context)
         return { upperUsage: prepared.upperUsage, request }
       },
     }))

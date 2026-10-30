@@ -997,4 +997,13 @@ test('gateway subjects are signed, separate peer results and preserve legacy rep
   const recovery = (await center.recoveryToken(first.credential, 'first', pending.requestId)).token
   assert.equal((await gateway.recover(recovery, pending.requestId, true)).state, 'settled')
   assert.equal(contexts.at(-1).subjectHash, subjectA)
+  const bill = await gateway.balance(tokens.legacy)
+  assert.equal(bill.operations.length, 3)
+  for (const secret of ['private result', 'original-job', subjectA, 'fingerprint']) assert.equal(JSON.stringify(bill).includes(secret), false)
+  assert.equal((await gateway.status(tokens.a, input.requestId)).result.text, 'private result')
+  const childIssued = await center.issue({ id: 'billing-child', name: '虚构二级', packageId: 'second', parentId: 'first', expiresAt: '2027-01-01T00:00:00Z', modelIds: ['chat'] }, 'operator')
+  // Child service credentials must never expose the root's official wallet.
+  await center.activate({ code: childIssued.code, instanceId: 'instance-one', domain: 'https://agent.example.com', requestId: 'billing-child-activation' }, first.credential)
+  const childToken = (await center.serviceToken(first.credential, 'official-models', childIssued.grant.id)).token
+  await assert.rejects(gateway.balance(childToken), { code: 'ROOT_REQUIRED' })
 })

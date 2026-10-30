@@ -110,6 +110,8 @@ export function createSupplyLedger({ store, now = Date.now }) {
         const operation = state.operations[identifier(requestId)]
         if (operation?.state === 'settled') return operation
         if (!operation || !['running', 'pending', 'unknown'].includes(operation.state)) throw failure('INVALID_TRANSITION', '任务状态不允许更新', 409)
+        if ((job?.provider === 'minimax-private' || operation.job?.provider === 'minimax-private') && (job?.provider !== 'minimax-private' || job.taskId !== requestId || !job.resourceId || !['clone', 'activate', 'synthesize'].includes(job.action)
+          || (operation.job && ['provider', 'taskId', 'configHash', 'resourceId', 'action'].some(key => operation.job[key] !== job[key])))) throw failure('ASYNC_JOB_CONFLICT', '私有音色原任务凭证不能替换', 409)
         if (operation.job?.provider === 'minimax-async') for (const key of ['provider', 'taskId', 'configHash', 'characters', 'fileId', 'terminalStatus']) {
           if (operation.job[key] != null && job?.[key] !== operation.job[key]) throw failure('ASYNC_JOB_CONFLICT', '原异步任务凭证不能替换', 409)
         }

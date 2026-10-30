@@ -12,6 +12,8 @@ const targets = [
   'src/repositories/licensing-state.mjs',
   'src/repositories/accounting.mjs',
   'src/repositories/supply-voices.mjs',
+  'src/repositories/supply-voice-artifacts.mjs',
+  'src/services/licensing/private-voice-adapter.mjs',
   'src/repositories/accounting-schema.mjs',
   'src/repositories/licensing-file-state.mjs',
   'src/routes/license-center.mjs',

@@ -76,3 +76,33 @@ test('registry uses task and protocol, unsupported adapter fails closed', () => 
   assert.ok(registry.resolve({ protocolAdapter: 'minimax.t2a', taskType: 'speech_synthesis', status: 'enabled' }))
   assert.throws(() => registry.resolve({ protocolAdapter: 'unknown', taskType: 'speech_synthesis', status: 'enabled' }))
 })
+test('metered cloning uses actual provider preview characters and missing usage remains unknown without retry', async () => {
+  let sent, calls = 0, missing = false
+  const adapter = new MiniMaxAdapter({ fetchImpl: async (_url, request) => {
+    calls++; sent = JSON.parse(request.body)
+    return response({ input_sensitive: false, demo_audio: 'https://minimax-algeng-chat-tts.oss-accelerate.aliyuncs.com/preview.mp3',
+      ...(missing ? {} : { extra_info: { usage_characters: 4, audio_length: 1200 } }) })
+  } })
+  const input = { fileId: '9999999999999999999', voiceId: 'FixtureVoice001', text: '你好', model: 'configured-model', requireUsage: true }
+  const cloned = await adapter.clone(context, input)
+  assert.equal(cloned.characters, 4); assert.equal(cloned.durationSec, 1.2); assert.equal(sent.aigc_watermark, true)
+  missing = true
+  await assert.rejects(adapter.clone(context, input), error => error.code === 'MINIMAX_CLONE_USAGE_UNCONFIRMED' && error.outcomeUnknown === true)
+  assert.equal(calls, 2)
+  assert.equal((await adapter.clone(context, { ...input, requireUsage: false })).characters, undefined, 'legacy caller compatibility does not manufacture usage')
+})
+
+test('voice previews allow known provider buckets without credentials and reject alternate ports or redirects', async () => {
+  const requests = [], adapter = new MiniMaxAdapter({ fetchImpl: async (url, options) => { requests.push({ url: String(url), options }); return new Response(Buffer.from('fixture-mp3')) } })
+  await adapter.previewAudio('https://minimax-algeng-chat-tts.oss-accelerate.aliyuncs.com/preview.mp3')
+  assert.equal(requests[0].options.redirect, 'error'); assert.equal(requests[0].options.credentials, 'omit'); assert.equal(requests[0].options.headers, undefined)
+  for (const url of ['https://minimax-algeng-chat-tts.oss-accelerate.aliyuncs.com:8443/a', 'https://untrusted.example/a', 'https://minimax-algeng-chat-tts.oss-accelerate.aliyuncs.com/a#fragment']) await assert.rejects(adapter.previewAudio(url), { code: 'MINIMAX_PREVIEW_HOST_UNSUPPORTED' })
+  assert.equal(requests.length, 1)
+})
+test('voice upload supports a recorded opaque filename but never accepts caller paths', async () => {
+  let uploaded
+  const adapter = new MiniMaxAdapter({ fetchImpl: async (_url, request) => { uploaded = request.body.get('file').name; return response({ file: { file_id: '123456789' } }) } })
+  await adapter.upload(context, Buffer.from('fictional audio'), 'wav', { fileName: 'voice-fixture-123.wav' })
+  assert.equal(uploaded, 'voice-fixture-123.wav')
+  await assert.rejects(adapter.upload(context, Buffer.from('fictional audio'), 'wav', { fileName: '../private.wav' }), { code: 'VOICE_AUDIO_INVALID' })
+})

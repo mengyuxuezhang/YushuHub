@@ -38,6 +38,8 @@ import { legacySnapshotFixture } from './fixtures/legacy-snapshot.mjs'
 import { verifyLegacyImportReceipt } from './local-legacy-binding.mjs'
 import { publicSupplyCatalogRow } from '../../routes/agent-supply.mjs'
 import { supplyVoiceRepository } from '../../repositories/supply-voices.mjs'
+import { supplyVoiceArtifacts } from '../../repositories/supply-voice-artifacts.mjs'
+import { privateVoiceAdapter } from './private-voice-adapter.mjs'
 
 const configured = Boolean(process.env.LICENSING_TEST_DB)
 
@@ -1156,6 +1158,9 @@ test('real MySQL terminal refunds preserve upstream balances, serialize duplicat
     const [[count]] = await pool.query("SELECT COUNT(*) AS n FROM ai_credit_ledger WHERE change_type='supply_refund' AND request_id IN ('refund-root-request','refund-child-request')")
     assert.equal(Number(count.n), 2)
     const rootReport = await service.balance(root), childReport = await service.balance(child)
+    assert.deepEqual(rootReport.usage.map(operation => operation.requestId), ['refund-root-request'])
+    assert.equal(rootReport.entries.some(entry => entry.kind === 'terminal_refund' && entry.organizationId === child.id), false)
+    assert.equal(JSON.stringify(rootReport).includes('refund-child-user'), false)
     assert.equal(rootReport.totals.terminalRefunds, '4.000000'); assert.equal(rootReport.totals.netSalesAmount, '0.000000'); assert.equal(rootReport.totals.netMargin, '-0.500000')
     assert.equal(childReport.totals.refundedPoints, '2.000000'); assert.equal(childReport.totals.netMargin, '-1.500000'); assert.equal(childReport.usage[0].canRefundPoints, false)
     auditAccounting(state, 'commerce')
@@ -1181,7 +1186,10 @@ test('real MySQL HTTP gateway persists signed terminal subjects and rejects peer
     await migrateAccounting({ pool, book: 'subject-ledger', kind: 'ledger', sourceId: 'subject-empty' })
     const store = mysqlAccountingStore(pool, 'subject-ledger', 'ledger'), ledger = createSupplyLedger({ store }); await ledger.open('subject-root', 'subject-root'); await ledger.credit('subject-root', '10', 'subject-credit', 'fixture', 'fictional-subject-receipt')
     const contexts = [], usage = [{ meter: 'request', phase: 'request', quantity: '1' }], price = { version: 1, components: [{ meter: 'request', phase: 'request', amount: '1', unitSize: '1' }] }
-    const models = [{ id: 'subject-model', adapter: 'mock', status: 'enabled', version: 1, price }], adapters = { mock: { prepare: async (_model, input) => ({ request: input, upperUsage: usage }), submit: async (_model, _input, context) => { contexts.push(context); return { state: 'done', usage, result: { text: 'fictional private result' } } } } }
+    const models = [{ id: 'subject-model', adapter: 'mock', status: 'enabled', version: 1, price }], adapters = { mock: { prepare: async (_model, input) => {
+      if (input.rejectResource) throw Object.assign(new Error('fictional resource not ready'), { code: 'VOICE_NOT_READY', statusCode: 409 })
+      return { request: input, upperUsage: usage }
+    }, submit: async (_model, _input, context) => { contexts.push(context); return { state: 'done', usage, result: { text: 'fictional private result' } } } } }
     const gateway = createModelGateway({ ledger, models, adapters, authorize: (token, audience) => center.introspect(token, audience) })
     const gatewayApp = serviceApp(); registerModelGatewayRoutes(gatewayApp, { gateway, ledger, operators: { authenticate: async () => 'fixture' } }); serviceErrors(gatewayApp)
     gatewayServer = await new Promise(resolve => { const server = gatewayApp.listen(0, '127.0.0.1', () => resolve(server)) })
@@ -1206,7 +1214,9 @@ test('real MySQL HTTP gateway persists signed terminal subjects and rejects peer
       catalog: async () => [{ ...models[0], source: 'official', prepare: async input => ({ request: input, upperUsage: usage }) }],
       invoke: async (_tenant, model, input, options) => {
         const minted = await request(centerUrl + '/service-token', { audience: 'official-models', organizationId: 'subject-root', subjectHash: options.subjectHash }, activated.data.credential)
-        const submitted = await request(url + '/requests', { ...input, modelId: model.id }, minted.data.token); assert.equal(submitted.status, 200); return submitted.data
+        const submitted = await request(url + '/requests', { ...input, modelId: model.id }, minted.data.token)
+        if (!submitted.success) { assert.equal(submitted.status, 409); throw Object.assign(new Error(submitted.code), { noCharge: submitted.noCharge === true }) }
+        return submitted.data
       } })
     const tenant = { id: 'subject-root', level: 1 }
     await commerce.configure(tenant, { modelId: 'subject-model', enabled: true, expectedVersion: 0, pointsPerCny: '1', saleMarkup: [], supplyMarkup: [] }, 'fixture')
@@ -1216,6 +1226,11 @@ test('real MySQL HTTP gateway persists signed terminal subjects and rejects peer
     assert.equal((await store.readRequest('subject-commerce-call')).snapshot.subjectHash, expectedSubject)
     assert.equal(String((await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='subject-local-user'"))[0][0].credit_balance), '9.000000')
     assert.equal((await ledger.view('subject-root')).balance, '6.000000'); assert.equal(contexts.length, 4)
+    const unaccepted = await commerce.submit(tenant, 'subject-local-user', { requestId: 'subject-preflight-refused', modelId: 'subject-model', request: { rejectResource: true } })
+    assert.equal(unaccepted.points, '0.000000'); assert.equal(contexts.length, 4)
+    assert.equal(String((await pool.query("SELECT credit_balance FROM ai_end_users WHERE id='subject-local-user'"))[0][0].credit_balance), '9.000000')
+    const spoofedFree = await commerce.submit(tenant, 'subject-local-user', { requestId: 'subject-spoof-free', modelId: 'subject-model', request: { noCharge: true } })
+    assert.equal(spoofedFree.points, '1.000000'); assert.equal((await ledger.view('subject-root')).balance, '5.000000')
   } finally {
     for (const server of [centerServer, gatewayServer]) if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
     await pool.end(); await centerPool.end()
@@ -1232,6 +1247,7 @@ test('real MySQL private voice resource foundation isolates subjects, enforces c
   const make = () => supplyVoiceRepository({ pool, book: 'voice-foundation', directory: dir, now: () => clock, inspectAudio: async (bytes, format) => { assert(Buffer.isBuffer(bytes)); assert.equal(format, 'wav'); inspections++; return { duration: 10 } } })
   try {
     let voices = make(); await voices.migrate(); await voices.migrate(); await voices.assertReady()
+    const artifacts = supplyVoiceArtifacts({ pool, voices, book: 'voice-foundation', directory: dir, retentionMs: 86_400_000, now: () => clock })
     const [moneyBefore] = await pool.query('SELECT SUM(balance) AS balance,SUM(reserved) AS reserved FROM accounting_wallets')
     const upload = { requestId: 'voice-upload', format: 'wav', bytes: Buffer.from('fictional 10 second wav recording') }
     const resource = await voices.upload(scope, upload), repeated = await voices.upload(scope, upload)
@@ -1255,11 +1271,22 @@ test('real MySQL private voice resource foundation isolates subjects, enforces c
     await assert.rejects(voices.checkpoint(scope, resource.id, clone.requestId, { cleanupPending: false }), { code: 'VOICE_CHECKPOINT_INVALID' })
     await assert.rejects(voices.checkpoint(scope, resource.id, clone.requestId, { upstreamFileId: '9999999999999999998' }), { code: 'VOICE_CHECKPOINT_IMMUTABLE' })
     await assert.rejects(voices.checkpoint(scope, resource.id, clone.requestId, { stage: 'dispatch-ready' }), { code: 'VOICE_CHECKPOINT_IMMUTABLE' })
+    const previewBytes = Buffer.from('fictional preview mp3'), previewArtifact = await artifacts.save(scope, resource.id, clone.requestId, 'preview', previewBytes)
+    await assert.rejects(artifacts.read(scope, previewArtifact.artifactId), { code: 'VOICE_ARTIFACT_PENDING' })
+    await assert.rejects(artifacts.read(peer, previewArtifact.artifactId), { code: 'VOICE_ARTIFACT_NOT_FOUND' })
     const done = { state: 'done', usage: [{ meter: 'billable_characters', phase: 'preview', quantity: '4' }], result: { voiceId: resource.id } }
     await voices.finish(scope, resource.id, clone.requestId, done)
     voices = make(); assert.deepEqual((await voices.job(scope, clone.requestId)).outcome, done)
     assert.equal((await voices.job(scope, clone.requestId)).upstreamFileId, '9999999999999999999')
     await voices.checkpoint(scope, resource.id, clone.requestId, { stage: 'clean', cleanupPending: false })
+    assert((await artifacts.read(scope, previewArtifact.artifactId)).bytes.equals(previewBytes))
+    assert.deepEqual(await artifacts.save(scope, resource.id, clone.requestId, 'preview', previewBytes), previewArtifact)
+    const previewFile = path.join(dir, `${hash('voice-foundation').slice(0, 12)}-${previewArtifact.artifactId.slice(3)}.mp3`)
+    await fs.writeFile(previewFile, Buffer.from('corrupt preview mp3'))
+    await assert.rejects(artifacts.read(scope, previewArtifact.artifactId), { code: 'VOICE_ARTIFACT_INVALID' })
+    await artifacts.save(scope, resource.id, clone.requestId, 'preview', previewBytes)
+    assert((await artifacts.read(scope, previewArtifact.artifactId)).bytes.equals(previewBytes))
+    await assert.rejects(artifacts.save(scope, resource.id, clone.requestId, 'preview', Buffer.from('different audio')), { code: 'VOICE_ARTIFACT_CONFLICT' })
     await assert.rejects(voices.job(peer, clone.requestId), { code: 'VOICE_JOB_NOT_FOUND' })
     assert.equal((await voices.list(scope))[0].name, '虚构私有音色'); assert.deepEqual(await voices.list(peer), [])
     await voices.releaseSource(scope, resource.id); await assert.rejects(voices.source(scope, resource.id), { code: 'VOICE_SOURCE_UNAVAILABLE' })
@@ -1289,7 +1316,15 @@ test('real MySQL private voice resource foundation isolates subjects, enforces c
     await voices.finish(scope, resource.id, 'synthesis-a', { state: 'unknown' })
     await assert.rejects(voices.claim(scope, resource.id, { ...synth, requestId: 'synthesis-c' }), { code: 'VOICE_BUSY' })
     for (const label of ['a', 'b']) await voices.finish(scope, resource.id, `synthesis-${label}`, { state: 'done', usage: [{ meter: 'billable_characters', quantity: '2' }], result: {} })
+    const speechBytes = Buffer.from('fictional speech mp3'), speechArtifact = await artifacts.save(scope, resource.id, 'synthesis-b', 'speech', speechBytes)
+    assert((await artifacts.read(scope, speechArtifact.artifactId)).bytes.equals(speechBytes))
+    await assert.rejects(artifacts.purgeResource(scope, resource.id), { code: 'VOICE_BUSY' })
+    clock += 23 * 3_600_000
+    await assert.rejects(artifacts.read(scope, previewArtifact.artifactId), { code: 'VOICE_ARTIFACT_EXPIRED' })
+    assert.equal((await artifacts.pruneExpired()).cleaned, 1)
     await voices.claim(scope, resource.id, removal); await voices.finish(scope, resource.id, removal.requestId, { state: 'done', usage: [], result: {} })
+    await assert.rejects(artifacts.read(scope, speechArtifact.artifactId), { code: 'VOICE_ARTIFACT_EXPIRED' })
+    assert.equal((await artifacts.purgeResource(scope, resource.id)).cleaned, 1)
     assert.deepEqual(await voices.list(scope), [])
     const quota = { ...scope, organizationId: 'quota-child', subjectHash: hash('quota-user') }
     const uploaded = await Promise.all(Array.from({ length: 20 }, (_, index) => voices.upload({ ...quota, modelId: index % 2 ? 'private-model' : 'second-private-model' }, { ...upload, requestId: `quota-upload-${index}` })))
@@ -1304,4 +1339,99 @@ test('real MySQL private voice resource foundation isolates subjects, enforces c
     assert.equal((await voices.pruneSafeSources()).cleaned, 1)
     const [moneyAfter] = await pool.query('SELECT SUM(balance) AS balance,SUM(reserved) AS reserved FROM accounting_wallets'); assert.deepEqual(moneyAfter, moneyBefore)
   } finally { await pool.end(); assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir())); await fs.rm(dir, { recursive: true, force: true }) }
+})
+test('real MySQL private voice core meters three ledgers, serializes activation and retains unknown supplier usage without resubmission', { skip: !configured }, async () => {
+  const { gatewayDatabase, licenseDatabase = 'yushu_license_test', ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(licenseDatabase)) throw new Error('Disposable databases required')
+  const suffix = crypto.randomBytes(5).toString('hex'), names = ['official', 'local'].map(kind => `yushu_private_${kind}_${suffix}`), created = []
+  const admin = await mysql.createConnection(config), centerPool = mysql.createPool({ ...config, database: licenseDatabase }), dir = await fs.mkdtemp(path.join(os.tmpdir(), 'private-voice-core-'))
+  let officialPool, localPool
+  try {
+    for (const name of names) { await admin.query('CREATE DATABASE ??', [name]); created.push(name) }
+    officialPool = mysql.createPool({ ...config, database: names[0], connectionLimit: 12 }); localPool = mysql.createPool({ ...config, database: names[1], connectionLimit: 12 })
+    await localPool.query('CREATE TABLE ai_end_users(id VARCHAR(64) PRIMARY KEY,status VARCHAR(16),credit_balance DECIMAL(18,6),organization_id VARCHAR(64))')
+    await localPool.query('CREATE TABLE ai_credit_ledger(id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),model_name VARCHAR(120),note VARCHAR(255),request_id VARCHAR(80))')
+    await localPool.query("INSERT INTO ai_end_users VALUES ('private-core-user','enabled',100,'private-core-local-child')")
+    await migrateAccounting({ pool: officialPool, book: 'official-v2', kind: 'ledger', sourceId: 'private-empty-official' })
+    await migrateAccounting({ pool: localPool, book: 'commerce-v2', kind: 'commerce', sourceId: 'private-empty-local' })
+    const centerStore = mysqlStateStore(centerPool, 'private-core-center', emptyCenterState()); await centerStore.migrate()
+    const keys = crypto.generateKeyPairSync('ed25519'), center = createLicenseCenter({ store: centerStore, privateKey: keys.privateKey, publicKeys: { test: keys.publicKey }, keyId: 'test', credentialKey: crypto.randomBytes(32) })
+    const rootCode = await center.issue({ id: 'private-core-root', name: '虚构音色一级', packageId: 'first-fixed', domain: 'https://private-core.example.com', modelIds: ['private-core-model'], expiresAt: null }, 'fixture')
+    const rootActivation = await center.activate({ code: rootCode.code, instanceId: 'private-core-instance', domain: 'https://private-core.example.com', requestId: 'private-root-activate' })
+    const childCode = await center.issue({ id: 'private-core-child', name: '虚构音色二级', packageId: 'second', parentId: 'private-core-root', expiresAt: null }, 'fixture')
+    await center.activate({ code: childCode.code, instanceId: 'private-core-instance', domain: 'https://private-core.example.com', requestId: 'private-child-activate' }, rootActivation.credential)
+    const root = { id: 'private-core-root', level: 1 }, child = { id: 'private-core-child', level: 2 }, hash = value => crypto.createHash('sha256').update(value).digest('hex')
+    const identity = { rootId: root.id, organizationId: child.id, subjectHash: hash(JSON.stringify([child.id, 'private-core-user'])), modelId: 'private-core-model' }
+    const voices = supplyVoiceRepository({ pool: officialPool, book: 'official-v2', directory: dir, inspectAudio: async () => ({ duration: 10 }) }); await voices.migrate()
+    const artifacts = supplyVoiceArtifacts({ pool: officialPool, voices, book: 'official-v2', directory: dir })
+    const counts = { uploads: 0, clones: 0, syntheses: 0, deletes: 0 }, voiceIds = new Set(), fileIds = new Set()
+    let missingUsage = false, loseDeleteReply = true
+    const response = value => Response.json({ base_resp: { status_code: 0 }, ...value })
+    const fetcher = async (url, options = {}) => {
+      const pathname = new URL(url).pathname
+      if (pathname.startsWith('/preview/')) { assert.equal(options.headers, undefined); return new Response(Buffer.from('fictional private preview mp3')) }
+      assert.equal(options.headers.authorization, 'Bearer fictional-private-key')
+      if (pathname === '/v1/files/upload') { counts.uploads++; const id = String(9223372036854775700n + BigInt(counts.uploads)); fileIds.add(id); return new Response(`{"base_resp":{"status_code":0},"file":{"file_id":${id}}}`) }
+      if (pathname === '/v1/files/delete') { fileIds.delete(options.body.get('file_id')); return response({}) }
+      const body = JSON.parse(options.body)
+      if (pathname === '/v1/voice_clone') { counts.clones++; voiceIds.add(body.voice_id); return response({ input_sensitive: false, demo_audio: `https://minimax-algeng-chat-tts.oss-accelerate.aliyuncs.com/preview/${body.voice_id}.mp3`, ...(missingUsage ? {} : { extra_info: { usage_characters: 4, audio_length: 1000 } }) }) }
+      if (pathname === '/v1/t2a_v2') { counts.syntheses++; assert(voiceIds.has(body.voice_setting.voice_id)); return response({ data: { audio: '494433ff', status: 2 }, extra_info: { usage_characters: body.text === '你好' ? 4 : [...body.text].length, audio_length: 1000 } }) }
+      if (pathname === '/v1/get_voice') return response({ voice_cloning: [...voiceIds].map(voice_id => ({ voice_id })) })
+      if (pathname === '/v1/delete_voice') { counts.deletes++; voiceIds.delete(body.voice_id); if (loseDeleteReply) { loseDeleteReply = false; throw new Error('simulated delete reply loss') } return response({}) }
+      throw new Error('Unexpected simulated private voice endpoint')
+    }
+    const price = { version: 1, currency: 'CNY', components: [{ meter: 'request', phase: 'request', amount: '0', unitSize: '1' },
+      ...['preview', 'activation', 'usage'].map(phase => ({ meter: 'billable_characters', phase, amount: '1', unitSize: '1' })), { meter: 'resource_activation', phase: 'activation', amount: '5', unitSize: '1' }] }
+    const model = { id: identity.modelId, version: 1, status: 'enabled', adapter: 'minimax.private_voice', taskType: 'speech_synthesis', model: 'configured-speech-model', baseUrl: 'https://private-vendor.example.com', apiKey: 'fictional-private-key', price, allowedVoiceIds: [] }
+    const core = privateVoiceAdapter({ voices, artifacts, book: 'official-v2', speech: httpGatewayAdapters(fetcher)['minimax.speech'], fetcher })
+    const officialStore = mysqlAccountingStore(officialPool, 'official-v2', 'ledger'), ledger = createSupplyLedger({ store: officialStore }); await ledger.open(root.id, root.id); await ledger.credit(root.id, '100', 'private-official-credit', 'fixture', 'fictional-private-official-receipt')
+    const gateway = createModelGateway({ ledger, authorize: (token, audience) => center.introspect(token, audience), models: [model], adapters: { 'minimax.private_voice': core } })
+    const localStore = mysqlAccountingStore(localPool, 'commerce-v2', 'commerce'), localModel = { id: model.id, version: 1, source: 'official', taskType: model.taskType, adapter: model.adapter, price,
+      prepare: (request, context) => core.prepare({ id: model.id, source: 'official' }, request, context) }
+    const service = createAgentCommerce({ store: localStore, rootId: root.id, userBank: sqlUserBank(), catalog: async () => [localModel],
+      invoke: async (tenant, _model, input, options) => gateway.submit((await center.serviceToken(rootActivation.credential, 'official-models', tenant.id, options.subjectHash)).token, { ...input, modelId: model.id }),
+      lookup: async (tenant, operation) => gateway.recover((await center.recoveryToken(rootActivation.credential, tenant.id, operation.requestId)).token, operation.requestId, true) })
+    const markup = price.components.filter(item => item.meter !== 'request').map(({ meter, phase }) => ({ meter, phase, amount: '1' }))
+    await service.configure(root, { modelId: model.id, expectedVersion: 0, enabled: true, pointsPerCny: '1', saleMarkup: markup, supplyMarkup: markup }, 'root-owner')
+    await service.configure(child, { modelId: model.id, expectedVersion: 0, enabled: true, pointsPerCny: '1', saleMarkup: markup }, 'child-owner')
+    await service.credit(root, child.id, '100', 'private-child-credit', 'fictional-private-child-receipt', 'root-owner')
+    const upload = { requestId: 'private-clone', format: 'wav', bytes: Buffer.from('fictional recording for mocked provider only') }, resource = await voices.upload(identity, upload)
+    const cloneRequest = { action: 'clone', resourceId: resource.id, text: '你好', name: '虚构供货私有音色', consent: true }
+    const peerResource = await voices.upload({ ...identity, subjectHash: hash('another-private-user') }, { ...upload, requestId: 'private-peer-upload' })
+    const refused = await service.submit(child, 'private-core-user', { requestId: 'private-forged-resource', modelId: model.id, request: { ...cloneRequest, resourceId: peerResource.id } })
+    assert.equal(refused.points, '0.000000'); assert.equal(counts.clones, 0)
+    const cloned = await service.submit(child, 'private-core-user', { requestId: 'private-clone', modelId: model.id, request: cloneRequest })
+    assert.equal(cloned.points, '12.000000'); assert.equal(cloned.result.voiceId, resource.id); assert.equal((await voices.get(identity, resource.id)).status, 'preview_ready')
+    assert.equal((await core.preview(model, resource.id, identity)).bytes.toString(), 'fictional private preview mp3')
+    assert.equal(fileIds.size, 0); assert.equal((await voices.job(identity, 'private-clone')).cleanupPending, false)
+    await service.submit(child, 'private-core-user', { requestId: 'private-clone', modelId: model.id, request: cloneRequest }); assert.equal(counts.clones, 1)
+    const activations = await Promise.all(['a', 'b'].map(label => service.submit(child, 'private-core-user', { requestId: `private-activation-${label}`, modelId: model.id, request: { action: 'activate', resourceId: resource.id } })))
+    assert.equal(activations.filter(row => row.points === '19.000000').length, 1); assert.equal(counts.syntheses, 1)
+    const spoken = await service.submit(child, 'private-core-user', { requestId: 'private-synthesis', modelId: model.id, request: { action: 'synthesize', resourceId: resource.id, text: 'abc' } })
+    assert.equal(spoken.points, '9.000000'); assert((await artifacts.read(identity, spoken.result.audioArtifactId)).bytes.equals(Buffer.from('494433ff', 'hex')))
+    assert.equal((await ledger.view(root.id)).balance, '84.000000'); assert.equal((await service.balance(child)).wallet.balance, '72.000000')
+    assert.equal(String((await localPool.query("SELECT credit_balance FROM ai_end_users WHERE id='private-core-user'"))[0][0].credit_balance), '60.000000')
+    const removed = await core.remove(model, resource.id, { ...identity, requestId: 'private-delete' }); assert.equal(removed.result.deleted, true)
+    await core.remove(model, resource.id, { ...identity, requestId: 'private-delete' }); assert.equal(counts.deletes, 1)
+    await assert.rejects(artifacts.read(identity, spoken.result.audioArtifactId), { code: 'VOICE_ARTIFACT_EXPIRED' })
+    missingUsage = true
+    const uncertainResource = await voices.upload(identity, { ...upload, requestId: 'private-unknown' }), uncertainInput = { requestId: 'private-unknown', modelId: model.id, request: { ...cloneRequest, resourceId: uncertainResource.id } }
+    assert.equal((await service.submit(child, 'private-core-user', uncertainInput)).state, 'unknown')
+    await service.submit(child, 'private-core-user', uncertainInput); await service.recover(child, 'private-core-user', uncertainInput.requestId)
+    assert.equal(counts.clones, 2); assert.equal(fileIds.size, 1)
+    assert.equal((await ledger.view(root.id)).reserved, '4.000000'); assert.equal((await service.balance(child)).wallet.reserved, '8.000000')
+    await assert.rejects(core.recover({ ...model, apiKey: 'different-account-key' }, { requestId: 'private-unknown' }, identity), { code: 'VOICE_BINDING_CHANGED' })
+    assert.equal(counts.clones, 2)
+    assert.equal(String((await localPool.query("SELECT credit_balance FROM ai_end_users WHERE id='private-core-user'"))[0][0].credit_balance), '48.000000')
+    const beforeDispatch = await voices.upload(identity, { ...upload, requestId: 'private-before-dispatch' }), originalJob = await voices.job(identity, 'private-clone')
+    await voices.claim(identity, beforeDispatch.id, { requestId: 'private-before-dispatch', action: 'clone', inputHash: hash('accepted before dispatch'), bindingHash: originalJob.bindingHash, name: '虚构崩溃恢复音色' })
+    assert.equal((await core.recover(model, { requestId: 'private-before-dispatch' }, identity)).state, 'pending')
+    const afterLease = privateVoiceAdapter({ voices, artifacts, book: 'official-v2', speech: httpGatewayAdapters(fetcher)['minimax.speech'], fetcher, now: () => Date.now() + 300_001 })
+    assert.equal((await afterLease.recover(model, { requestId: 'private-before-dispatch' }, identity)).state, 'unknown')
+    assert.equal(counts.clones, 2); auditAccounting(await officialStore.read(), 'ledger'); auditAccounting(await localStore.read(), 'commerce')
+  } finally {
+    await officialPool?.end(); await localPool?.end(); await centerPool.end()
+    for (const name of created) { assert(/^yushu_private_(official|local)_[a-f0-9]{10}$/.test(name)); await admin.query('DROP DATABASE ??', [name]) }
+    await admin.end(); assert.equal(path.dirname(path.resolve(dir)), path.resolve(os.tmpdir())); await fs.rm(dir, { recursive: true, force: true })
+  }
 })

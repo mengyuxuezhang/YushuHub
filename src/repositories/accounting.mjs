@@ -170,11 +170,11 @@ export function mysqlAccountingStore(pool, book, kind) {
     },
     // Configuration updates are rare; no unscoped monetary writes are allowed.
     transaction(work) { return store.scopeTransaction({ configuration: true }, work) },
-    async history(walletId, all = false) {
+    async history(walletId, all = false, { ownRequests = false } = {}) {
       return snapshot(async connection => {
         const where = all ? '' : ' AND wallet_id=?', params = all ? [book] : [book, walletId]
         const [entries] = await connection.query(`SELECT payload FROM accounting_entries WHERE book=?${where} ORDER BY created_at DESC,id DESC LIMIT 200`, params)
-        const [requests] = await connection.query(`SELECT payload FROM accounting_requests WHERE book=?${where} ORDER BY updated_at DESC,id DESC LIMIT 100`, params)
+        const [requests] = await connection.query(`SELECT payload FROM accounting_requests WHERE book=?${ownRequests ? ' AND wallet_id=?' : where} ORDER BY updated_at DESC,id DESC LIMIT 100`, ownRequests ? [book, walletId] : params)
         const [[count]] = await connection.query(`SELECT COUNT(*) n FROM accounting_requests WHERE book=?${where} AND state<>'settled'`, params)
         const [[account]] = await connection.query('SELECT balance,reserved,payload FROM accounting_wallets WHERE book=? AND id=?', [book, walletId])
         const state = empty(kind)
