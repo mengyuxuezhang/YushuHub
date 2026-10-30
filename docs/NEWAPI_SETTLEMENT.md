@@ -1,6 +1,6 @@
 # New API受限用量、结算事件与响应丢失恢复
 
-此协议由`okpa-new-api`的`feat/yushuhub-integration`和YushuHub的`feat/independent-license-center`共同实现。原New API接入保留；只有显式配置`settlementProtocol: "okpa-v1"`的官方模型使用新协议。当前验收为模拟文本渠道，不代表正式上线或全部模态已兼容。
+此协议由`okpa-new-api`的`feat/yushuhub-integration`和YushuHub的`feat/independent-license-center`共同实现。原New API接入保留；只有显式配置`settlementProtocol: "okpa-v1"`的官方模型使用新协议。非流式与显式启用的纯文本流式已验收，包含一次真实DeepSeek流式调用；不代表正式上线或全部模态已兼容。
 
 ## 业务边界
 
@@ -42,7 +42,7 @@ X-OKPA-Service-Key: <专用服务凭据>
 X-OKPA-Request-ID: <调用方全链路请求ID，最多80位>
 ```
 
-请求头在进入渠道前移除，不透传供应商。首版只受理非流式纯文本，不支持工具调用、图片/音频输入或额外缓存写入计费。现有New API直接客户的流式及多模态接口不因该适配改变。
+请求头在进入渠道前移除，不透传供应商。供货协议受理非流式及纯文本流式，不支持工具调用、图片/音频输入或额外缓存写入计费。供货流式必须包含`stream_options.include_usage=true`。现有New API直接客户的流式及多模态接口不因该适配改变。
 
 | 接口 | 作用 |
 | --- | --- |
@@ -55,6 +55,19 @@ X-OKPA-Request-ID: <调用方全链路请求ID，最多80位>
 已结算`usage`为非负整数`inputTokens`（不含缓存命中）、`cachedTokens`、`outputTokens`。适配器校验服务返回的协议版本、原请求ID、模型、事件ID、聚合器编号和用量范围，然后记录不可更换的事件/请求映射，按原价格快照计费。该用量来自原技术结算路径，不从价格反推，也不把本地估算或缺失用量当作供应商实际消耗。
 
 ## 故障语义
+
+### 真实增量流与断连
+
+官方模型另加`supportsStreaming: true`后，目录才声明流式能力；还必须使用`newapi.chat`及`okpa-v1`，不对未验收供应商默认开启。客户端仍调用`/api/client/model/v1/chat/completions`并设置`stream:true`。一级通过官方网关私有`POST /api/model-gateway/v1/requests/stream`接收`chunk`事件，最后接收含请求编号、状态和用量的`operation`事件；不把账务快照暴露在客户端流中。
+
+- 每个增量即时转发，客户端可在供应商结束前读到首段文本；不是等待全量结果后模拟SSE。客户端响应携带`X-Request-Id`，应沿用原请求ID查询或重试。
+- 客户端关闭连接只停止向该连接输出。服务继续在原有超时边界内读取供应商和网关结果（供应商180秒、一级到网关240秒），并完成本地积分、二级供货与官方账本结算；断线不直接退款。
+- 只有完整结束标记、无流错误、原技术结算成功且供应商给出可验证用量时，New API才发布最终回执。EOF、客户端直接断开New API、估算用量或缺少最终用量都不能伪造可结算回执。
+- 一级与网关之间丢失最终事件时，保留预占并由原请求恢复工作器查询；进程重启也沿用原价格快照，不重新发推理。上游仍在运行时，本地不能被后台查询误判为失败。
+- 成功结算后才向在线客户端发送`[DONE]`；无法确认时给出带原请求ID的待对账错误，保留可能发生费用的预占。重复已完成请求可返回保存结果，部分流不支持从断点重放，未新增显式供应商取消接口。
+- SSE按增量UTF-8解析，兼容CRLF/CR/LF；单事件最多1MiB、整流48MiB/5万事件、累计结果8MiB。慢连接输出缓冲超过1MiB时脱离该连接，继续处理账务；每15秒发送心跳。超限或不完整流进入核对流程，不能解释为免费。
+
+本阶段限定官方受控纯文本单结果。一级自接模型、工具调用、音视频流及异步任务仍需各自建立计费上界、最终用量和恢复路径后接入。上线顺序是先升级并验证New API，再升级官方与一级服务，最后对已验收模型显式开启能力，不能仅修改目录字段放行所有渠道。
 
 - 网关在网络调用前保存调用方编号；即使丢失全部响应头，仍能凭原编号查询。原响应内容无法重建时明确返回`{recovered:true,resultUnavailable:true}`，不伪造生成结果。
 - New API受理后在发送供应商前崩溃、日志不存在、重复/缺失消费日志、技术配额结算失败、日志写入失败或不支持的计量语义，均保留未确认状态。不能从404或超时推出免费。
@@ -74,12 +87,16 @@ New API主库新增`okpa_supply_requests`，保存受理、最终用量和事件
 ```text
 npm run check
 npm run test:licensing:mysql
-python scripts/okpa-supply-matrix.py okpa-new-api:supply-dev
-python scripts/okpa-supply-smoke.py okpa-new-api:supply-dev
+python scripts/okpa-supply-matrix.py okpa-new-api:stream-dev
+python scripts/okpa-supply-smoke.py okpa-new-api:stream-dev
 ```
 
 后两项在New API仓库运行。矩阵脚本使用本地已有`okpa-new-api:rc47-dev`作为原始应用基线，创建自有数据库/容器和网络；覆盖SQLite、MySQL、PostgreSQL全新启动、原版数据库升级、日志保留、重复迁移/重启、并发去重和独立日志库。结束后仅清理自身资源。
 
-设置`OKPA_YUSHU_ACCEPTANCE_SCRIPT`为本仓库`scripts/e2e-newapi-settlement.mjs`绝对路径，可把真实新镜像的模拟渠道与YushuHub授权/供货串起来。此脚本只接受回环临时New API地址，显式注入测试凭据，不加载现网配置；供货价格和充值均为虚构。付款供应商验证、真实渠道流式/多模态、长期容量、正式迁移/发布和7天试点仍按总进度继续。
+设置`OKPA_YUSHU_ACCEPTANCE_SCRIPT`为本仓库`scripts/e2e-newapi-settlement.mjs`绝对路径，可把真实新镜像的模拟渠道与YushuHub授权/供货串起来。此脚本只接受回环临时New API地址，显式注入测试凭据，不加载现网配置；供货价格和充值均为虚构。流式首段时序探针只接受`OKPA_ACCEPTANCE_PROBE_URL`回环测试地址，由模拟渠道脚本提供。
+
+2026-10-30增量流验收：后台159项（授权相关26）、模型代理41、模型管理50通过。MySQL 8.4.10和测试服务器5.7.44的独立库验证客户端首段、断连继续扣款、原快照、进程恢复、重复请求及未知预占；8.4另外通过备份恢复和1000请求基线。New API新镜像三库矩阵覆盖SQLite 3.50.4/MySQL 8.4.10/PostgreSQL 16.14；本机和授权服务器模拟链路每轮6次模拟供应商调用，包含流式成功、断连和缺失用量。
+
+授权服务器隔离新镜像另调用真实`deepseek-flash`一次，收到输入8、缓存0、输出1，三个增量事件；回执与YushuHub用量一致，重复提交未重发，最终预占0。测试账本使用虚构余额和每百万Token 1元的验算价，扣款0.000009元不代表供应商实际成本。临时容器、数据库及额外密钥副本已清理；未迁正式数据、未替换现有服务。多供应商、全部模态、长期容量、正式迁移/发布及7天试点继续按总进度执行。
 
 认证设计参考OWASP [Authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)、[Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)及[ASVS 5.0.0](https://asvs.owasp.org/)。本轮核对服务器端用途/账户/令牌绑定、摘要存储、过期拒绝、Bearer与Cookie隔离、禁止凭据透传和越权查询；不改原登录/会话体系，不宣称完成整套ASVS认证。

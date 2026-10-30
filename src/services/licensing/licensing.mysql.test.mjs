@@ -7,7 +7,7 @@ import path from 'node:path'
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import mysql from 'mysql2/promise'
-import { mysqlStateStore } from '../../repositories/licensing-state.mjs'
+import { memoryStateStore, mysqlStateStore } from '../../repositories/licensing-state.mjs'
 import { mysqlAccountingStore } from '../../repositories/accounting.mjs'
 import { migrateAccounting, verifyAccountingImport } from './accounting-migration.mjs'
 import { assertAccountingRuntime } from './accounting-mode.mjs'
@@ -22,6 +22,9 @@ import { serviceApp, serviceErrors } from './runtime.mjs'
 import { createAccountingMonitor } from './accounting-monitor.mjs'
 import { ModelCredentialVault } from '../model-credentials.mjs'
 import { agentCommerceRuntime } from './commerce-runtime.mjs'
+import { httpGatewayAdapters } from './http-adapters.mjs'
+import { registerClientSupplyBridge } from '../../routes/client-supply-bridge.mjs'
+import { setAuthDependencies } from '../../middleware/auth.mjs'
 
 const configured = Boolean(process.env.LICENSING_TEST_DB)
 test('real MySQL: independent services, HTTP activation, concurrent accounting, restart and SQL user funds', { skip: !configured }, async () => {
@@ -330,5 +333,136 @@ test('real MySQL: independent services, HTTP activation, concurrent accounting, 
     if (runtimeFiles && path.resolve(runtimeFiles).startsWith(path.join(os.tmpdir(), 'yushu-accounting-'))) await fs.rm(runtimeFiles, { recursive: true, force: true })
     await Promise.all([centerServer && new Promise(resolve => centerServer.close(resolve)), gatewayServer && new Promise(resolve => gatewayServer.close(resolve))])
     await Promise.all([licensePool.end(), gatewayPool.end()])
+  }
+})
+
+test('real MySQL streaming: first delta before completion, disconnect drain, restart recovery and unknown holds', { skip: !configured }, async () => {
+  const { gatewayDatabase = 'yushu_gateway_test', licenseDatabase: _licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable test database required')
+  const pool = mysql.createPool({ ...config, database: gatewayDatabase, connectionLimit: 12 })
+  let upstreamServer, localServer, runtime
+  const releases = new Map(), ready = new Set(); let submissions = 0
+  process.env.STREAM_FIXTURE_INFERENCE = 'sk-fixture-only'; process.env.STREAM_FIXTURE_SETTLEMENT = `okpa_${'a'.repeat(64)}`
+  try {
+    await migrateAccounting({ pool, book: 'stream-official', kind: 'ledger', sourceId: 'stream-official-old' })
+    await migrateAccounting({ pool, book: 'commerce-v2', kind: 'commerce', sourceId: 'runtime-source' })
+    await pool.query('CREATE TABLE IF NOT EXISTS ai_end_users (id VARCHAR(64) PRIMARY KEY,status VARCHAR(16),credit_balance DECIMAL(18,6))')
+    await pool.query('CREATE TABLE IF NOT EXISTS ai_credit_ledger (id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),model_name VARCHAR(120),note VARCHAR(255),request_id VARCHAR(80))')
+    await pool.query('INSERT INTO ai_end_users VALUES (?,?,?)', ['stream-user', 'enabled', '100'])
+    const keys = crypto.generateKeyPairSync('ed25519'), center = createLicenseCenter({ store: memoryStateStore(emptyCenterState()), privateKey: keys.privateKey,
+      publicKeys: { test: keys.publicKey }, keyId: 'test', credentialKey: crypto.randomBytes(32) })
+    const issued = await center.issue({ id: 'stream-root', name: '测试一级', packageId: 'first-fixed', domain: 'https://stream.example.com', modelIds: ['stream-chat'], expiresAt: null }, 'operator')
+    const activated = await center.activate({ code: issued.code, requestId: 'stream-activate', instanceId: 'stream-instance', domain: 'https://stream.example.com' })
+    const child = await center.issue({ id: 'stream-child', name: '测试二级', packageId: 'second', parentId: 'stream-root', expiresAt: null }, 'operator')
+    await center.activate({ code: child.code, requestId: 'stream-child-activate', instanceId: 'stream-instance', domain: 'https://stream.example.com' }, activated.credential)
+    const grant = id => center.list().then(list => list.grants.find(g => g.id === id))
+    const root = await grant('stream-root'), second = await grant('stream-child')
+    const price = { version: 1, components: [{ meter: 'request', phase: 'request', amount: '1', unitSize: '1' },
+      ...['input_tokens', 'cached_tokens', 'output_tokens'].map(meter => ({ meter, amount: '0.1', unitSize: '1' }))] }
+    const model = { id: 'stream-chat', name: '流式模型', model: 'stream-physical', adapter: 'newapi.chat', supportsStreaming: true, settlementProtocol: 'okpa-v1', status: 'enabled', version: 1,
+      baseUrl: 'https://stream-provider.example.com/v1', keyEnv: 'STREAM_FIXTURE_INFERENCE', settlementKeyEnv: 'STREAM_FIXTURE_SETTLEMENT', contextWindow: 100, maxOutputTokens: 10, price }
+    const provider = async (url, options) => {
+      if (url.endsWith('/chat/completions')) {
+        submissions++
+        const id = options.headers['X-OKPA-Request-ID'], body = JSON.parse(options.body)
+        assert.equal(body.stream, true); assert.equal(body.stream_options.include_usage, true)
+        const metadata = { id: `chat-${id}`, model: 'stream-physical', created: 1 }
+        let release; const gate = new Promise(resolve => { release = resolve }); releases.set(id, release)
+        const frame = value => `data: ${JSON.stringify(value)}\n\n`
+        return new Response(new ReadableStream({ start(controller) {
+          controller.enqueue(Buffer.from(frame({ ...metadata, choices: [{ index: 0, delta: { role: 'assistant', content: '你' }, finish_reason: null }] })))
+          void gate.then(() => {
+            controller.enqueue(Buffer.from(frame({ ...metadata, choices: [{ index: 0, delta: { content: '好' }, finish_reason: 'stop' }] })))
+            if (id !== 'stream-missing') {
+              ready.add(id)
+              controller.enqueue(Buffer.from(frame({ ...metadata, choices: [], usage: { prompt_tokens: 8, completion_tokens: 3, prompt_tokens_details: { cached_tokens: 2 } } })))
+            }
+            controller.enqueue(Buffer.from('data: [DONE]\n\n')); controller.close()
+          })
+        } }), { headers: { 'Content-Type': 'text/event-stream' } })
+      }
+      if (url.endsWith('/ack')) return new Response(JSON.stringify({ success: true, data: { acknowledged: true } }))
+      const id = decodeURIComponent(new URL(url).pathname.split('/').at(-1))
+      return new Response(JSON.stringify({ success: true, data: { protocolVersion: 1, receipt: { requestId: id, model: 'stream-physical', eventId: crypto.createHash('sha256').update(id).digest('hex'),
+        upstreamRequestId: `provider-${id}`, state: ready.has(id) ? 'settled' : 'accepted' }, usage: ready.has(id) ? { inputTokens: 6, cachedTokens: 2, outputTokens: 3 } : null } }))
+    }
+    const officialStore = mysqlAccountingStore(pool, 'stream-official', 'ledger'), ledger = createSupplyLedger({ store: officialStore })
+    await ledger.open(root.id, root.id); await ledger.credit(root.id, '100', 'stream-funds', 'operator', 'stream-funds-receipt')
+    const gateway = createModelGateway({ ledger, models: [model], adapters: httpGatewayAdapters(provider), authorize: (token, audience) => center.introspect(token, audience) })
+    const officialApp = serviceApp(); registerModelGatewayRoutes(officialApp, { gateway, ledger, operators: {} }); serviceErrors(officialApp)
+    upstreamServer = await new Promise(resolve => { const server = officialApp.listen(0, '127.0.0.1', () => resolve(server)) })
+    const upstreamUrl = `http://127.0.0.1:${upstreamServer.address().port}`
+    const client = { claims: async id => grant(id || root.id), recoveryIdentity: async () => ({ id: root.id }),
+      serviceToken: async (audience, id) => (await center.serviceToken(activated.credential, audience, id)).token,
+      recoveryToken: async (id, requestId) => (await center.recoveryToken(activated.credential, id, requestId)).token }
+    const makeRuntime = () => agentCommerceRuntime({ client, database: () => pool, env: { AI_MODEL_GATEWAY_URL: 'https://stream-gateway.example.com' },
+      fetchImpl: async (url, options) => {
+        const endpoint = new URL(url); assert.equal(endpoint.hostname, 'stream-gateway.example.com')
+        const response = await fetch(`${upstreamUrl}${endpoint.pathname}`, options)
+        if (endpoint.pathname.endsWith('/requests/stream') && JSON.parse(options.body).requestId === 'stream-hop-cut') {
+          const reader = response.body.getReader(), decoder = new TextDecoder(); let text = ''
+          return new Response(new ReadableStream({ async start(controller) {
+            try {
+              while (!text.includes('"content":"你"')) { const next = await reader.read(); if (next.done) break; text += decoder.decode(next.value, { stream: true }); controller.enqueue(next.value) }
+              await reader.cancel(); controller.error(new Error('Fixture: inter-service connection lost'))
+            } catch (error) { controller.error(error) }
+          } }), { headers: response.headers })
+        }
+        return response
+      } })
+    runtime = makeRuntime()
+    const service = await runtime.service()
+    await service.configure(root, { modelId: model.id, enabled: true, saleMarkup: [], supplyMarkup: [{ meter: 'request', phase: 'request', amount: '0.3' }], pointsPerCny: '1', expectedVersion: 0 }, 'operator')
+    await service.configure(second, { modelId: model.id, enabled: true, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.2' }], pointsPerCny: '1', expectedVersion: 0 }, 'child')
+    await service.credit(root, second.id, '100', 'stream-child-funds', 'stream-child-receipt', 'operator')
+    setAuthDependencies({ getEndUserByToken: async token => token === 'stream-client' ? { id: 'stream-user', status: 'enabled' } : null, getClientAuthorization: async () => true })
+    const localApp = serviceApp(); registerClientSupplyBridge(localApp, { runtime, tenantForUser: async () => second }); serviceErrors(localApp)
+    localServer = await new Promise(resolve => { const server = localApp.listen(0, '127.0.0.1', () => resolve(server)) })
+    const localUrl = `http://127.0.0.1:${localServer.address().port}/api/client/model/v1/chat/completions`
+    const call = id => fetch(localUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer stream-client', 'Idempotency-Key': id },
+      body: JSON.stringify({ model: model.id, stream: true, messages: [{ role: 'user', content: 'test' }] }) })
+    const wait = async (predicate, label) => {
+      for (let attempt = 0; attempt < 200; attempt++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 20)) }
+      throw new Error(`Timed out: ${label}`)
+    }
+    const response = await call('stream-client-cut'), reader = response.body.getReader(), decoder = new TextDecoder(); let firstText = ''
+    assert.equal(response.status, 200)
+    while (!firstText.includes('"content":"你"')) { const item = await reader.read(); assert(!item.done); firstText += decoder.decode(item.value, { stream: true }) }
+    assert.equal(ready.has('stream-client-cut'), false, 'first delta must precede completion')
+    assert.equal((await ledger.view(root.id)).reserved, '22.000000')
+    await runtime.flush(); assert.equal((await runtime.store.readRequest('stream-client-cut')).state, 'running')
+    await reader.cancel()
+    model.price = { ...price, version: 2, components: price.components.map(c => ({ ...c, amount: '9' })) }
+    releases.get('stream-client-cut')()
+    await wait(async () => (await runtime.store.readRequest('stream-client-cut'))?.state === 'settled', 'detached client settlement')
+    assert.equal((await ledger.view(root.id)).balance, '97.900000')
+    assert.equal((await runtime.store.readRequest('stream-client-cut')).points, '2.600000')
+    model.price = price
+    assert((await (await call('stream-client-cut')).text()).includes('[DONE]')); assert.equal(submissions, 1)
+    const lostResponse = await call('stream-hop-cut'); const lostText = await lostResponse.text()
+    assert(lostText.includes('SUPPLY_PENDING_RECONCILIATION'))
+    assert(lostText.includes('"requestId":"stream-hop-cut"')); assert(!lostText.includes('[DONE]'))
+    assert.equal((await runtime.store.readRequest('stream-hop-cut')).state, 'unknown')
+    runtime.stop(); runtime = makeRuntime()
+    releases.get('stream-hop-cut')()
+    await wait(async () => (await officialStore.readRequest('stream-hop-cut'))?.state === 'settled', 'official detached settlement')
+    await runtime.flush(); await runtime.flush()
+    assert.equal((await runtime.store.readRequest('stream-hop-cut')).state, 'settled')
+    const [[user]] = await pool.query('SELECT credit_balance FROM ai_end_users WHERE id=?', ['stream-user'])
+    assert.equal(user.credit_balance, '94.800000')
+    assert.equal((await service.balance(second)).wallet.balance, '95.200000')
+    assert.equal((await ledger.view(root.id)).balance, '95.800000'); assert.equal((await ledger.view(root.id)).reserved, '0.000000')
+    const missing = await call('stream-missing'); await wait(() => releases.has('stream-missing'), 'missing-usage admission')
+    releases.get('stream-missing')(); const missingText = await missing.text()
+    assert(missingText.includes('SUPPLY_PENDING_RECONCILIATION')); assert(!missingText.includes('[DONE]'))
+    await runtime.flush()
+    assert.notEqual((await runtime.store.readRequest('stream-missing')).state, 'settled')
+    assert.equal((await ledger.view(root.id)).reserved, '22.000000')
+    assert.equal(submissions, 3)
+  } finally {
+    for (const release of releases.values()) release()
+    runtime?.stop()
+    for (const server of [localServer, upstreamServer]) if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+    await pool.end(); delete process.env.STREAM_FIXTURE_INFERENCE; delete process.env.STREAM_FIXTURE_SETTLEMENT
   }
 })

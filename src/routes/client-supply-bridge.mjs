@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { requireClientAuth } from '../middleware/auth.mjs'
-import { decimal, failure, micros } from '../services/licensing/protocol.mjs'
+import { decimal, failure, identifier, micros } from '../services/licensing/protocol.mjs'
+import { sseWriter } from '../services/licensing/streaming.mjs'
 import { quoteSupply } from '../services/licensing/pricing.mjs'
 import { normalizeImageGenerationRequest, normalizeImageGenerationResponse } from '../services/image-generation.mjs'
 
@@ -25,7 +26,7 @@ export function projectSupplyCatalog(rows) {
     const modelType = ({ chat: 'text', web_search: 'search', image_generation: 'image', image_edit: 'image', speech_synthesis: 'audio' })[row.model.taskType] || row.model.taskType
     return { id: row.model.clientId || row.model.id, modelId: row.model.clientId || row.model.id, capabilityId: row.model.id, name: row.model.name || row.model.id,
       description: '', providerId: 'supply', providerName: '授权模型', modelType, capabilities: [], reasoning: {}, contextWindow: row.model.contextWindow || 0,
-      configured: true, isDefault: false, pricing: {
+      configured: true, isDefault: false, supportsStreaming: row.model.supportsStreaming === true, pricing: {
         billingType: modelType === 'image' ? 'per_image_resolution' : modelType === 'text' ? 'per_token' : 'per_request',
         inputPointsPerMTokens: points('input_tokens', '1000000'), outputPointsPerMTokens: points('output_tokens', '1000000'),
         pointsPerRequest: points('request', '1', 'request'), consumptionMultiplier: 1,
@@ -38,15 +39,15 @@ export function projectSupplyCatalog(rows) {
 }
 export function registerClientSupplyBridge(app, { runtime, tenantForUser }) {
   if (!runtime) return
-  async function submit(req) {
-    const requestId = String(req.headers['idempotency-key'] || req.body.requestId || crypto.randomUUID())
+  async function submit(req, options = {}) {
+    const requestId = String(options.requestId || req.headers['idempotency-key'] || req.body.requestId || crypto.randomUUID())
     if (requestId.length > 80) throw failure('INVALID_ID', '请求ID不能超过80字符')
     const tenant = await tenantForUser(req), service = await runtime.service(), requested = req.body.model || req.body.modelId || req.body.capabilityId
     const row = (await service.list(tenant)).find(item => item.sale && (item.model.id === requested || item.model.clientId === requested))
     if (!row) throw failure('MODEL_UNAVAILABLE', '模型未授权或尚未启用', 403)
     return service.submit(tenant, req.clientUser.id, {
       requestId, modelId: row.model.id, request: req.body.request || req.body,
-    })
+    }, options)
   }
   const complete = operation => {
     if (operation.state !== 'settled') throw failure('SUPPLY_PENDING_RECONCILIATION', `请求 ${operation.requestId} 正在处理或等待对账，请查询原请求，不要重新提交`, 409)
@@ -60,15 +61,34 @@ export function registerClientSupplyBridge(app, { runtime, tenantForUser }) {
     } catch (error) { sendError(res, error) }
   })
   app.post('/api/client/model/v1/chat/completions', requireClientAuth, async (req, res) => {
+    if (req.body.stream === true) {
+      const writer = sseWriter(res)
+      let chunks = 0
+      try {
+        const requestId = identifier(String(req.headers['idempotency-key'] || req.body.requestId || crypto.randomUUID()))
+        if (requestId.length > 80) throw failure('INVALID_ID', '请求ID不能超过80字符')
+        res.setHeader('X-Request-Id', requestId)
+        res.append('Access-Control-Expose-Headers', 'X-Request-Id')
+        const operation = await submit(req, { requestId, onAccepted: () => writer.open(), onChunk: chunk => { chunks++; return writer.chunk(chunk) } })
+        const result = complete(operation)
+        if (!result?.choices) throw failure('STREAM_RESULT_UNAVAILABLE', '原请求已结算，生成内容无法恢复，请查询原请求')
+        // An idempotent replay can return the saved completion; it never starts
+        // a second provider stream or shares another caller's live stream.
+        if (chunks === 0) for (const chunk of chatCompletionChunks(result)) writer.chunk(chunk)
+        writer.end(true)
+      } catch (error) {
+        if (writer.opened) {
+          const refunded = ['REQUEST_NOT_ACCEPTED', 'PROVIDER_REJECTED'].includes(error.code)
+          writer.chunk({ error: { code: error.code || 'SUPPLY_UNAVAILABLE', requestId: res.getHeader('X-Request-Id'), message: refunded ? '请求未被上游受理，已退回预占额度' : '请求需要按原编号查询核对，请勿重新提交' } }); writer.end()
+        }
+        else sendError(res, error)
+      }
+      return
+    }
     try {
       const operation = await submit(req), result = complete(operation)
       res.setHeader('X-Request-Id', operation.requestId)
-      if (req.body.stream === true) {
-        res.type('text/event-stream')
-        res.setHeader('Cache-Control', 'no-store')
-        for (const chunk of chatCompletionChunks(result)) res.write(`data: ${JSON.stringify(chunk)}\n\n`)
-        res.end('data: [DONE]\n\n')
-      } else res.json(result)
+      res.json(result)
     } catch (error) { sendError(res, error) }
   })
   app.post('/api/client/images/generate', requireClientAuth, async (req, res) => {

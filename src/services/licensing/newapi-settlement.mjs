@@ -51,7 +51,7 @@ export function withNewApiSettlement(base, fetcher) {
         const url = new URL(model.baseUrl), inferenceKey = process.env[model.keyEnv]
         if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw failure('INVALID_UPSTREAM', 'New API供货必须使用HTTPS')
         if (!inferenceKey || inferenceKey.startsWith('nap_')) throw failure('INVALID_INFERENCE_KEY', 'New API供货需专用推理令牌')
-        if (input.stream || input.tools || input.functions || !Array.isArray(input.messages) || input.messages.some(m => typeof m.content !== 'string')) throw failure('UNSUPPORTED_SETTLEMENT', '当前自动对账仅支持非流式纯文本')
+        if (input.tools || input.functions || !Array.isArray(input.messages) || input.messages.some(m => typeof m.content !== 'string')) throw failure('UNSUPPORTED_SETTLEMENT', '当前自动对账仅支持纯文本')
       }
       return base.prepare(model, input)
     },
@@ -61,7 +61,12 @@ export function withNewApiSettlement(base, fetcher) {
       if (context.requestId.length > 80) throw Object.assign(failure('INVALID_ID', 'New API供货请求编号最多80位'), { noCharge: true })
       await context.recordReceipt({ provider: 'okpa-new-api', requestId: identifier(context.requestId) })
       const result = await base.submit(model, input, context)
-      return outcome(model, context.requestId, result.result)
+      let settled = await outcome(model, context.requestId, result.result)
+      for (let attempt = 1; input.stream === true && settled.state === 'pending' && attempt <= 3; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, attempt * 100))
+        settled = await outcome(model, context.requestId, result.result)
+      }
+      return settled
     },
     poll: (model, job) => outcome(model, job.requestId, job.result),
     recover(model, operation) {

@@ -24,6 +24,7 @@ const fetcher = async (target, options) => {
   if (endpoint.pathname.endsWith('/chat/completions')) {
     calls++
     assert.equal(response.status, 200)
+    if (JSON.parse(options.body).stream === true) return response
     await response.arrayBuffer()
     // Drop even the headers as seen by the caller; the prior durable caller
     // correlation must recover usage without this response's request ID.
@@ -32,6 +33,7 @@ const fetcher = async (target, options) => {
   return response
 }
 const model = { id: 'chat', model: 'gpt-4o-mini', status: 'enabled', version: 1, adapter: 'newapi.chat', settlementProtocol: 'okpa-v1',
+  supportsStreaming: true,
   baseUrl: 'https://okpa-fixture.example.com/v1', keyEnv: 'OKPA_ACCEPTANCE_INFERENCE', settlementKeyEnv: 'OKPA_ACCEPTANCE_SETTLEMENT', contextWindow: 100, maxOutputTokens: 10,
   price: { version: 1, components: [{ meter: 'request', phase: 'request', unitSize: '1', amount: '1' },
     ...['input_tokens', 'cached_tokens', 'output_tokens'].map(meter => ({ meter, unitSize: '1', amount: '0.1' }))] } }
@@ -52,4 +54,21 @@ assert.equal(operation.result.resultUnavailable, true)
 await gateway.acknowledgeRecovery(recovery, input.requestId); await gateway.acknowledgeRecovery(recovery, input.requestId)
 assert.equal((await ledger.view('acceptance')).balance, '97.900000'); assert.equal((await ledger.view('acceptance')).reserved, '0.000000')
 assert.equal((await store.read()).entries.filter(e => e.type === 'settle').length, 1)
-console.log(JSON.stringify({ passed: true, inferenceSubmissions: calls, actualCny: operation.actual, reserved: '0.000000', originalResponseUnavailable: true, virtualFundsOnly: true }))
+const probe = new URL(process.env.OKPA_ACCEPTANCE_PROBE_URL)
+if (probe.protocol !== 'http:' || probe.hostname !== '127.0.0.1' || !probe.port || probe.pathname !== '/') throw new Error('Disposable probe required')
+let firstProbe, observed = 0
+const live = { requestId: 'wire-stream-live', modelId: 'chat', request: { stream: true, messages: [{ role: 'user', content: 'wire-node-live' }] } }
+const liveOperation = await gateway.submit(token, live, { onChunk: async chunk => {
+  if (chunk.choices[0]?.delta.content && observed++ === 0) firstProbe = await (await fetch(`${probe.origin}/?case=wire-node-live`)).json()
+} })
+assert.equal(firstProbe?.complete, false); assert.equal(liveOperation.state, 'settled'); assert.equal(liveOperation.result.choices[0].message.content, '你好')
+assert.equal(liveOperation.actual, '2.100000')
+const liveRecovery = (await center.recoveryToken(activation.credential, 'acceptance', live.requestId)).token
+await gateway.acknowledgeRecovery(liveRecovery, live.requestId)
+const missing = { requestId: 'wire-stream-missing', modelId: 'chat', request: { stream: true, messages: [{ role: 'user', content: 'wire-node-missing' }] } }
+assert.notEqual((await gateway.submit(token, missing, { onChunk: () => {} })).state, 'settled')
+await gateway.submit(token, missing, { onChunk: () => {} })
+assert.equal(calls, 3)
+assert.equal((await ledger.view('acceptance')).balance, '95.800000'); assert.equal((await ledger.view('acceptance')).reserved, '22.000000')
+console.log(JSON.stringify({ passed: true, inferenceSubmissions: calls, settledRequests: 2, actualPerSettledCny: '2.100000',
+  missingUsageHeldCny: '22.000000', firstChunkBeforeCompletion: true, originalResponseUnavailable: true, virtualFundsOnly: true }))

@@ -1,5 +1,7 @@
 import { bearer, endpoint } from './license-center.mjs'
 import { scheduleSupplyPrice } from '../services/licensing/pricing.mjs'
+import { failure } from '../services/licensing/protocol.mjs'
+import { sseWriter } from '../services/licensing/streaming.mjs'
 
 export function registerModelGatewayRoutes(app, { gateway, ledger, operators, monitor }) {
   const base = '/api/model-gateway/v1'
@@ -22,6 +24,23 @@ export function registerModelGatewayRoutes(app, { gateway, ledger, operators, mo
   app.get(`${base}/catalog`, endpoint(req => gateway.catalog(bearer(req))))
   app.get(`${base}/balance`, endpoint(req => gateway.balance(bearer(req))))
   app.post(`${base}/requests`, endpoint(req => gateway.submit(bearer(req), req.body)))
+  app.post(`${base}/requests/stream`, async (req, res, next) => {
+    const writer = sseWriter(res)
+    let chunks = 0
+    try {
+      if (req.body.request?.stream !== true) throw failure('STREAM_REQUIRED', '流式入口需要stream=true')
+      const operation = await gateway.submit(bearer(req), req.body, {
+        onAccepted: ({ requestId }) => { res.setHeader('X-Request-Id', requestId); writer.open() },
+        onChunk: chunk => { chunks++; return writer.event('chunk', chunk) },
+      })
+      if (!writer.opened && !res.destroyed) res.setHeader('X-Request-Id', operation.requestId)
+      writer.event('operation', { requestId: operation.requestId, state: operation.state, usage: operation.usage,
+        ...(!chunks ? { result: operation.result } : {}) }); writer.end()
+    } catch (error) {
+      if (writer.opened) { writer.event('error', { code: error.code || 'SUPPLY_UNAVAILABLE', error: '流式请求需要查询原编号核对' }); writer.end() }
+      else next(error)
+    }
+  })
   app.get(`${base}/requests/:id`, endpoint(req => gateway.status(bearer(req), req.params.id)))
   app.post(`${base}/requests/:id/poll`, endpoint(req => gateway.status(bearer(req), req.params.id, true)))
   app.post(`${base}/requests/:id/ack`, endpoint(req => gateway.acknowledge(bearer(req), req.params.id)))

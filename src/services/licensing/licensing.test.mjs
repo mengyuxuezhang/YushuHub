@@ -14,6 +14,7 @@ import { httpGatewayAdapters } from './http-adapters.mjs'
 import { auditAccounting } from './accounting-migration.mjs'
 import { createAccountingMonitor, emptyMonitorState } from './accounting-monitor.mjs'
 import { ModelCredentialVault } from '../model-credentials.mjs'
+import { readChatStream, readSse } from './streaming.mjs'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -24,6 +25,32 @@ function setup() {
   const store = memoryStateStore(emptyCenterState()), center = createLicenseCenter({ store, ...keys, privateKey: keys.privateKey, publicKeys, keyId: 'test', credentialKey: crypto.randomBytes(32), now })
   return { center, store, now, publicKeys, advance: value => { timestamp += value } }
 }
+
+test('SSE streams incrementally across UTF-8/CRLF boundaries and rejects missing usage, truncation and oversized frames', async () => {
+  const chunk = (delta, finish_reason = null) => ({ id: 'sse-test', model: 'chat', created: 1, choices: [{ index: 0, delta, finish_reason }] })
+  const first = chunk({ role: 'assistant', content: '你' }), last = chunk({ content: '好' }, 'stop')
+  const usage = { id: 'sse-test', model: 'chat', created: 1, choices: [], usage: { prompt_tokens: 8, completion_tokens: 3, prompt_tokens_details: { cached_tokens: 2 } } }
+  let controller, sawFirst, finish
+  const observed = new Promise(resolve => { sawFirst = resolve }), released = new Promise(resolve => { finish = resolve })
+  const response = new Response(new ReadableStream({ start(c) { controller = c } }), { headers: { 'content-type': 'text/event-stream' } })
+  const reading = readChatStream(response, async value => { if (value.choices[0]?.delta.content === '你') { sawFirst(); throw new Error('downstream disconnected') } })
+  const send = value => { for (const byte of Buffer.from(value)) controller.enqueue(Uint8Array.of(byte)) }
+  send(`: keepalive\r\n\r\ndata: ${JSON.stringify(first)}\r\n\r\n`)
+  await observed
+  let completed = false; reading.then(() => { completed = true })
+  await Promise.resolve(); assert.equal(completed, false)
+  void released.then(() => { send(`data: ${JSON.stringify(last)}\r\n\r\ndata: ${JSON.stringify(usage)}\r\n\r\ndata: [DONE]\r\n\r\n`); controller.close() })
+  finish()
+  const result = await reading
+  assert.equal(result.choices[0].message.content, '你好'); assert.equal(result.usage.prompt_tokens_details.cached_tokens, 2)
+  const source = content => new Response(content, { headers: { 'content-type': 'text/event-stream' } })
+  await assert.rejects(readChatStream(source(`data: ${JSON.stringify(last)}\n\ndata: [DONE]\n\n`)), { code: 'TRUNCATED_STREAM' })
+  await assert.rejects(readChatStream(source(`data: ${JSON.stringify(last)}\n\n`)), { code: 'TRUNCATED_STREAM' })
+  await assert.rejects(readSse(source('data: unterminated'), () => {}), { code: 'TRUNCATED_STREAM' })
+  await assert.rejects(readSse(source('data: too-long\n\n'), () => {}, { maxFrame: 8 }), { code: 'STREAM_LIMIT' })
+  const lines = []; await readSse(source('data: first\rdata: second\r\r'), frame => lines.push(frame.data))
+  assert.deepEqual(lines, ['first\nsecond'])
+})
 async function root(center) {
   const issued = await center.issue({ id: 'first', name: '演示一级', packageId: 'first-fixed', domain: 'https://agent.example.com', modelIds: ['chat'], expiresAt: '2027-10-29T00:00:00Z' }, 'operator')
   const input = { code: issued.code, instanceId: 'instance-one', domain: 'https://agent.example.com', requestId: 'activation-one' }

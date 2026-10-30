@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { decimal, digest, failure, identifier, micros } from './protocol.mjs'
 import { quoteSupply, withMarkup } from './pricing.mjs'
+import { emitChunk } from './streaming.mjs'
 
 const numberString = value => typeof value === 'string' ? value : String(value)
 function userPoints(amount, pointsPerCny, discount) {
@@ -35,6 +36,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       if (!operation) throw failure('NOT_FOUND', '本地请求不存在', 404)
       if (operation.state === 'settled') return operation
       if (outcome.state !== 'settled' && outcome.state !== 'done') {
+        if (['running', 'reserved'].includes(outcome.state)) return operation
         operation.state = outcome.state === 'pending' ? 'pending' : 'unknown'; operation.updatedAt = now()
         return operation
       }
@@ -111,7 +113,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
           ...(tenant.level === 1 ? { upstreamAmount: operation.upstreamAmount, firstMargin: operation.firstMargin, secondMargin: operation.secondMargin } : { secondMargin: operation.secondMargin }) })),
         unsettled: state.unsettledCount ?? operations.filter(op => op.state !== 'settled').length }
     },
-    async submit(tenant, userId, input) {
+    async submit(tenant, userId, input, { onChunk, onAccepted } = {}) {
       const requestId = identifier(input.requestId), modelId = identifier(input.modelId)
       const fingerprint = digest(JSON.stringify({ organizationId: tenant.id, userId, modelId, request: input.request }))
       const previous = await find(requestId)
@@ -124,6 +126,7 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
       if (micros(snapshot.discount) < 0n) throw failure('INVALID_DISCOUNT', '折扣无效')
       // Trusted model adapters calculate bounds; client estimatedUsage is ignored.
       const prepared = await snapshot.model.prepare(input.request), upperUsage = prepared.upperUsage
+      if (prepared.request.stream === true && (snapshot.model.source !== 'official' || typeof onChunk !== 'function')) throw failure('STREAM_UNAVAILABLE', '实时流式供货需使用官方流式传输入口')
       if (!Array.isArray(upperUsage)) throw failure('UNBOUNDED_REQUEST', '缺少可执行计费上界')
       const reservedPoints = userPoints(quoteSupply(snapshot.sale, upperUsage), snapshot.pointsPerCny, snapshot.discount), reservedSupply = quoteSupply(snapshot.supply, upperUsage)
       const reserved = await transact({ walletId: tenant.id, requestId, readConfiguration: true }, async (current, connection) => {
@@ -148,7 +151,8 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
         return { created: true, operation }
       })
       if (!reserved.created) return reserved.operation
-      try { return await complete(requestId, await invoke(tenant, snapshot.model, { requestId, request: prepared.request })) }
+      await emitChunk(onAccepted, { requestId })
+      try { return await complete(requestId, await invoke(tenant, snapshot.model, { requestId, request: prepared.request }, { onChunk })) }
       catch (error) {
         if (error.noCharge === true) return complete(requestId, { state: 'done', usage: [], result: { error: 'REQUEST_NOT_ACCEPTED' } })
         return transact({ requestId }, current => {

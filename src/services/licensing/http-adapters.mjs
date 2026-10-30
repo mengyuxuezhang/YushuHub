@@ -1,6 +1,7 @@
 import { failure } from './protocol.mjs'
 import { MiniMaxAdapter } from '../minimax-adapter.mjs'
 import { withNewApiSettlement } from './newapi-settlement.mjs'
+import { readChatStream } from './streaming.mjs'
 import { normalizeImageGenerationRequest, buildUpstreamImagePayload, resolveResolutionTier } from '../image-generation.mjs'
 
 const event = (meter, quantity, extra = {}) => ({ meter, quantity: String(quantity), ...extra })
@@ -28,6 +29,7 @@ async function upstream(model, endpoint, body, fetcher, context) {
     catch (error) { await response.body?.cancel(); throw error }
   }
   if (!response.ok) throw failure('PROVIDER_ERROR', '供应商调用结果需要核对', 502)
+  if (body.stream === true) return readChatStream(response, context?.onChunk)
   const reader = response.body.getReader(), chunks = []; let length = 0
   for (;;) {
     const { done, value } = await reader.read()
@@ -45,9 +47,10 @@ export function httpGatewayAdapters(fetcher = fetch) {
       prepare(model, request) {
         if (!Array.isArray(request.messages) || !request.messages.length || !Number.isSafeInteger(model.contextWindow) || !Number.isSafeInteger(model.maxOutputTokens)) throw failure('UNBOUNDED_REQUEST', '文本模型需配置上下文和输出上限')
         const max = boundedInteger(request.max_tokens ?? request.max_completion_tokens, model.maxOutputTokens, model.maxOutputTokens)
+        if (request.stream === true && model.supportsStreaming !== true) throw failure('STREAM_UNAVAILABLE', '该模型尚未开放实时流式供货')
         // Context capacity is a conservative bound enforced by the supplier model.
         if (request.n !== undefined && request.n !== 1) throw failure('INVALID_BOUND', '当前供货适配只支持每次生成一个候选结果')
-        return { request: { ...request, model: model.model, max_tokens: max, max_completion_tokens: undefined, n: 1, stream: false, stream_options: undefined },
+        return { request: { ...request, model: model.model, max_tokens: max, max_completion_tokens: undefined, n: 1, stream: request.stream === true, stream_options: request.stream === true ? { include_usage: true } : undefined },
           upperUsage: [requestEvent(), event('input_tokens', model.contextWindow), event('cached_tokens', model.contextWindow), event('output_tokens', max)] }
       },
       async submit(model, request, context) {

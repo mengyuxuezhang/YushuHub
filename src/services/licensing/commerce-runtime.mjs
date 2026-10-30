@@ -7,6 +7,7 @@ import { createAccountingMonitor } from './accounting-monitor.mjs'
 import { createAgentCommerce, sqlUserBank } from './commerce.mjs'
 import { httpGatewayAdapters } from './http-adapters.mjs'
 import { digest, failure } from './protocol.mjs'
+import { chatStreamCollector, emitChunk, readSse } from './streaming.mjs'
 
 export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch }) {
   if (!client) return null
@@ -18,11 +19,25 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
   const customModels = env.AI_AGENT_CUSTOM_MODELS_FILE ? JSON.parse(fs.readFileSync(env.AI_AGENT_CUSTOM_MODELS_FILE, 'utf8')) : []
   const gatewayUrl = env.AI_MODEL_GATEWAY_URL ? new URL(env.AI_MODEL_GATEWAY_URL) : null
   if (gatewayUrl && gatewayUrl.protocol !== 'https:') throw new Error('Official gateway requires HTTPS')
-  async function gateway(tenant, path, body, requestId) {
+  async function gateway(tenant, path, body, requestId, { onChunk } = {}) {
     if (!gatewayUrl) throw failure('GATEWAY_UNCONFIGURED', '官方模型网关未配置', 503)
     const token = requestId ? await client.recoveryToken(tenant.id, requestId) : await client.serviceToken('official-models', tenant.id)
-    const response = await fetchImpl(`${gatewayUrl.origin}/api/model-gateway/v1${path}`, { method: body === undefined ? 'GET' : 'POST', redirect: 'error',
+    const streaming = path === '/requests' && body?.request?.stream === true
+    const response = await fetchImpl(`${gatewayUrl.origin}/api/model-gateway/v1${streaming ? '/requests/stream' : path}`, { method: body === undefined ? 'GET' : 'POST', redirect: 'error',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(240_000) })
+    if (streaming && response.ok) {
+      let operation, chunks = 0
+      const collector = chatStreamCollector()
+      await readSse(response, async frame => {
+        const data = JSON.parse(frame.data)
+        if (frame.event === 'chunk' && !operation) { chunks++; await emitChunk(onChunk, collector.add(data)) }
+        else if (frame.event === 'operation' && !operation && data.requestId === body.requestId) operation = data
+        else throw failure('INVALID_STREAM', '官方事件流不完整或顺序不正确', 502)
+      })
+      if (!operation) throw failure('STREAM_OUTCOME_UNKNOWN', '官方流式结果需要按原请求对账', 503)
+      if (operation.state === 'settled' && !operation.result && chunks) operation.result = collector.result()
+      return operation
+    }
     const payload = await response.json()
     if (!response.ok || !payload.success) {
       const error = failure(payload.code || 'GATEWAY_ERROR', payload.error || '官方供货服务不可用', response.status)
@@ -57,8 +72,8 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     async service({ recovery = false } = {}) {
       const root = recovery ? await client.recoveryIdentity() : await client.claims()
       return createAgentCommerce({ store, rootId: root.id, userBank: sqlUserBank(), catalog,
-        invoke: async (tenant, model, input) => {
-          if (model.source === 'official') return gateway(tenant, '/requests', { ...input, modelId: model.id, priceHash: digest(JSON.stringify(model.price)) })
+        invoke: async (tenant, model, input, options) => {
+          if (model.source === 'official') return gateway(tenant, '/requests', { ...input, modelId: model.id, priceHash: digest(JSON.stringify(model.price)) }, undefined, options)
           const config = customModels.find(item => item.id === model.id)
           if (!config || root.modelMode !== 'custom') throw failure('MODEL_UNAVAILABLE', '自接模型配置不可用', 403)
           const adapter = adapters[config.adapter], prepared = await adapter.prepare(config, input.request)
