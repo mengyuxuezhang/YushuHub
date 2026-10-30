@@ -5,6 +5,7 @@ import mysql from 'mysql2/promise'
 import { getPool, setPool } from '../db/pool.mjs'
 import { migratePaymentFulfillments, readPaymentFulfillment } from '../repositories/payment-fulfillments.mjs'
 import { fulfillPaidOrder } from './payments.mjs'
+import { migratePaymentRefunds } from '../repositories/payment-refunds.mjs'
 
 test('real MySQL payment fulfillment receipts preserve prior rights, serialize callbacks and survive rollback and lost commit replies', { skip: !process.env.LICENSING_TEST_DB }, async () => {
   const { gatewayDatabase, licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
@@ -25,6 +26,7 @@ test('real MySQL payment fulfillment receipts preserve prior rights, serialize c
       card_id VARCHAR(64),card_name VARCHAR(120),package_name VARCHAR(120),package_snapshot_json JSON,amount_fen BIGINT,currency VARCHAR(8),status VARCHAR(24),provider_trade_no VARCHAR(128),
       paid_at DATETIME(3),fulfilled_at DATETIME(3),fulfillment_membership_id VARCHAR(64),last_error VARCHAR(500))`)
     await migratePaymentFulfillments(pool)
+    await migratePaymentRefunds(pool)
     await pool.query("INSERT INTO ai_membership_cards VALUES ('vip','虚构会员','owner')")
     for (const id of ['one', 'two', 'three', 'zero', 'legacy']) {
       await pool.query('INSERT INTO ai_end_users VALUES (?,10)', [`user-${id}`])

@@ -5,6 +5,7 @@ import { parseJson } from '../utils/parse.mjs'
 import { slugify } from '../utils/slug.mjs'
 import { ensureAccountFreeMembership, ensureFreeMembershipFallback, grantMembershipBenefits } from '../services/memberships.mjs'
 import { resolveModelServiceScope, modelServiceScopeWhere } from '../services/model-service-scope.mjs'
+import { assertPaymentRefundClear } from '../repositories/payment-refunds.mjs'
 
 const DISCOUNT_MODULES = ['copywriting', 'voice_clone', 'voice_synthesis', 'image_clone', 'digital_human', 'digital_human_self', 'video_editing', 'video_extract']
 
@@ -301,7 +302,15 @@ async function assignMembership(userId, input = {}, actor, assertCanAccessEndUse
 async function cancelMembership(userId, actor, assertCanAccessEndUser) {
   if (typeof assertCanAccessEndUser === 'function') await assertCanAccessEndUser(actor, userId)
   const targetUserId = String(userId || '')
-  await db().query('UPDATE ai_end_user_memberships SET status = "cancelled" WHERE user_id = ? AND status = "active"', [targetUserId])
+  const connection = await db().getConnection()
+  try {
+    await connection.beginTransaction()
+    const [[user]] = await connection.query('SELECT id FROM ai_end_users WHERE id=? FOR UPDATE', [targetUserId])
+    if (!user) throw new Error('终端用户不存在')
+    await assertPaymentRefundClear(connection, targetUserId)
+    await connection.query('UPDATE ai_end_user_memberships SET status = "cancelled" WHERE user_id = ? AND status = "active"', [targetUserId])
+    await connection.commit()
+  } catch (error) { await connection.rollback(); throw error } finally { connection.release() }
   const fallback = await ensureFreeMembershipFallback({ userId: targetUserId, ownerUserId: actor?.id || 'admin' })
   return { userId: targetUserId, cancelled: true, fallbackMembershipId: fallback.id }
 }

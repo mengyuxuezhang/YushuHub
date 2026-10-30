@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from "vue-router";
+import { computed, ref } from 'vue';
+import PaymentRefundPanel from '@/components/business/PaymentRefundPanel.vue';
 import { useAuthStore } from "@/stores/auth";
 import {CreditCard,Plus,RefreshCw} from "@lucide/vue";
 import StatusBadge from "@/components/common/StatusBadge.vue";
@@ -13,6 +15,8 @@ import {useBusinessOperations,type BusinessSection} from "@/composables/business
 const auth = useAuthStore();
 const props = defineProps<{ section: BusinessSection }>();
 const b = useBusinessOperations(props.section);
+const refundOrder = ref<any>(null);
+const canCashRefund = computed(() => (b.cashRefundsEnabled.value || b.cashRefundHistory.value) && auth.can('payments.manage') && auth.user?.organizationContext?.isOwner === true && auth.user.organizationContext.memberStatus === 'enabled');
 const meta = {
   "end-users": ["终端用户", "个人账号、登录状态、会员权益、模型授权和积分操作"],
   memberships: ["会员卡", "会员权益、价格和模型可用范围"],
@@ -60,12 +64,13 @@ function formatDate(value:any){
         </button>
       </div>
     </header>
-    <p v-if="b.readOnly.value" class="panel-card" role="status">授权或经营状态不可用，当前仅查看历史记录；新购买、充值和配置修改已关闭。</p>
+    <p v-if="b.readOnly.value" class="panel-card" role="status">授权或经营状态不可用，新购买、充值和配置修改已关闭，保留历史记录和受限售后处理。</p>
     <nav v-if="section === 'payments'" class="page-tabs">
       <button v-if="!b.readOnly.value" :class="{ active: b.activeTab.value === 'primary' }" @click="b.activeTab.value = 'primary'">支付配置</button>
       <button :class="{ active: b.activeTab.value === 'orders' }" @click="b.activeTab.value = 'orders'">支付订单</button>
     </nav>
     <BusinessSearchToolbar :section="section" :title="meta[0]" :b="b" />
+    <PaymentRefundPanel v-if="section === 'payments' && canCashRefund && refundOrder" :key="refundOrder.id" :order="refundOrder" :allow-new="b.cashRefundsEnabled.value" @close="refundOrder = null" @updated="b.load" />
 
     <div v-if="section === 'end-users'" class="table-panel panel-card">
       <div class="data-table-scroll">
@@ -282,19 +287,21 @@ function formatDate(value:any){
                 </td>
                 <td><StatusBadge :status="order.status" /></td>
                 <td class="action-column">
-                  <div v-if="!b.readOnly.value" class="row-actions">
+                  <div v-if="!b.readOnly.value || canCashRefund" class="row-actions">
                     <button
+                      v-if="!b.readOnly.value"
                       class="text-button"
                       @click="b.orderAction(order, 'query')"
                     >
                       同步状态</button
                     ><button
-                      v-if="['pending', 'creating'].includes(order.status)"
+                      v-if="!b.readOnly.value && ['pending', 'creating'].includes(order.status)"
                       class="text-button danger"
                       @click="b.orderAction(order, 'close')"
                     >
                       关闭
                     </button>
+                    <button v-if="canCashRefund && (order.cashRefundState || (b.cashRefundsEnabled.value && order.status === 'paid'))" class="text-button" @click="refundOrder = order">现金售后</button>
                   </div>
                 </td>
               </tr>

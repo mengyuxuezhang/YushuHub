@@ -5,6 +5,11 @@ import { mysqlAccountingStore } from '../src/repositories/accounting.mjs'
 import { auditAccounting, migrateAccounting } from '../src/services/licensing/accounting-migration.mjs'
 import { createSupplyLedger } from '../src/services/licensing/ledger.mjs'
 
+const argumentsForTest = process.argv.slice(2)
+if (argumentsForTest.length > 1 || (argumentsForTest.length && !argumentsForTest[0].startsWith('--test-name-pattern='))) throw new Error('Only an optional --test-name-pattern is supported')
+const focused = argumentsForTest.length === 1
+if (focused) { if (argumentsForTest[0].length > 220) throw new Error('Bounded test pattern required'); new RegExp(argumentsForTest[0].slice('--test-name-pattern='.length)) }
+
 const name = `yushu-license-test-${crypto.randomBytes(6).toString('hex')}`, password = crypto.randomBytes(32).toString('hex')
 function docker(args, env = process.env, input) {
   const result = spawnSync('docker', args, { encoding: 'utf8', env, input, maxBuffer: 16 * 1024 * 1024, windowsHide: true })
@@ -27,11 +32,12 @@ try {
   await connection.query('CREATE DATABASE yushu_gateway_test')
   await connection.end()
   console.log(`Running against disposable MySQL ${server.version}; no deployment credentials are used.`)
-  const child = spawn(process.execPath, ['--test', 'src/services/licensing/licensing.mysql.test.mjs'], {
+  if (focused) console.log('Focused database regression only; full HTTP, backup and capacity checks are skipped.')
+  const child = spawn(process.execPath, ['--test', ...argumentsForTest, 'src/services/licensing/licensing.mysql.test.mjs'], {
     stdio: 'inherit', windowsHide: true, env: { ...process.env, LICENSING_TEST_DB: JSON.stringify(config) },
   })
   process.exitCode = await new Promise(resolve => { child.on('error', () => resolve(1)); child.on('exit', code => resolve(typeof code === 'number' ? code : 1)) })
-  if (process.exitCode === 0) {
+  if (process.exitCode === 0 && !focused) {
     const resources = spawn(process.execPath, ['scripts/test-authorization-resources.mjs'], {
       stdio: 'inherit', windowsHide: true, env: { ...process.env, LICENSING_TEST_DB: JSON.stringify(config) },
     })

@@ -7,6 +7,7 @@ import { isPaginationRequested, pageResult, parsePagination } from '../utils/pag
 import { buildListSearch } from './list-search.mjs'
 import { capturePaymentMemberships, recordPaymentFulfillment } from '../repositories/payment-fulfillments.mjs'
 import { paymentMerchantBinding } from './payment-merchant-binding.mjs'
+import { assertPaymentRefundClear } from '../repositories/payment-refunds.mjs'
 import {
   PaymentProviderError,
   closeAlipayOrder,
@@ -356,6 +357,7 @@ function normalizeOrderRow(row) {
     amount: Number(row.amount_fen || 0) / 100,
     currency: row.currency || 'CNY',
     status: row.status,
+    cashRefundState: row.cash_refund_state || '',
     providerTradeNo: row.provider_trade_no || '',
     qrCode: row.qr_code || '',
     checkoutUrl: row.checkout_url || '',
@@ -380,9 +382,9 @@ async function findOrderByNo(orderNo) {
   return rows[0] || null
 }
 
-async function providerConfigForOrder(row) {
-  const configRow = await findConfigRowById(row.config_id)
-  if (!configRow) throw new Error('订单对应的支付配置不存在')
+export async function providerConfigForOrder(row, connection = db()) {
+  const [[configRow]] = await connection.query('SELECT * FROM ai_payment_configs WHERE id=? LIMIT 1', [row.config_id])
+  if (!configRow || configRow.owner_user_id !== row.owner_user_id || configRow.provider !== row.provider) throw new Error('订单对应的原支付配置不存在或归属不符')
   return combinedProviderConfig(configRow)
 }
 
@@ -422,13 +424,19 @@ export async function createPaymentOrder({ userId, ownerUserId, input = {}, clie
   const config = combinedProviderConfig(configRow)
   const mode = provider === 'wechat' ? 'native' : String(input.mode || config.defaultMode || (config.faceToFaceEnabled ? 'precreate' : 'page'))
   assertModeEnabled(config, mode)
+  await assertPaymentRefundClear(db(), userId, { lock: false })
 
   const orderId = crypto.randomUUID()
   const orderNo = createOrderNo()
   const expiresAt = new Date(Date.now() + ORDER_TTL_MINUTES * 60 * 1000)
   const subject = `${card.name} - ${selected.name}`
+  const connection = await db().getConnection()
   try {
-    await db().query(
+    await connection.beginTransaction()
+    const [[purchaser]] = await connection.query('SELECT id,status FROM ai_end_users WHERE id=? FOR UPDATE', [userId])
+    if (!purchaser || purchaser.status !== 'enabled') throw new Error('购买用户已停用或不存在')
+    await assertPaymentRefundClear(connection, userId)
+    await connection.query(
       `INSERT INTO ai_payment_orders (
          id, order_no, owner_user_id, user_id, config_id, provider, payment_mode,
          idempotency_key, card_id, card_name, package_name, package_snapshot_json,
@@ -436,13 +444,15 @@ export async function createPaymentOrder({ userId, ownerUserId, input = {}, clie
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CNY', 'creating', ?, ?)`,
       [orderId, orderNo, ownerUserId, userId, config.id, provider, mode, idempotencyKey, card.id, card.name, selected.name, JSON.stringify({ ...selected, _paymentMerchant: paymentMerchantBinding(provider, config) }), amountFen, String(clientIp || '').slice(0, 64), expiresAt],
     )
+    await connection.commit()
   } catch (err) {
+    await connection.rollback()
     if (err?.code === 'ER_DUP_ENTRY') {
-      const [rows] = await db().query('SELECT * FROM ai_payment_orders WHERE user_id = ? AND idempotency_key = ? LIMIT 1', [userId, idempotencyKey])
+      const [rows] = await connection.query('SELECT * FROM ai_payment_orders WHERE user_id = ? AND idempotency_key = ? LIMIT 1', [userId, idempotencyKey])
       if (rows[0]) return normalizeOrderRow(rows[0])
     }
     throw err
-  }
+  } finally { connection.release() }
 
   const notifyUrl = callbackUrl(config)
   try {
@@ -553,7 +563,7 @@ export async function syncPaymentOrder(orderId, { userId = '', ownerUserId = '',
   if (!row) throw new Error('支付订单不存在')
   if (userId && row.user_id !== userId) throw new Error('无权查看其他用户的支付订单')
   if (ownerUserId && row.owner_user_id !== ownerUserId) throw new Error('无权查看其他账号的支付订单')
-  if (['paid', 'closed', 'refunded', 'failed'].includes(row.status)) return normalizeOrderRow(row)
+  if (['paid', 'closed', 'refunded', 'refunding', 'failed'].includes(row.status)) return normalizeOrderRow(row)
   if (!force && row.last_query_at && Date.now() - new Date(row.last_query_at).getTime() < 2500) return normalizeOrderRow(row)
 
   const config = await providerConfigForOrder(row)
@@ -591,7 +601,7 @@ export async function closePaymentOrder(orderId, { userId = '', ownerUserId = ''
   if (userId && row.user_id !== userId) throw new Error('无权关闭其他用户的支付订单')
   if (ownerUserId && row.owner_user_id !== ownerUserId) throw new Error('无权关闭其他账号的支付订单')
   if (row.status === 'paid') return normalizeOrderRow(row)
-  if (['closed', 'failed', 'refunded'].includes(row.status)) return normalizeOrderRow(row)
+  if (['closed', 'failed', 'refunded', 'refunding'].includes(row.status)) return normalizeOrderRow(row)
   const config = await providerConfigForOrder(row)
   const current = await queryProviderOrder(row, config)
   if (current.paid) {
@@ -645,7 +655,7 @@ export async function listPaymentOrders(ownerUserId, query = {}) {
   const limitSql = paged ? 'LIMIT ? OFFSET ?' : 'LIMIT 500'
   if (paged) rowParams.push(pagination.pageSize, pagination.offset)
   const [rows] = await db().query(
-    `SELECT o.*, u.username, u.display_name
+    `SELECT o.*, u.username, u.display_name, (SELECT r.state FROM ai_payment_refunds r WHERE r.order_id=o.id) AS cash_refund_state
      FROM ai_payment_orders o
      LEFT JOIN ai_end_users u ON u.id = o.user_id
      WHERE ${where.join(' AND ')}

@@ -1,5 +1,7 @@
 import { requireAuth, requireClientAuth, requirePermission } from '../middleware/auth.mjs'
 import { writeAppLog } from '../utils/log.mjs'
+import { registerPaymentRefundRoutes } from './payment-refunds.mjs'
+import { paymentRefundRuntime } from '../services/payment-refund-runtime.mjs'
 import {
   closePaymentOrder,
   createPaymentOrder,
@@ -30,6 +32,7 @@ function escapeHtml(value) {
 
 export function registerPaymentRoutes(app, deps = {}) {
   const { keyOwnerUserIdForEndUser } = deps
+  registerPaymentRefundRoutes(app, { refunds: deps.refunds === undefined ? paymentRefundRuntime() : deps.refunds })
 
   app.get('/api/payment-configs', requireAuth, requirePermission('payments.manage', '支付中心'), async (req, res) => {
     try {

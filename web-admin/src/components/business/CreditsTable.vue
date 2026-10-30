@@ -2,7 +2,7 @@
 import { UserRound } from '@lucide/vue'
 import BusinessPagination from '@/components/business/BusinessPagination.vue'
 defineProps<{ b: any }>()
-const creditTypeNames: Record<string, string> = { recharge: '充值', consume: '消费', redeem: '兑换', adjust: '人工调整', admin_adjust: '人工调整', membership: '会员权益', refund: '退款' }
+const creditTypeNames: Record<string, string> = { recharge: '充值', consume: '消费', redeem: '兑换', adjust: '人工调整', admin_adjust: '人工调整', membership: '会员权益', refund: '退款', payment_refund_hold: '现金退款暂扣积分', payment_refund_release: '退款关闭返还积分' }
 </script>
 
 <template>

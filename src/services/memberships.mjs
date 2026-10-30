@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { db } from '../db/pool.mjs'
 import { toMysqlDateTime } from '../utils/time.mjs'
+import { assertPaymentRefundClear, pendingPaymentRefund } from '../repositories/payment-refunds.mjs'
 
 const DEFAULT_FREE_PACKAGES = [
   { name: '永久免费', durationDays: 0, bonusPoints: 0, pointsDurationDays: 0, price: 0, originalPrice: 0, showOriginalPrice: false },
@@ -78,6 +79,11 @@ export async function ensureFreeMembershipFallback({
     await conn.beginTransaction()
     const [[user]] = await conn.query('SELECT id FROM ai_end_users WHERE id = ? FOR UPDATE', [targetUserId])
     if (!user) throw new Error('终端用户不存在')
+    const pendingRefund = await pendingPaymentRefund(conn, targetUserId)
+    if (pendingRefund) {
+      await conn.commit()
+      return { id: pendingRefund.payload.temporaryMembershipId, user_id: targetUserId, existing: true, refundPending: true }
+    }
 
     await conn.query(
       `UPDATE ai_end_user_memberships
@@ -170,6 +176,7 @@ export async function grantMembershipBenefits({
     if (ownsConnection) await conn.beginTransaction()
     const [[user]] = await conn.query('SELECT id, credit_balance FROM ai_end_users WHERE id = ? FOR UPDATE', [targetUserId])
     if (!user) throw new Error('终端用户不存在')
+    await assertPaymentRefundClear(conn, targetUserId)
 
     const [[active]] = await conn.query(
       'SELECT id FROM ai_end_user_memberships WHERE user_id = ? AND status = "active" ORDER BY created_at DESC LIMIT 1 FOR UPDATE',

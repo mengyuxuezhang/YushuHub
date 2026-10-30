@@ -9,6 +9,7 @@ console.log('PASS: free membership card IDs are stable and isolated by account')
 let ensuredFreePackages = null
 const freeCardDatabase = {
   async query(sql, params = []) {
+      if (sql.includes('FROM ai_payment_refunds')) return [[], []]
     if (sql.startsWith('SELECT packages_json FROM ai_membership_cards')) {
       return [[{ packages_json: JSON.stringify([
         { name: '基础会员', durationDays: 30, bonusPoints: 20, pointsDurationDays: 90, price: 0 },
@@ -37,6 +38,7 @@ function fakeDatabase({ balance = 0, activeMembershipId = '' } = {}) {
     async rollback() { state.rolledBack = true },
     release() {},
     async query(sql, params = []) {
+      if (sql.includes('FROM ai_payment_refunds')) return [[], []]
       state.queries.push({ sql, params })
       if (sql.includes('SELECT id, credit_balance FROM ai_end_users')) return [[{ id: params[0], credit_balance: state.balance }], []]
       if (sql.includes('SELECT id FROM ai_end_user_memberships')) {
@@ -100,6 +102,7 @@ function fallbackDatabase() {
     async rollback() { state.rolledBack += 1 },
     release() {},
     async query(sql, params = []) {
+      if (sql.includes('FROM ai_payment_refunds')) return [[], []]
       if (sql.startsWith('SELECT id FROM ai_end_users')) return [[{ id: params[0] }], []]
       if (sql.startsWith('UPDATE ai_end_user_memberships') && sql.includes("status = 'expired'")) {
         state.expiredUpdates += 1
@@ -124,6 +127,7 @@ function fallbackDatabase() {
     state,
     database: {
       async query(sql, params = []) {
+      if (sql.includes('FROM ai_payment_refunds')) return [[], []]
         if (sql.startsWith('SELECT packages_json FROM ai_membership_cards')) return [[{ packages_json: JSON.stringify([freePackage]) }], []]
         if (sql.startsWith('INSERT INTO ai_membership_cards')) return [{ affectedRows: 1 }, []]
         throw new Error(`Unexpected fallback database SQL: ${sql} / ${params.join(',')}`)

@@ -3,7 +3,8 @@
 export const RECORD_PERMISSIONS = new Set(['payments.manage', 'credits.manage', 'user_usage.view', 'user_usage.export'])
 export const CENTRAL_REMEDIATION_PERMISSIONS = new Set(['organizations.view', 'platform_settings.manage', 'authorization.view', 'account_security.manage', 'diagnostics.view', ...RECORD_PERMISSIONS])
 export function recordRequestAllowed(method, path) {
-  return method === 'GET' && (['/api/payment-orders', '/api/credits/ledger', '/api/supply/balance'].includes(path)
+  return method === 'GET' && (['/api/payment-orders', '/api/payment-refunds/state', '/api/credits/ledger', '/api/supply/balance'].includes(path)
+    || /^\/api\/payment-orders\/[^/]+\/refund$/.test(path)
     || /^\/api\/reports\/user-usage\/(overview|users|options|export)$/.test(path)
     || /^\/api\/reports\/user-usage\/users\/[^/]+$/.test(path))
 }

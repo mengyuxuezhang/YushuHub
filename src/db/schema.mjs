@@ -3,6 +3,7 @@ import crypto from 'node:crypto'
 import mysql from 'mysql2/promise'
 import { migrateUserUsagePermissions } from '../services/user-usage-permissions.mjs'
 import { migratePaymentFulfillments } from '../repositories/payment-fulfillments.mjs'
+import { migratePaymentRefunds } from '../repositories/payment-refunds.mjs'
 
 let pool
 let DB_NAME
@@ -1503,6 +1504,7 @@ export async function initDatabase(options = {}) {
   `)
 
   await migratePaymentFulfillments(pool)
+  await migratePaymentRefunds(pool)
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ai_payment_events (

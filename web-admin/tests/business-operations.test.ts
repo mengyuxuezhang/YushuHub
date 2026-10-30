@@ -78,7 +78,7 @@ describe('inactive licensed business records', () => {
       expect(state.readOnly.value).toBe(true)
       expect(state.activeTab.value).toBe('orders')
       expect(state.secondaryRows.value[0].id).toBe('historical-order')
-      expect(request.mock.calls.every(call => String(call[0]).startsWith('/api/payment-orders'))).toBe(true)
+      expect(request.mock.calls.every(call => String(call[0]).startsWith('/api/payment-orders') || String(call[0]) === '/api/payment-refunds/state')).toBe(true)
     } finally { app.unmount(); host.remove() }
   })
 })

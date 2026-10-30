@@ -3,6 +3,7 @@ import * as api from "@/api/business-operations";
 import { toUserMessage } from "@/api/client";
 import { useFeedbackStore } from "@/stores/feedback";
 import { useAuthStore } from "@/stores/auth";
+import { paymentRefundState } from '@/api/payment-refunds';
 
 export type BusinessSection = "end-users" | "memberships" | "payments" | "credits" | "redeem-codes";
 
@@ -11,6 +12,7 @@ export function useBusinessOperations(section: BusinessSection) {
   const auth = useAuthStore();
   const readOnly = computed(() => auth.user?.organizationContext?.authorizationSource === 'license-center'
     && (auth.user.organizationContext.centralLicenseActive !== true || auth.user.organizationContext.organizationStatus !== 'enabled'));
+  const cashRefundsEnabled = ref(false), cashRefundHistory = ref(false);
   const rows = ref<any[]>([]),
     secondaryRows = ref<any[]>([]),
     options = ref<any[]>([]);
@@ -88,7 +90,9 @@ export function useBusinessOperations(section: BusinessSection) {
           api.listMembershipModels(),
         ]);
       if (section === "payments") {
-        const [configs, orders] = await Promise.all([readOnly.value ? Promise.resolve([]) : api.listPaymentConfigs(), api.listPaymentOrders(query)]);
+        const [configs, orders, refunds] = await Promise.all([readOnly.value ? Promise.resolve([]) : api.listPaymentConfigs(), api.listPaymentOrders(query), paymentRefundState().catch(() => ({ enabled: false, historyAvailable: false }))]);
+        cashRefundsEnabled.value = refunds.enabled === true;
+        cashRefundHistory.value = refunds.historyAvailable === true;
         if (readOnly.value) activeTab.value = 'orders';
         rows.value = configs; applyPage(orders, "secondary");
       }
@@ -460,6 +464,8 @@ export function useBusinessOperations(section: BusinessSection) {
   onMounted(load);
   return {
     readOnly,
+    cashRefundsEnabled,
+    cashRefundHistory,
     rows,
     secondaryRows,
     options,

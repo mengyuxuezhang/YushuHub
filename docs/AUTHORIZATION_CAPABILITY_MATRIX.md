@@ -39,7 +39,7 @@
 | `user_usage.export` 导出使用报表 | /user-usage | 历史/分级供货计量和CSV；失效保留只读 | 有/有/有 | `src/routes/user-usage-report.mjs` | `npm run test:user-usage`<br>`npm run test:licensing:mysql` |
 | `end_users.manage` 终端用户管理 | /end-users | 本组织用户、模型权限、积分权益 | 有/有/有 | `src/routes/admin-business.mjs`<br>`src/routes/organizations.mjs` | `npm run test:end-users` |
 | `memberships.manage` 会员卡管理 | /memberships | 会员模板/归属/模块优惠及价格快照 | 有/有/有 | `src/routes/memberships.mjs`<br>`src/routes/organizations.mjs` | `npm run test:memberships`<br>`npm run test:licensing:mysql` |
-| `payments.manage` 支付中心 | /payments | 商户配置和订单；失效仅看账，不放开新购买 | 有/有/有 | `src/routes/organizations.mjs`<br>`src/routes/payments.mjs` | `npm run test:payments`<br>`npm run test:licensing` |
+| `payments.manage` 支付中心 | /payments | 商户配置和订单；失效保留历史与本组织所有者现金售后，新购买关闭（新退款默认关闭） | 有/有/有 | `src/routes/organizations.mjs`<br>`src/routes/payments.mjs`<br>`src/routes/payment-refunds.mjs` | `npm run test:payments`<br>`npm run test:licensing` |
 | `credits.manage` 积分管理 | /credits | 原积分账保留；人工积分不增加上游钱包；财务可读本地供货账，冲正须一级所有者 | 有/有/有 | `src/routes/admin-business.mjs`<br>`src/routes/organizations.mjs` | `npm run test:end-users`<br>`npm run test:licensing:mysql` |
 | `redeem_codes.manage` 兑换码管理 | /redeem-codes | 原兑换权益保留；失效禁止新兑换 | 有/有/有 | `src/routes/organizations.mjs`<br>`src/routes/redeem-codes.mjs` | `npm run test:redeem-codes` |
 | `model_providers.manage` 服务商管理 | /models/providers | 仅一级自定义可修改；固定仅查看供货展示 | 有/有/无 | `src/routes/model-service.mjs` | `npm run test:model-v2`<br>`npm run test:licensing` |

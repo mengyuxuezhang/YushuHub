@@ -100,6 +100,7 @@ import { registerAdminBusinessRoutes } from '../../src/routes/admin-business.mjs
 import { registerBuildRoutes } from '../../src/routes/builds.mjs'
 import { registerMembershipRoutes } from '../../src/routes/memberships.mjs'
 import { registerPaymentRoutes } from '../../src/routes/payments.mjs'
+import { assertEndUsersCanBeErased } from '../../src/services/financial-user-retention.mjs'
 import { registerCuratedSkillRoutes } from '../../src/routes/curated-skills.mjs'
 import { registerCuratedMcpRoutes } from '../../src/routes/curated-mcps.mjs'
 import { registerCuratedAgentRoutes } from '../../src/routes/curated-agents.mjs'
@@ -3795,6 +3796,7 @@ async function deleteEndUsersByProject(conn, projectId) {
   const [users] = await conn.query('SELECT id FROM ai_end_users WHERE source_project_id = ?', [projectId])
   const ids = users.map((row) => row.id).filter(Boolean)
   if (ids.length === 0) return 0
+  await assertEndUsersCanBeErased(conn, ids)
   await conn.query('UPDATE ai_redeem_codes SET used_by_user_id = "" WHERE used_by_user_id IN (?)', [ids])
   await conn.query('DELETE FROM ai_end_user_model_access WHERE user_id IN (?)', [ids])
   await conn.query('DELETE FROM ai_end_user_sessions WHERE user_id IN (?)', [ids])

@@ -8,7 +8,7 @@ const props = defineProps<{
   b: ReturnType<typeof useBusinessOperations>
 }>()
 
-const creditTypeNames: Record<string, string> = { recharge: '充值', consume: '消费', redeem: '兑换', adjust: '人工调整', admin_adjust: '人工调整', membership: '会员权益', refund: '退款' }
+const creditTypeNames: Record<string, string> = { recharge: '充值', consume: '消费', redeem: '兑换', adjust: '人工调整', admin_adjust: '人工调整', membership: '会员权益', refund: '退款', payment_refund_hold: '现金退款暂扣积分', payment_refund_release: '退款关闭返还积分' }
 const fields: Record<string, SearchFieldOption[]> = {
   'end-users': [{ value: 'all', label: '全部字段' }, { value: 'user', label: '账号 / 姓名 / 邮箱' }, { value: 'userId', label: '用户 ID' }, { value: 'source', label: '来源组织 / 项目 / 设备' }],
   memberships: [{ value: 'all', label: '全部字段' }, { value: 'name', label: '会员卡名称' }, { value: 'id', label: '会员卡 ID' }, { value: 'level', label: '等级' }, { value: 'benefit', label: '权益与说明' }],
@@ -32,7 +32,7 @@ const fields: Record<string, SearchFieldOption[]> = {
   >
     <template v-if="section === 'payments'">
       <select v-model="b.providerFilter.value" aria-label="支付渠道" @change="b.submitSearch"><option value="all">全部渠道</option><option value="wechat">微信支付</option><option value="alipay">支付宝</option></select>
-      <select v-model="b.statusFilter.value" aria-label="订单状态" @change="b.submitSearch"><option value="all">全部状态</option><option value="pending">待支付</option><option value="paid">已支付</option><option value="closed">已关闭</option><option value="failed">失败</option><option value="refunded">已退款</option></select>
+      <select v-model="b.statusFilter.value" aria-label="订单状态" @change="b.submitSearch"><option value="all">全部状态</option><option value="pending">待支付</option><option value="paid">已支付</option><option value="closed">已关闭</option><option value="failed">失败</option><option value="refunding">退款处理中</option><option value="refunded">已退款</option></select>
     </template>
     <select v-else-if="section === 'credits'" v-model="b.changeTypeFilter.value" aria-label="积分变动类型" @change="b.submitSearch"><option value="all">全部类型</option><option v-for="(label, value) in creditTypeNames" :key="value" :value="value">{{ label }}</option></select>
     <select v-else-if="section === 'end-users'" v-model="b.statusFilter.value" aria-label="用户状态" @change="b.submitSearch"><option value="all">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>

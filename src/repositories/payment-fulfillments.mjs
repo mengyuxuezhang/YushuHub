@@ -30,8 +30,13 @@ export async function capturePaymentMemberships(connection, userId) {
   return rows
 }
 
+export async function readPaymentMembership(connection, id, userId) {
+  const [[row]] = await connection.query(`SELECT ${membershipFields} FROM ai_end_user_memberships WHERE id=? AND user_id=? FOR UPDATE`, [id, userId])
+  return row || null
+}
+
 export async function recordPaymentFulfillment(connection, order, granted, previousMemberships) {
-  const [[membership]] = await connection.query(`SELECT ${membershipFields} FROM ai_end_user_memberships WHERE id=? AND user_id=? FOR UPDATE`, [granted.id, order.user_id])
+  const membership = await readPaymentMembership(connection, granted.id, order.user_id)
   if (!membership || membership.source !== 'payment' || membership.status !== 'active' || membership.cardId !== order.card_id || membership.createdBy !== order.owner_user_id) throw failure('PAYMENT_FULFILLMENT_INVALID', '实际发放会员与原支付订单不一致', 409)
   const [entries] = await connection.query(`SELECT id, CAST(points_delta AS CHAR) AS points FROM ai_credit_ledger WHERE user_id=? AND request_id=? AND change_type='recharge' FOR UPDATE`, [order.user_id, order.order_no])
   const points = decimal(micros(String(granted.bonusPoints)))

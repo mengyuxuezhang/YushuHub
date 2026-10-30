@@ -50,10 +50,11 @@ async function tableProof(connection, table, onlyColumns) {
 }
 export async function collectMigrationProofs(connection) {
   const proofs = {}
-  const [[fulfillments]] = await connection.query("SELECT COUNT(*) AS present FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='ai_payment_fulfillments'")
+  const [paymentTables] = await connection.query("SELECT table_name AS name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('ai_payment_fulfillments','ai_payment_refunds','ai_payment_refund_events')")
+  const availablePayments = new Set(paymentTables.map(row => row.name))
   for (const [group, tables] of Object.entries(groups)) {
     const parts = []
-    const included = group === 'orders' && Number(fulfillments.present) === 1 ? [...tables, 'ai_payment_fulfillments'] : tables
+    const included = group === 'orders' ? [...tables, ...['ai_payment_fulfillments', 'ai_payment_refunds', 'ai_payment_refund_events'].filter(table => availablePayments.has(table))] : tables
     for (const table of included) parts.push(await tableProof(connection, table, group === 'balances' ? ['id', 'credit_balance', 'organization_id']
       : table === 'ai_model_provider_keys' ? ['id', 'owner_user_id', 'provider_id', 'upstream_account_id', 'provider_model_id', 'organization_id', 'status', 'weight', 'updated_at'] : null))
     proofs[group] = { count: parts.reduce((sum, part) => sum + part.count, 0), hash: migrationHash(parts), tables: parts }
@@ -74,12 +75,14 @@ export async function readLegacyDeploymentSnapshot(connection, profile, now = Da
   const [[legacyKeys]] = await connection.query("SELECT COUNT(*) AS count FROM ai_end_users WHERE COALESCE(model_gateway_key,'')<>''")
   const [[pendingModels]] = await connection.query("SELECT COUNT(*) AS count FROM ai_model_operations WHERE status IN ('pending','running','outcome_unknown')")
   const [[pendingVoices]] = await connection.query("SELECT COUNT(*) AS count FROM ai_voice_operations WHERE status IN ('pending','running','outcome_unknown')")
+  const [[refundTable]] = await connection.query("SELECT COUNT(*) AS present FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='ai_payment_refunds'")
+  const pendingRefunds = Number(refundTable.present) ? Number((await connection.query("SELECT COUNT(*) AS count FROM ai_payment_refunds WHERE state IN ('prepared','submitted','processing','unknown')"))[0][0].count) : 0
   return { schemaVersion: 1, sourceId: profile.sourceId, capturedAt: now, organizations: [{ id: organization.id, name: organization.name, agentLevel: 1,
     legacySupplierId: profile.legacySupplierId || organization.external_id || null, localExternalId: organization.external_id, businessStatus: organization.status,
     status: profile.status, expiresAt: profile.expiresAt, allowCustomApiProviders: profile.allowCustomApiProviders, domain: profile.domain || null, instanceId: profile.instanceId || null,
     usage: { projects: projects.length, builds: profile.cumulativeBuilds } }],
     capabilities: profile.capabilities.map(cap => ({ organizationId: organization.id, key: cap.key, enabled: cap.enabled, limitValue: cap.limitValue })),
     projects, builds, proofs: await collectMigrationProofs(connection),
-    blockers: { runningBuilds: builds.filter(row => ['queued', 'running'].includes(row.status)).length, pendingModelOperations: Number(pendingModels.count), pendingVoiceOperations: Number(pendingVoices.count) },
+    blockers: { runningBuilds: builds.filter(row => ['queued', 'running'].includes(row.status)).length, pendingModelOperations: Number(pendingModels.count), pendingVoiceOperations: Number(pendingVoices.count), pendingPaymentRefunds: pendingRefunds },
     compatibility: { legacyGatewayUserCount: Number(legacyKeys.count), modelPricesPreservedAsProof: true, modelRoutingAndPricesRequireShadowReview: true } }
 }

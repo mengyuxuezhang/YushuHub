@@ -155,6 +155,8 @@ function paymentDatabase() {
     rolledBack: 0,
   }
   const query = async (sql, params = []) => {
+    if (sql.includes('FROM ai_payment_refunds')) return [[], []]
+    if (sql.startsWith('SELECT id,status FROM ai_end_users')) return [[{ id: params[0], status: 'enabled' }], []]
     if (sql.includes('AS startedAt') && sql.includes("status='active'")) return [[], []]
     if (sql.includes('AS startedAt') && sql.includes('WHERE id=?')) return [[{ id: params[0], userId: 'end-user-1', cardId: 'vip-card', status: 'active', source: 'payment', createdBy: 'agent-a' }], []]
     if (sql.includes('CAST(points_delta AS CHAR)')) return [state.ledgerRows, []]
@@ -217,6 +219,8 @@ function orderCreationDatabase() {
     secret_ciphertext: payments.encryptPaymentSecrets({ appPrivateKey: alipayApp.privateKey, alipayPublicKey: alipayPlatform.publicKey }),
   }
   const query = async (sql, params = []) => {
+    if (sql.includes('FROM ai_payment_refunds')) return [[], []]
+    if (sql.startsWith('SELECT id,status FROM ai_end_users')) return [[{ id: params[0], status: 'enabled' }], []]
     if (sql.includes('FROM ai_payment_orders WHERE user_id = ? AND idempotency_key = ?')) {
       const found = state.orders.find((item) => item.user_id === params[0] && item.idempotency_key === params[1])
       return [found ? [{ ...found }] : [], []]
@@ -249,7 +253,7 @@ function orderCreationDatabase() {
     }
     return [{ affectedRows: 1 }, []]
   }
-  return { state, pool: { query } }
+  return { state, pool: { query, async getConnection() { return { query, async beginTransaction() {}, async commit() {}, async rollback() {}, release() {} } } } }
 }
 
 const creation = orderCreationDatabase()

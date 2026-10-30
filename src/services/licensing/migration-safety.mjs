@@ -33,8 +33,14 @@ export async function legacyRollbackStatus(connection, snapshot) {
     const [[holds]] = await connection.query("SELECT COUNT(*) AS count FROM accounting_holds WHERE book='commerce-v2' AND released=0")
     requests = Number(row.count); unsettled = Number(row.unsettled); entries = Number(ledger.count); activeHolds = Number(holds.count)
   }
-  const compatibleVersionRequired = requests > 0 || entries > 0 || activeHolds > 0
-  return { schemaVersion: 1, sourceId: snapshot.sourceId, checkedAt: Date.now(), requests, unsettled, entries, activeHolds, rights,
+  const [[refundTable]] = await connection.query("SELECT COUNT(*) AS present FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='ai_payment_refunds'")
+  let cashRefunds = 0, pendingCashRefunds = 0
+  if (Number(refundTable.present)) {
+    const [[refunds]] = await connection.query("SELECT COUNT(*) AS count,COALESCE(SUM(state IN ('prepared','submitted','processing','unknown')),0) AS pending FROM ai_payment_refunds")
+    cashRefunds = Number(refunds.count); pendingCashRefunds = Number(refunds.pending)
+  }
+  const compatibleVersionRequired = requests > 0 || entries > 0 || activeHolds > 0 || cashRefunds > 0
+  return { schemaVersion: 1, sourceId: snapshot.sourceId, checkedAt: Date.now(), requests, unsettled, entries, activeHolds, cashRefunds, pendingCashRefunds, rights,
     compatibleVersionRequired, oldModeCandidate: !compatibleVersionRequired && rights.equal, databaseSnapshotRestoreAllowed: !compatibleVersionRequired && rights.equal,
     automaticRollbackPerformed: false, authorizesRollback: false,
     instruction: compatibleVersionRequired ? '只能回退到兼容新账务的版本，保留现库和新增流水；先核对未结任务和预占。' : '仅可作为结算前回退候选；仍须确认授权源、单写和服务配置，不自动恢复旧库。' }
