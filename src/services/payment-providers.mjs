@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { PAYMENT_SECRET_FILE, PAYMENT_SECRET_KEY } from '../config/env.mjs'
+import { createPaymentRefundProviders } from './payment-refund-providers.mjs'
 
 const WECHAT_API_BASE = 'https://api.mch.weixin.qq.com'
 const ALIPAY_GATEWAYS = {
@@ -194,6 +195,7 @@ async function wechatRequest(config, method, requestPath, body = null) {
   try {
     response = await fetch(`${WECHAT_API_BASE}${requestPath}`, {
       method,
+      redirect: 'error',
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
@@ -371,6 +373,7 @@ async function alipayRequest(config, method, bizContent, extra = {}) {
   try {
     response = await fetch(alipayGateway(config), {
       method: 'POST',
+      redirect: 'error',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8', Accept: 'application/json' },
       body: new URLSearchParams(params).toString(),
       signal: timeout.signal,
@@ -395,6 +398,7 @@ async function alipayRequest(config, method, bizContent, extra = {}) {
   if (!signatureValid) {
     throw new PaymentProviderError('支付宝响应验签失败', { provider: 'alipay', code: 'SIGNATURE_INVALID', status: response.status })
   }
+  if (!response.ok) throw new PaymentProviderError('支付宝HTTP请求未成功，须按原编号核对结果', { provider: 'alipay', code: `HTTP_${response.status}`, status: response.status })
   return { data, payload, raw }
 }
 
@@ -475,6 +479,9 @@ export function parseAlipayNotification(body = {}, config = {}) {
   }
   return params
 }
+
+export const { refundWechatOrder, queryWechatRefund, refundAlipayOrder, queryAlipayRefund } = createPaymentRefundProviders({ wechatRequest, alipayRequest, validateWechatConfig, validateAlipayConfig,
+  providerError: (message, details) => new PaymentProviderError(message, details) })
 
 export async function testWechatConfig(config) {
   validateWechatConfig(config)
