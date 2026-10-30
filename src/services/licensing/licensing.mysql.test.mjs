@@ -28,6 +28,7 @@ import { setAuthDependencies } from '../../middleware/auth.mjs'
 import { supplyMembershipBenefit } from './benefits.mjs'
 import { createResourceCoordinator, emptyResourceIntents } from './resource-runtime.mjs'
 import { UserUsageReportRepository } from '../../repositories/user-usage-report.mjs'
+import { emptyPriceNotificationState } from './price-notifications.mjs'
 import { offerFor } from './offer-pricing.mjs'
 import { HOUR } from './protocol.mjs'
 import { normalizeReportQuery } from '../user-usage-report.mjs'
@@ -869,4 +870,49 @@ test('real MySQL scheduled supply prices survive restart and preserve before/aft
     assert.equal((await peer.balance(root)).totals.firstMargin, '0.800000')
     auditAccounting(state, 'commerce')
   } finally { await pool.end() }
+})
+
+
+test('real MySQL organization price notifications persist, isolate recipients and resume without resending delivered plans', { skip: !configured }, async () => {
+  const { gatewayDatabase = 'yushu_gateway_test', licenseDatabase, ...config } = JSON.parse(process.env.LICENSING_TEST_DB)
+  if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable test database required')
+  const pool = mysql.createPool({ ...config, database: gatewayDatabase }), dir = await fs.mkdtemp(path.join(os.tmpdir(), 'price-channels-'))
+  let runtime, sends = [], notificationClockOffset = 0
+  const root = { id: 'notify-root', level: 1, modelMode: 'custom', modelIds: ['notify-model'] }, child = { ...root, id: 'notify-child', level: 2, parentId: root.id }
+  const model = { id: 'notify-model', status: 'enabled', name: '虚构通知模型', taskType: 'chat', adapter: 'openai.chat', version: 1, contextWindow: 10, maxOutputTokens: 5,
+    price: { version: 1, components: [{ meter: 'request', phase: 'request', amount: '1', unitSize: '1' }] }, supplierCost: { version: 1, components: [{ meter: 'request', phase: 'request', amount: '0.5', unitSize: '1' }] } }
+  const file = path.join(dir, 'models.json'); await fs.writeFile(file, JSON.stringify([model]))
+  const client = { claims: async id => id === child.id ? child : root, activeGrants: async () => [root, child], recoveryIdentity: async () => ({ id: root.id }) }
+  const make = () => agentCommerceRuntime({ client, database: () => pool, now: () => Date.now() + notificationClockOffset, env: { AI_AGENT_CUSTOM_MODELS_FILE: file, AI_PRICE_NOTIFICATIONS_KEY_FILE: path.join(dir, 'key') },
+    fetchImpl: async (url, options) => { sends.push({ url: String(url), text: JSON.parse(options.body).content.text }); return new Response('{"code":0}') } })
+  const url = suffix => `https://open.feishu.cn/open-apis/bot/v2/hook/${suffix.repeat(8)}-bbbb-cccc-dddd-eeeeeeeeeeee`
+  try {
+    await mysqlStateStore(pool, 'commerce-v2-price-notifications', emptyPriceNotificationState()).migrate()
+    runtime = make(); let service = await runtime.service()
+    const initial = { modelId: model.id, enabled: true, saleMarkup: [], supplyMarkup: [], pointsPerCny: '1', expectedVersion: 0 }
+    await service.configure(root, initial, 'root-owner'); await service.configure(child, initial, 'child-owner')
+    await runtime.notifications.forOrganization(root.id).configure({ expectedVersion: 0, enabled: true, url: url('a') }, 'root-owner')
+    await runtime.notifications.forOrganization(child.id).configure({ expectedVersion: 0, enabled: true, url: url('b') }, 'child-owner')
+    await service.configure(root, { ...initial, expectedVersion: 1, saleMarkup: [{ meter: 'request', phase: 'request', amount: '0.1' }], supplyMarkup: [{ meter: 'request', phase: 'request', amount: '0.2' }] }, 'root-owner')
+    await runtime.scanPrices(); assert.equal(sends.length, 2)
+    assert(sends.find(send => send.url === url('a')).text.includes(root.id)); assert(sends.find(send => send.url === url('b')).text.includes(child.id))
+    assert.equal((await runtime.monitor.state()).config.configured, false)
+    runtime.stop(); runtime = make(); await runtime.scanPrices(); assert.equal(sends.length, 2)
+    const channel = runtime.notifications.forOrganization(child.id)
+    await channel.configure({ expectedVersion: 1, enabled: true, url: url('c'), signingSecret: 'isolated-signing-secret' }, 'child-owner')
+    assert.equal((await runtime.notifications.forOrganization(root.id).state()).config.version, 1)
+    await channel.test('child-channel-test', 'child-owner'); await runtime.notifications.drain()
+    assert.equal(sends.length, 3); assert.equal(sends[2].url, url('c'))
+    assert.equal((await channel.state()).deliveries.every(row => row.state === 'delivered'), true)
+    await channel.test('key-restore-test', 'child-owner')
+    await fs.rename(path.join(dir, 'key'), path.join(dir, 'key-backup'))
+    await runtime.notifications.drain(); assert.equal(sends.length, 3)
+    assert.equal((await channel.state()).deliveries.at(-1).lastError, 'WEBHOOK_UNAVAILABLE')
+    await fs.rename(path.join(dir, 'key-backup'), path.join(dir, 'key')); notificationClockOffset += 2001
+    await runtime.notifications.drain(); assert.equal(sends.length, 4)
+    assert.equal((await channel.state()).deliveries.at(-1).state, 'delivered')
+
+    const raw = await mysqlStateStore(pool, 'commerce-v2-price-notifications', emptyPriceNotificationState()).read()
+    assert.equal(JSON.stringify(raw).includes(url('a')), false); assert.equal(JSON.stringify(raw).includes('isolated-signing-secret'), false)
+  } finally { runtime?.stop(); await pool.end(); await fs.rm(dir, { recursive: true, force: true }) }
 })

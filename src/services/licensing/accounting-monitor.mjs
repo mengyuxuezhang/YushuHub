@@ -35,23 +35,49 @@ export function createAccountingMonitor({ store, collect, vault, book, licenseSt
     async state() {
       const state = await store.read()
       return { config: publicConfig(state.config), metrics: state.metrics, alerts: state.alerts, lastScanError: state.lastScanError || null,
+        lastPriceScanAt: state.lastPriceScanAt || null, lastPriceScanError: state.lastPriceScanError || null, noticeBacklog: state.noticeBacklog || 0,
         deliveries: state.deliveries.slice(-100).map(({ id, kind, createdAt, state, attempts, nextAttemptAt, deliveredAt, lastError }) => ({ id, kind, createdAt, state, attempts, nextAttemptAt, deliveredAt, lastError })), audit: state.audit.slice(-50) }
     },
     async configure(input, actor) {
       if (typeof input.enabled !== 'boolean' || !Number.isSafeInteger(input.expectedVersion)) throw failure('INVALID_CONFIG', '需要enabled和expectedVersion')
-      const thresholds = { ...defaults, ...(input.thresholds || {}) }
-      for (const [key, value] of Object.entries(thresholds)) if (!Object.hasOwn(defaults, key) || !Number.isSafeInteger(value) || value < 1 || value > 86_400_000) throw failure('INVALID_THRESHOLD', '告警阈值无效')
+      const changes = input.thresholds || {}
+      for (const [key, value] of Object.entries(changes)) if (!Object.hasOwn(defaults, key) || !Number.isSafeInteger(value) || value < 1 || value > 86_400_000) throw failure('INVALID_THRESHOLD', '告警阈值无效')
       const encrypted = input.url === undefined ? undefined : await vault.seal(JSON.stringify({ url: target(input.url), secret: String(input.signingSecret || '') }), account)
       if (String(input.signingSecret || '').length > 512 || (input.signingSecret !== undefined && input.url === undefined)) throw failure('INVALID_CONFIG', '更新签名密钥时须同时提供地址')
       return store.transaction(state => {
         if (state.config.version !== input.expectedVersion) throw failure('CONFIG_CHANGED', '配置已更新，请刷新后重试', 409)
         if (input.enabled && !encrypted && !state.config.encrypted) throw failure('WEBHOOK_REQUIRED', '请先配置Webhook')
-        state.config = { ...state.config, ...(encrypted ? { encrypted } : {}), thresholds, enabled: input.enabled, version: state.config.version + 1 }
+        state.config = { ...state.config, ...(encrypted ? { encrypted } : {}), thresholds: { ...defaults, ...state.config.thresholds, ...changes }, enabled: input.enabled, version: state.config.version + 1 }
         state.audit.push({ at: now(), actor, action: 'webhook_configured', version: state.config.version, enabled: input.enabled })
         state.audit = state.audit.slice(-100)
         return publicConfig(state.config)
       })
     },
+    publishNotices(events) {
+      return store.transaction(state => {
+        state.noticeKeys ||= {}
+        for (const [id, until] of Object.entries(state.noticeKeys)) if (until <= now()) delete state.noticeKeys[id]
+        for (const event of state.deliveries) if (event.kind === 'price-change' && event.validUntil <= now() && !['delivered', 'skipped'].includes(event.state) && (!event.leaseUntil || event.leaseUntil <= now())) {
+          event.state = 'skipped'; event.lastError = 'NOTICE_WINDOW_PASSED'
+        }
+        let pending = state.deliveries.filter(event => !['delivered', 'skipped'].includes(event.state)).length
+        let pricePending = state.deliveries.filter(event => event.kind === 'price-change' && !['delivered', 'skipped'].includes(event.state)).length
+        let queued = 0, backlog = 0
+        for (const event of events) {
+          if (event.kind !== 'price-change' || !Number.isSafeInteger(event.validUntil) || event.validUntil <= now() || typeof event.text !== 'string' || event.text.length > 2000) throw failure('INVALID_NOTICE', '调价通知内容无效')
+          identifier(event.id)
+          if (state.noticeKeys[event.id]) continue
+          // Keep room for operational alerts and retain unpublished work in the
+          // authoritative price plans, which are scanned again next minute.
+          if (pending >= 200 || pricePending >= 100) { backlog++; continue }
+          enqueue(state, event, now()); state.noticeKeys[event.id] = event.validUntil
+          pending++; pricePending++; queued++
+        }
+        state.noticeBacklog = backlog; state.lastPriceScanAt = now(); state.lastPriceScanError = null
+        return { queued, backlog }
+      })
+    },
+    priceScanFailed(code = 'PRICE_SCAN_FAILED') { return store.transaction(state => { state.lastPriceScanError = { at: now(), code: code === 'LICENSE_INACTIVE' ? code : 'PRICE_SCAN_FAILED' } }) },
     async test(requestId, actor) {
       identifier(requestId)
       return store.transaction(state => {

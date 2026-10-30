@@ -4,11 +4,12 @@ import crypto from 'node:crypto'
 import { memoryStateStore } from '../../repositories/licensing-state.mjs'
 import { createLicenseCenter, emptyCenterState } from './center.mjs'
 import { createAgentCommerce, emptyCommerceState } from './commerce.mjs'
+import { createPriceNotifications, emptyPriceNotificationState } from './price-notifications.mjs'
 import { modelPriceAt, offerFor, offerKey } from './offer-pricing.mjs'
 import { createSupplyLedger, emptyLedgerState } from './ledger.mjs'
 import { createModelGateway } from './gateway.mjs'
 import { createDeploymentLicenseClient, emptyDeploymentState } from './deployment-client.mjs'
-import { decimal, HOUR, micros, verifyClaims } from './protocol.mjs'
+import { decimal, digest, HOUR, micros, verifyClaims } from './protocol.mjs'
 import { quoteSupply, scheduleSupplyPrice, validateSupplyPrice, withMarkup } from './pricing.mjs'
 import { createOperatorAuth, passwordHash, totp } from './operator-auth.mjs'
 import { auditLegacyAuthorization, compareMigration } from './migration.mjs'
@@ -705,4 +706,62 @@ test('official price announcements expose future prices and preserve metering ru
   advance(24 * HOUR); token = (await center.serviceToken(first.credential, 'official-models')).token
   const effective = (await gateway.catalog(token))[0]
   assert.equal(effective.price.version, scheduled.version); assert.equal(effective.price.components[0].amount, '2.000000'); assert.equal(effective.nextPrices.length, 0)
+})
+
+
+test('price webhooks isolate organization channels, preserve thresholds, lease retries and retain notice deduplication', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'price-notice-')); t.after(() => fs.rm(dir, { recursive: true, force: true }))
+  const store = memoryStateStore(emptyPriceNotificationState()), vault = new ModelCredentialVault(path.join(dir, 'key'))
+  let stamp = 1000000, sends = []
+  const now = () => stamp, url = suffix => `https://open.feishu.cn/open-apis/bot/v2/hook/${suffix.repeat(8)}-bbbb-cccc-dddd-eeeeeeeeeeee`
+  const options = { store, vault, now, fetchImpl: async (target, options) => { sends.push({ target, body: JSON.parse(options.body) }); return new Response(JSON.stringify({ code: target === url('a') ? 1 : 0 })) } }
+  const channels = createPriceNotifications(options), first = channels.forOrganization('root'), child = channels.forOrganization('child')
+  await first.configure({ expectedVersion: 0, enabled: true, url: url('a'), thresholds: { staleHoldMs: 1234 } }, 'first-owner')
+  await child.configure({ expectedVersion: 0, enabled: true, url: url('b') }, 'child-owner')
+  const event = { id: 'same-event-id', kind: 'price-change', text: '虚构调价通知', validUntil: now() + 24 * HOUR }
+  await first.publishNotices([event]); await child.publishNotices([event])
+  await Promise.all([channels.drain(), createPriceNotifications(options).drain()])
+  assert.equal(sends.length, 2); assert.equal((await child.state()).deliveries[0].state, 'delivered')
+  assert.equal((await first.state()).deliveries[0].lastError, 'WEBHOOK_REJECTED')
+  await first.configure({ expectedVersion: 1, enabled: true, url: url('c') }, 'first-owner')
+  assert.equal((await first.state()).config.thresholds.staleHoldMs, 1234)
+  assert.equal((await child.state()).config.version, 1)
+  stamp += 2001; await createPriceNotifications(options).drain(); assert.equal(sends.length, 3); assert.equal(sends[2].target, url('c'))
+  await store.transaction(state => { state.channels.root.deliveries = [] })
+  assert.equal((await first.publishNotices([event])).queued, 0)
+  const lots = Array.from({ length: 200 }, (_, i) => ({ ...event, id: `notice-${i}` }))
+  const published = await first.publishNotices(lots); assert.equal(published.queued, 100); assert.equal(published.backlog, 100)
+  assert(!JSON.stringify(await store.read()).includes(url('c'))); assert(!JSON.stringify(await child.state()).includes(url('b')))
+  stamp += 24 * HOUR; await first.publishNotices([])
+  assert.equal((await first.state()).deliveries.every(row => row.state === 'skipped'), true)
+})
+
+test('pending child grants require code activation, lost unused codes can be reissued and active grants cannot be reactivated', async () => {
+  const { center } = setup(), first = await root(center)
+  await assert.rejects(center.issue({ id: 'First', name: '不得用大小写建立第二主体', packageId: 'first-fixed', domain: first.input.domain, expiresAt: null }, 'operator'), { code: 'INVALID_GRANT' })
+  const pending = await center.issue({ id: 'pending-child', name: '待激活二级', packageId: 'second', parentId: 'first', expiresAt: '2027-01-01T00:00:00Z' }, 'operator')
+  await assert.rejects(center.serviceToken(first.credential, 'official-models', pending.grant.id), { code: 'LICENSE_NOT_ACTIVATED' })
+  assert.equal((await center.refresh(first.credential)).grants.find(g => g.id === pending.grant.id).certificate, null)
+  assert.equal((await center.list()).grants.find(g => g.id === pending.grant.id).activated, false)
+  const reissued = await center.reissueCode(pending.grant.id, 'operator')
+  const input = { instanceId: first.input.instanceId, domain: first.input.domain, requestId: 'pending-child-activate' }
+  await assert.rejects(center.activate({ ...input, code: pending.code }, first.credential), { code: 'INVALID_CODE' })
+  await center.activate({ ...input, code: reissued.code }, first.credential)
+  assert.ok((await center.serviceToken(first.credential, 'official-models', pending.grant.id)).token)
+  await assert.rejects(center.reissueCode(pending.grant.id, 'operator'), { code: 'ALREADY_ACTIVATED' })
+})
+
+test('activating another first-level code cannot replace a persisted identity or consume the mismatched code', async () => {
+  const { center, store: centerStore, now, publicKeys } = setup(), first = await root(center)
+  const other = await center.issue({ id: 'other-first', name: '其他代理', packageId: 'first-fixed', domain: first.input.domain, expiresAt: null }, 'operator')
+  const state = memoryStateStore({ ...emptyDeploymentState(), rootId: 'first', credential: first.credential, checkedAt: now(), grants: { first: { certificate: first.certificate, inactive: false } } })
+  const client = createDeploymentLicenseClient({ store: state, now, publicKeys, instanceId: first.input.instanceId, publicUrl: first.input.domain, centerUrl: 'https://license.example.com',
+    fetchImpl: async (_url, options) => {
+      try { return new Response(JSON.stringify({ success: true, data: await center.activate(JSON.parse(options.body)) })) }
+      catch (error) { return new Response(JSON.stringify({ success: false, code: error.code, error: error.message }), { status: error.statusCode }) }
+    } })
+  await assert.rejects(client.activate(other.code), { code: 'BINDING_MISMATCH' })
+  assert.equal((await state.read()).rootId, 'first'); assert.equal((await state.read()).credential, first.credential)
+  assert.equal((await centerStore.read()).codes[digest(other.code)].status, 'unused')
+  assert.equal((await client.activeGrants()).length, 1)
 })

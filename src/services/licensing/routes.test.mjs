@@ -44,6 +44,9 @@ test('monitor remediation remains available after expiry only to the authenticat
     assert.equal((await fetch(`${url}/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 403)
     context = { ...context, organizationLevel: 1, isOwner: false }
     assert.equal((await fetch(url)).status, 403)
+    context = { ...context, isOwner: true, memberStatus: 'disabled' }
+    assert.equal((await fetch(url)).status, 403)
+    assert.equal((await fetch(`${url}/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 403)
     loggedIn = false
     assert.equal((await fetch(url)).status, 401)
     assert.equal(writes, 1)
@@ -158,5 +161,23 @@ test('expired first owner can reverse only a trusted direct child ledger, while 
     context = { ...context, isOwner: true, organizationLevel: 2 }; assert.equal((await reverse()).status, 403)
     context = { ...context, organizationLevel: 1, memberStatus: 'disabled' }; assert.equal((await reverse()).status, 403)
     assert.equal(calls.length, 1)
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+})
+
+
+test('organization owners configure only their own price notification channel, including after expiry', async () => {
+  let context = { organizationId: 'local-child', externalId: 'central-child', organizationLevel: 2, authorizationSource: 'license-center', centralLicenseActive: false, memberStatus: 'enabled', organizationStatus: 'enabled', isOwner: true }
+  const touched = []
+  setAuthDependencies({ getUserBySession: async () => ({ id: 'child-owner', organizationContext: context }) })
+  const runtime = { recordTenant: async context => ({ id: context.externalId, level: context.organizationLevel }), notifications: { forOrganization: id => ({ state: async () => ({ id }), configure: async (input, actor) => { touched.push({ id, actor }); return { configured: true } } }) } }
+  const app = express(); app.use(express.json()); registerAgentSupplyRoutes(app, { runtime })
+  app.use((error, _req, res, _next) => res.status(error.statusCode || 500).json({ code: error.code }))
+  const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)) }), url = `http://127.0.0.1:${server.address().port}/api/supply/notifications`
+  try {
+    assert.deepEqual(await (await fetch(url + '?organizationId=root')).json(), { success: true, data: { id: 'central-child' } })
+    assert.equal((await fetch(url + '/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ organizationId: 'root' }) })).status, 200)
+    assert.deepEqual(touched, [{ id: 'central-child', actor: 'child-owner' }])
+    context = { ...context, isOwner: false }; assert.equal((await fetch(url)).status, 403)
+    context = { ...context, isOwner: true, memberStatus: 'disabled' }; assert.equal((await fetch(url)).status, 403)
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
 })

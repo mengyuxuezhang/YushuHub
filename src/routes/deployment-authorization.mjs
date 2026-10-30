@@ -8,7 +8,7 @@ import { endpoint } from './license-center.mjs'
 export function registerDeploymentAuthorizationRoutes(app, { client, repository, database, ensureAccountFreeMembership, monitor }) {
   if (!client) return
   const owner = (req, _res, next) => {
-    if (req.organizationContext?.organizationLevel !== 1 || !req.organizationContext?.isOwner) return next(failure('OWNER_REQUIRED', '只有一级组织所有者可以激活部署授权', 403))
+    if (req.organizationContext?.organizationLevel !== 1 || !req.organizationContext?.isOwner || req.organizationContext.memberStatus !== 'enabled') return next(failure('OWNER_REQUIRED', '只有启用的一级组织所有者可以激活部署授权', 403))
     next()
   }
   if (monitor) {

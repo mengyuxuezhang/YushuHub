@@ -19,6 +19,11 @@ function expiry(value) {
 function active(grant, now) {
   return grant?.status === 'enabled' && (!grant.expiresAt || Date.parse(grant.expiresAt) > now)
 }
+function activated(state, grant) {
+  return Number.isFinite(grant.activatedAt) || Boolean(grant.credentialHash)
+    || Object.values(state.codes).some(code => code.grantId === grant.id && code.status === 'used')
+    || state.audit.some(event => event.event === 'activated' && event.target === grant.id)
+}
 function current(state, id, now) {
   const grant = state.grants[identifier(id)]
   if (!active(grant, now)) throw failure('LICENSE_INACTIVE', '授权已停用、撤销或到期', 403)
@@ -51,7 +56,7 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
     store,
     async list() {
       const state = await store.read()
-      return { grants: Object.values(state.grants).map(publicGrant), packages: Object.values(state.packages), audit: state.audit.slice(-200).reverse() }
+      return { grants: Object.values(state.grants).map(grant => ({ ...publicGrant(grant), activated: activated(state, grant) })), packages: Object.values(state.packages), audit: state.audit.slice(-200).reverse() }
     },
     async publishPackage(input, actor) {
       const pkg = validatePackage(input), id = `${identifier(pkg.id)}:${pkg.version}`
@@ -69,7 +74,7 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
         if (!pkg) throw failure('PACKAGE_NOT_FOUND', '套餐不存在', 404)
         const id = identifier(input.id || crypto.randomUUID()), expiresAt = expiry(input.expiresAt), name = String(input.name || '').trim().slice(0, 120)
         if (id.length > 64) throw failure('INVALID_GRANT', '代理授权ID不能超过64字符，以兼容经营与官方服务主体标识')
-        if (!name || state.grants[id]) throw failure('INVALID_GRANT', '名称为空或授权ID重复', 409)
+        if (!name || Object.keys(state.grants).some(existing => existing.toLowerCase() === id.toLowerCase())) throw failure('INVALID_GRANT', '名称为空或授权ID重复（大小写不能形成不同代理）', 409)
         if (expiresAt && Date.parse(expiresAt) <= now()) throw failure('INVALID_EXPIRY', '新授权有效期必须晚于当前时间')
         let parent = null
         if (pkg.level === 2) {
@@ -82,7 +87,7 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
         const grant = { id, name, level: pkg.level, modelMode: pkg.modelMode, packageId: pkg.id, packageVersion: pkg.version,
           capabilities: structuredClone(pkg.capabilities), quotas: structuredClone(pkg.quotas), modelIds: models,
           version: 1, status: 'enabled', expiresAt, parentId: parent?.id || null,
-          instanceId: parent?.instanceId || null, domain: parent?.domain || domain(input.domain), createdAt: now() }
+          instanceId: parent?.instanceId || null, domain: parent?.domain || domain(input.domain), activatedAt: null, createdAt: now() }
         state.grants[id] = grant
         const code = secret(), hash = digest(code)
         state.codes[hash] = { grantId: id, status: 'unused', expiresAt: now() + 7 * 24 * HOUR }
@@ -93,6 +98,7 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
     async reissueCode(id, actor) {
       return store.transaction(state => {
         const grant = current(state, id, now())
+        if (activated(state, grant)) throw failure('ALREADY_ACTIVATED', '已激活授权使用续期或迁移流程，不重发激活码', 409)
         for (const code of Object.values(state.codes)) if (code.grantId === id) code.status = 'void'
         const code = secret()
         state.codes[digest(code)] = { grantId: grant.id, status: 'unused', expiresAt: now() + 7 * 24 * HOUR }
@@ -106,6 +112,7 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
         const code = state.codes[hash]
         if (!code || code.status === 'void' || code.expiresAt <= now()) throw failure('INVALID_CODE', '激活码无效或已过期', 403)
         const grant = current(state, code.grantId, now())
+        if (grant.level === 1 && input.boundGrantId && identifier(input.boundGrantId) !== grant.id) throw failure('BINDING_MISMATCH', '已绑定部署不能通过新码替换代理身份', 403)
         if (grant.domain !== domain(input.domain)) throw failure('BINDING_MISMATCH', '域名与授权不符', 403)
         if (grant.level === 2) {
           const parent = authenticate(state, parentToken)
@@ -117,6 +124,7 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
         if (code.status === 'unused') {
           if (grant.credentialHash) throw failure('ALREADY_ACTIVATED', '已激活实例请使用迁移或轮换流程', 409)
           grant.instanceId = instanceId
+          grant.activatedAt = now()
           if (credential) {
             grant.credentialHash = digest(credential)
             state.credentials[grant.credentialHash] = grant.id
@@ -131,7 +139,7 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
       return store.transaction(state => {
         const root = authenticate(state, token)
         const grants = [root, ...Object.values(state.grants).filter(g => g.parentId === root.id)]
-        return { grants: grants.map(g => { const bound = { ...g, instanceId: root.instanceId, domain: root.domain, ...(root.bindingExpiresAt ? { bindingExpiresAt: root.bindingExpiresAt } : {}) }; return { ...publicGrant(bound), certificate: active(g, now()) ? certificate(state, bound) : null } }), checkedAt: now() }
+        return { grants: grants.map(g => { const bound = { ...g, instanceId: root.instanceId, domain: root.domain, ...(root.bindingExpiresAt ? { bindingExpiresAt: root.bindingExpiresAt } : {}) }; return { ...publicGrant(bound), certificate: active(g, now()) && activated(state, g) ? certificate(state, bound) : null } }), checkedAt: now() }
       })
     },
     async preview(id, patch) {
@@ -152,6 +160,7 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
       if (!['official-build', 'official-resources', 'official-models'].includes(audience)) throw failure('INVALID_AUDIENCE', '服务用途无效')
       const state = await store.read(), root = authenticate(state, token), grant = current(state, organizationId || root.id, now())
       if (grant.id !== root.id && grant.parentId !== root.id) throw failure('SCOPE_DENIED', '组织不属于当前实例', 403)
+      if (!activated(state, grant)) throw failure('LICENSE_NOT_ACTIVATED', '授权尚未兑换激活', 403)
       return { token: signClaims({ aud: audience, sub: grant.id, rootId: root.id, instanceId: root.instanceId, version: grant.version,
         rootVersion: root.version, modelIds: grant.modelIds, capabilities: grant.capabilities, iat: now(), exp: Math.min(now() + 60_000, root.bindingExpiresAt || Infinity) }, signing) }
     },
@@ -161,6 +170,7 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
       const grant = recovery ? state.grants[claims.sub] : current(state, claims.sub, now()), root = recovery ? state.grants[claims.rootId] : current(state, claims.rootId, now())
       if (!grant || !root || root.level !== 1 || (recovery && (grant.status === 'revoked' || root.status === 'revoked'
         || !claims.requestId || JSON.stringify(claims.actions) !== JSON.stringify(['status', 'poll', 'ack'])))) throw failure('RECOVERY_DENIED', '恢复权限无效或已撤销', 403)
+      if (!recovery && !activated(state, grant)) throw failure('LICENSE_NOT_ACTIVATED', '授权尚未兑换激活', 403)
       if (claims.version !== grant.version || claims.rootVersion !== root.version || !bindingValid(root, claims.instanceId, now())
         || (grant.id !== root.id && grant.parentId !== root.id)) throw failure('STALE_LICENSE', '授权或绑定已变更', 403)
       return { ...claims, grant: publicGrant(grant), root: publicGrant(root) }
@@ -212,6 +222,7 @@ export function createLicenseCenter({ store, privateKey, keyId, publicKeys, cred
       const claims = verifyClaims(token, { keys: publicKeys, audience: 'official-build', now: now() })
       return store.transaction(state => {
         const root = current(state, claims.rootId, now()), grant = current(state, claims.sub, now())
+        if (!activated(state, grant)) throw failure('LICENSE_NOT_ACTIVATED', '授权尚未兑换激活', 403)
         if (root.level !== 1 || !bindingValid(root, claims.instanceId, now()) || claims.version !== grant.version || claims.rootVersion !== root.version
           || (grant.id !== root.id && grant.parentId !== root.id)) throw failure('STALE_LICENSE', '授权或实例绑定已变化', 403)
         const permission = input.kind === 'builds' ? 'builds.create' : 'projects.manage'

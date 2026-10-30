@@ -10,12 +10,15 @@ import { digest, failure } from './protocol.mjs'
 import { chatStreamCollector, emitChunk, readSse } from './streaming.mjs'
 import { supplyMembershipBenefit } from './benefits.mjs'
 import { validateSupplyPrice } from './pricing.mjs'
+import { createPriceNotifications, emptyPriceNotificationState, priceAnnouncementEvents } from './price-notifications.mjs'
 
 export function agentCommerceRuntime({ client, database, env = process.env, fetchImpl = fetch, benefits = supplyMembershipBenefit, now = Date.now }) {
   if (!client) return null
   const pool = { query: (...args) => database().query(...args), getConnection: () => database().getConnection() }
   const store = mysqlAccountingStore(pool, 'commerce-v2', 'commerce'), adapters = httpGatewayAdapters(fetchImpl)
   const monitorStore = mysqlStateStore(pool, 'commerce-v2-monitor', {})
+  const priceStore = mysqlStateStore(pool, 'commerce-v2-price-notifications', emptyPriceNotificationState())
+  const notifications = createPriceNotifications({ store: priceStore, vault: new ModelCredentialVault(env.AI_PRICE_NOTIFICATIONS_KEY_FILE || path.resolve('data/price-notifications.key')), fetchImpl, now })
   const monitor = createAccountingMonitor({ store: monitorStore, collect: (previous, now) => store.monitoring(previous, now), book: 'commerce-v2',
     licenseState: () => client.monitorState(), vault: new ModelCredentialVault(env.AI_ACCOUNTING_MONITOR_KEY_FILE || path.resolve('data/accounting-monitor.key')), fetchImpl })
   const customModels = env.AI_AGENT_CUSTOM_MODELS_FILE ? JSON.parse(fs.readFileSync(env.AI_AGENT_CUSTOM_MODELS_FILE, 'utf8')) : []
@@ -68,8 +71,11 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     }))
   }
   const runtime = {
-    store, monitor,
-    async startMonitoring() { await store.assertReady(); await monitorStore.read(); monitor.start() },
+    store, monitor, notifications,
+    async startMonitoring() {
+      await store.assertReady(); await monitorStore.read(); await priceStore.read(); monitor.start()
+      if (!priceTimer) { priceTimer = setInterval(() => runtime.scanPrices().catch(() => {}), 60_000); priceTimer.unref(); void runtime.scanPrices().catch(() => {}) }
+    },
     async tenant(context) {
       const grant = await client.claims(context.externalId || (context.organizationLevel === 2 ? context.organizationId : undefined))
       if (grant.level !== context.organizationLevel) throw failure('BINDING_MISMATCH', '本地组织与授权层级不符', 403)
@@ -105,6 +111,22 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     },
     async acknowledge(tenant, requestId) { return gateway(tenant, `/recovery/requests/${encodeURIComponent(requestId)}/ack`, {}, requestId) },
   }
+  let priceTimer, priceScanning = false
+  runtime.scanPrices = async () => {
+    if (priceScanning) return
+    priceScanning = true
+    try {
+      const grants = client.activeGrants ? await client.activeGrants() : [await client.claims()]
+      const root = grants.find(grant => grant.level === 1)
+      if (!root) return
+      const [models, state] = await Promise.all([catalog(root), store.readConfiguration()])
+      for (const grant of grants) await notifications.forOrganization(grant.id).publishNotices(priceAnnouncementEvents(state, root.id, grant, models, now()))
+    } catch (error) {
+      try { const root = await client.recoveryIdentity(); await notifications.forOrganization(root.id).priceScanFailed([401, 403].includes(error.statusCode) ? 'LICENSE_INACTIVE' : 'PRICE_SCAN_FAILED') } catch {}
+    } finally {
+      try { await notifications.drain() } finally { priceScanning = false }
+    }
+  }
   let reconciling = false
   runtime.flush = async () => {
     if (reconciling) return
@@ -128,6 +150,6 @@ export function agentCommerceRuntime({ client, database, env = process.env, fetc
     } finally { reconciling = false }
   }
   const timer = setInterval(() => runtime.flush().catch(() => monitor.recoveryError()), 30_000); timer.unref()
-  runtime.stop = () => { clearInterval(timer); monitor.stop() }
+  runtime.stop = () => { clearInterval(timer); clearInterval(priceTimer); monitor.stop() }
   return runtime
 }

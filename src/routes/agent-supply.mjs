@@ -15,6 +15,14 @@ export function publicSupplyCatalogRow(row, level) {
 export function registerAgentSupplyRoutes(app, { runtime, resolveUserContext, client, repository }) {
   if (!runtime) return
   const context = async req => runtime.tenant(req.organizationContext)
+  const notificationOwner = async req => {
+    if (!req.organizationContext?.isOwner || req.organizationContext.memberStatus !== 'enabled') throw failure('OWNER_REQUIRED', '只有启用的本组织所有者可配置通知', 403)
+    const tenant = await runtime.recordTenant(req.organizationContext)
+    return runtime.notifications.forOrganization(tenant.id)
+  }
+  app.get('/api/supply/notifications', requireAuth, endpoint(async req => (await notificationOwner(req)).state()))
+  app.put('/api/supply/notifications/config', requireAuth, endpoint(async req => (await notificationOwner(req)).configure(req.body, req.user.id)))
+  app.post('/api/supply/notifications/test', requireAuth, endpoint(async req => (await notificationOwner(req)).test(req.body.requestId, req.user.id)))
   app.get('/api/supply/catalog', requireAuth, requirePermission('pricing_rules.manage'), endpoint(async req => {
     const tenant = await context(req), rows = await (await runtime.service()).list(tenant)
     return rows.map(row => publicSupplyCatalogRow(row, tenant.level))

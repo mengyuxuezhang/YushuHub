@@ -44,6 +44,11 @@ export function createDeploymentLicenseClient({ store, centerUrl, instanceId, pu
   }
   return {
     refresh,
+    async activeGrants() {
+      const state = await refresh(), grants = []
+      for (const id of Object.keys(state.grants)) { try { grants.push(await this.claims(id)) } catch {} }
+      return grants
+    },
     async adoptCredential(credential) {
       if (typeof credential !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(credential)) throw failure('INSTANCE_UNAUTHORIZED', '迁移凭据格式无效', 401)
       const response = await request('refresh', {}, credential), grants = {}
@@ -83,9 +88,10 @@ export function createDeploymentLicenseClient({ store, centerUrl, instanceId, pu
         return claims
       }
       const requestId = await store.transaction(current => current.pending[codeId] ||= crypto.randomUUID())
-      const result = await request('activate', { code, requestId, instanceId, domain: publicUrl }, level === 2 ? state.credential : null)
+      const result = await request('activate', { code, requestId, instanceId, domain: publicUrl, ...(level === 1 && state.rootId ? { boundGrantId: state.rootId } : {}) }, level === 2 ? state.credential : null)
       const claims = verify(result.certificate)
       if (claims.level !== level || (level === 2 && claims.parentId !== state.rootId)) throw failure('BINDING_MISMATCH', '激活对象不匹配', 403)
+      if (level === 1 && state.rootId && state.rootId !== claims.id) throw failure('BINDING_MISMATCH', '已激活部署不能通过新激活码替换代理身份；续期或换机须沿用原授权', 403)
       await store.transaction(current => {
         if (level === 1) { current.rootId = claims.id; current.credential = result.credential }
         current.grants[claims.id] = { certificate: result.certificate, inactive: false }
