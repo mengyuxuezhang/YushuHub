@@ -66,3 +66,32 @@ reviews是数组，每项填写 `sourcePlanId`、十进制 `pointsPerCny`、`con
 支付权益凭证补充（2026-10-31）：源库存在ai_payment_fulfillments时，orders核对摘要包含该表；不存在该表的旧部署仍可采集。新发放凭证或修改会改变来源摘要，冻结清单后如有此类变化必须重新核对。迁入工具不为旧已支付订单倒推发放前会员状态，缺凭证的现金售后须受控核对，不以当前套餐代替历史。
 
 现金退款状态补充（2026-10-31）：orders摘要按表存在性同时涵盖ai_payment_fulfillments、ai_payment_refunds和ai_payment_refund_events。待处理现金退款进入快照阻断，绑定切换必须先完成或核对；已有任一现金退款记录即要求兼容新退款状态/暂扣的回退版本，不以模型请求数为0允许恢复旧快照。关闭新受理开关不会取消已批准退款。
+
+## 旧报价用量影子核对
+
+`model-shadow manifest.json receipt.json reviews.json samples.json report.json`只读执行：重新验签中心迁入回执、核对原价格/路由/汇率摘要，并在同一只读事务中重新生成model-preview候选。samples必须绑定本次model-preview的previewDigest；来源变化或摘要不符直接拒绝，不生成貌似有效的报告。原组织汇率只用于调用旧报价实现，人民币固定为1，未重估历史成本。
+
+用例格式示例：
+
+```json
+{
+  "modelPreviewDigest": "从本次model-preview复制的previewDigest",
+  "cases": [{
+    "id": "cached-input-with-member",
+    "sourcePlanId": "原方案ID",
+    "discount": "0.8",
+    "events": [
+      {"meter": "request", "phase": "request", "quantity": "1"},
+      {"meter": "input_tokens", "quantity": "17"},
+      {"meter": "cached_tokens", "quantity": "3"},
+      {"meter": "output_tokens", "quantity": "1"}
+    ]
+  }]
+}
+```
+
+每批1至1000个唯一用例，每个最多64个事件，用量必须为有界的非负十进制文本。仅接收已审核计价维度，不携带用户ID、提示词、音频或密钥；未审核方案、负用量、缺少非零用例均阻断。无缓存独立价的旧文本方案会先合并缓存输入再调用原quotePricing，保持旧输入计量语义；新链使用实际quoteSupply与终端换算函数，不重写另一套扣费规则。工具不写订单、余额、供货报价或定义，不调用模型。
+
+报告分别列出oldRawPoints（旧复合报价原扣积分）、oldBenefitReferencePoints（仅对照计算旧折扣/原两位倍率的参考值）、newRawPoints、newBenefitPoints和三类差额。当前旧本地模型后端按复合报价原积分扣费，不能因旧配置存在会员/倍率就假定这条路径曾执行；新路径执行优惠/倍率导致的行为变化也必须显式核定。该结论限定这条路径，不代替所有旧客户端、语音/媒体和网关账单入口的实际验证。
+
+原逐项四舍五入与新人民币向上取六位可能导致微积分尾差；即使单价看似相等也按LEGACY_CHARGE_CHANGED阻断。sampleChargesMatch仅表示本批样本与现有阻断项情况，不是已安装报价或生产验收。无论样本是否一致，cutoverReady始终false，仍需定义/报价受控安装、真实路由/会员规格影子、单写切换、回滚与7天试点。正式核对至少涵盖零、最小计量、单位/最低单位边界、缓存、规格维度、零折扣/普通会员/无折扣及原倍率。

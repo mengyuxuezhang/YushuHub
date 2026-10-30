@@ -14,6 +14,9 @@ import { migrationHash } from './legacy-import.mjs'
 import { writeMigrationArtifact } from './migration-artifacts.mjs'
 import { verifyLegacyImportReceipt } from './local-legacy-binding.mjs'
 import { shadowLegacyAuthorization } from './migration-safety.mjs'
+import { shadowLegacyModelPrices } from './legacy-price-shadow.mjs'
+import { legacyPriceProposal } from './legacy-model-review.mjs'
+
 import { modelPriceAt, offerFor, offerKey } from './offer-pricing.mjs'
 import { createSupplyLedger, emptyLedgerState } from './ledger.mjs'
 import { createModelGateway } from './gateway.mjs'
@@ -1082,4 +1085,39 @@ test('private voice manual resolution requires final evidence and original actio
   for (const usage of [[], [input.usage[1]], [...input.usage, input.usage[1]], input.usage.map(item => ({ ...item, quantity: 1 })), input.usage.map(item => item.meter === 'billable_characters' ? { ...item, phase: 'usage' } : item), input.usage.map(item => ({ ...item, quantity: '-1' }))]) assert.throws(() => normalizeVoiceResolution({ ...input, usage }, 'clone', 'trusted-operator'), { code: 'INVALID_USAGE' })
   assert.deepEqual(normalizeVoiceResolution({ ...input, resultState: 'failed', usage: [] }, 'clone', 'trusted-operator').usage, [])
   assert.throws(() => normalizeVoiceResolution(input, 'activate', 'trusted-operator'), { code: 'INVALID_USAGE' })
+})
+
+function priceShadowFixture(components, multiplier = '1') {
+  const sourcePlan = { id: 'old-price', providerModelId: 'model-one', taskType: 'chat', version: 1, status: 'enabled', consumptionMultiplier: multiplier,
+    components: components.map(component => ({ unitSize: '1000000', minimumUnits: '0', rounding: 'none', status: 'enabled', phase: 'usage', ...component })) }
+  const costComponents = ['request', 'input_tokens', 'cached_tokens', 'output_tokens'].map(meter => ({ meter, phase: meter === 'request' ? 'request' : 'usage',
+    unitSize: meter === 'request' ? '1' : '1000000', amount: '0', rounding: 'none', minimumUnits: '0' }))
+  const proposal = legacyPriceProposal(sourcePlan, { pointsPerCny: '10', conversionReview: '虚构积分比例核对', costReview: '虚构成本核对', costComponents })
+  return { batchId: 'test', grantId: 'first', snapshotHash: 'test-source', previewDigest: 'test-review', blockers: [], models: [{ modelId: 'model-one', sourcePlanId: 'old-price', sourcePlan, proposal }] }
+}
+test('legacy price shadow preserves cache fallback but exposes newly enforced discounts and multipliers', () => {
+  const review = priceShadowFixture([{ meter: 'input_tokens', salePoints: '10' }, { meter: 'output_tokens', salePoints: '20' }], '2')
+  const result = shadowLegacyModelPrices(review, { modelPreviewDigest: review.previewDigest, cases: [{ id: 'cache', sourcePlanId: 'old-price', discount: '0.8',
+    events: [{ meter: 'request', phase: 'request', quantity: '1' }, { meter: 'input_tokens', quantity: '17' }, { meter: 'cached_tokens', quantity: '3' }, { meter: 'output_tokens', quantity: '1' }] }] })
+  assert.equal(result.results[0].oldRawPoints, '0.000220'); assert.equal(result.results[0].newRawPoints, '0.000220')
+  assert.equal(result.results[0].oldBenefitReferencePoints, '0.000352'); assert.equal(result.results[0].newBenefitPoints, '0.000352')
+  assert.equal(result.results[0].backendDelta, '0.000132'); assert.equal(result.sampleChargesMatch, false)
+  assert(result.blockers.some(item => item.code === 'LEGACY_CHARGE_CHANGED')); assert.equal(result.databaseChanged, false); assert.equal(result.cutoverReady, false)
+})
+test('legacy price shadow blocks micro-CNY rounding differences even with identical component rates', () => {
+  const review = priceShadowFixture([{ meter: 'input_tokens', salePoints: '0.1' }])
+  const result = shadowLegacyModelPrices(review, { modelPreviewDigest: review.previewDigest, cases: [{ id: 'tail', sourcePlanId: 'old-price', events: [{ meter: 'input_tokens', quantity: '1' }] }] })
+  assert.equal(result.results[0].oldRawPoints, '0.000000'); assert.equal(result.results[0].newRawPoints, '0.000010'); assert.equal(result.sampleChargesMatch, false)
+})
+test('exact legacy price samples never imply cutover and invalid samples cannot silently count as coverage', () => {
+  const review = priceShadowFixture([{ meter: 'input_tokens', salePoints: '10' }])
+  const input = { modelPreviewDigest: review.previewDigest, cases: [{ id: 'exact', sourcePlanId: 'old-price', events: [{ meter: 'input_tokens', quantity: '1000000' }] }] }
+  const exact = shadowLegacyModelPrices(review, input)
+  assert.equal(exact.sampleChargesMatch, true); assert.equal(exact.cutoverReady, false)
+  assert.throws(() => shadowLegacyModelPrices(review, { ...input, modelPreviewDigest: 'changed' }), { code: 'MODEL_PREVIEW_CHANGED' })
+  const missing = shadowLegacyModelPrices(review, { ...input, cases: [{ ...input.cases[0], sourcePlanId: 'another-plan' }] })
+  assert(missing.blockers.some(item => item.code === 'MISSING_NONZERO_USAGE_SHADOW')); assert.equal(missing.results.length, 0)
+  const negative = shadowLegacyModelPrices(review, { ...input, cases: [{ ...input.cases[0], events: [{ meter: 'input_tokens', quantity: '-1' }] }] })
+  assert(negative.blockers.some(item => item.code === 'INVALID_USAGE'))
+  assert.throws(() => shadowLegacyModelPrices(review, { ...input, cases: [...input.cases, ...input.cases] }), { code: 'INVALID_SHADOW_CASES' })
 })
