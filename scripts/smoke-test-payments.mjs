@@ -164,7 +164,7 @@ function paymentDatabase() {
     if (sql.includes('SELECT * FROM ai_payment_orders WHERE id =')) return [[{ ...state.order }], []]
     if (sql.includes('SELECT * FROM ai_membership_cards')) return [[{ id: 'vip-card', name: '高级会员', created_by: 'agent-a' }], []]
     if (sql.includes('SELECT card_id, expires_at FROM ai_end_user_memberships')) return [[], []]
-    if (sql.includes('SELECT id, credit_balance FROM ai_end_users')) return [[{ id: 'end-user-1', credit_balance: state.balance }], []]
+    if (sql.includes('SELECT id, credit_balance, organization_id FROM ai_end_users') || sql.includes('SELECT id, credit_balance FROM ai_end_users')) return [[{ id: 'end-user-1', credit_balance: state.balance, organization_id: 'test-payment-child' }], []]
     if (sql.includes('SELECT id FROM ai_end_user_memberships')) return [[], []]
     if (sql.startsWith('INSERT INTO ai_end_user_memberships')) { state.membershipInserts += 1; state.order.fulfillment_membership_id = params[0]; return [{ affectedRows: 1 }, []] }
     if (sql.startsWith('UPDATE ai_end_users SET credit_balance')) { state.balance += Number(params[0] || 0); return [{ affectedRows: 1 }, []] }

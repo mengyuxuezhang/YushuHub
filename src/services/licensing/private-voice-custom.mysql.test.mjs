@@ -24,7 +24,7 @@ for (const mode of ['file', 'keypool']) test(`real MySQL ${mode} private voice c
   try {
     await admin.query('CREATE DATABASE ??', [name]); created = true; pool = mysql.createPool({ ...config, database: name, connectionLimit: 12 })
     await pool.query('CREATE TABLE ai_end_users(id VARCHAR(64) PRIMARY KEY,status VARCHAR(16),credit_balance DECIMAL(18,6),organization_id VARCHAR(64))')
-    await pool.query('CREATE TABLE ai_credit_ledger(id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),model_name VARCHAR(120),note VARCHAR(255),request_id VARCHAR(80))')
+    await pool.query('CREATE TABLE ai_credit_ledger(id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),model_name VARCHAR(120),note VARCHAR(255),request_id VARCHAR(80),organization_id VARCHAR(64))')
     await pool.query("INSERT INTO ai_end_users VALUES ('custom-voice-user','enabled',100,'custom-local-child')")
     await migrateAccounting({ pool, book: 'commerce-v2', kind: 'commerce', sourceId: 'empty-custom-voice' }); await migrateSupplyVoiceSchema(pool)
     await mysqlStateStore(pool, 'commerce-v2-custom-definitions', emptyCustomDefinitions()).migrate()

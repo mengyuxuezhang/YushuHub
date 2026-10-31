@@ -245,14 +245,15 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
 export function sqlUserBank() {
   async function move(connection, userId, amount, requestId, modelId, type) {
     if (!connection) throw new Error('User funds require a database transaction')
-    const [[user]] = await connection.query('SELECT credit_balance,status FROM ai_end_users WHERE id=? FOR UPDATE', [userId])
+    const [[user]] = await connection.query('SELECT credit_balance,status,organization_id FROM ai_end_users WHERE id=? FOR UPDATE', [userId])
     if (!user || (type === 'supply_reserve' && user.status !== 'enabled')) throw failure('USER_NOT_FOUND', '用户不可用', 403)
+    if (!user.organization_id) throw failure('USER_ORGANIZATION_REQUIRED', '用户组织归属未确认，不能记账', 409)
     const balance = micros(String(user.credit_balance)), delta = micros(amount)
     if (type === 'supply_reserve' && balance + delta < 0n) throw failure('USER_POINTS_INSUFFICIENT', '用户积分不足', 402)
     const after = decimal(balance + delta)
     await connection.query('UPDATE ai_end_users SET credit_balance=? WHERE id=?', [after, userId])
-    await connection.query('INSERT INTO ai_credit_ledger (id,user_id,change_type,points_delta,balance_after,model_name,note,request_id) VALUES (?,?,?,?,?,?,?,?)',
-      [crypto.randomUUID(), userId, type, decimal(delta), after, modelId, '分级供货计费', requestId])
+    await connection.query('INSERT INTO ai_credit_ledger (id,user_id,organization_id,change_type,points_delta,balance_after,model_name,note,request_id) VALUES (?,?,?,?,?,?,?,?,?)',
+      [crypto.randomUUID(), userId, user.organization_id, type, decimal(delta), after, modelId, '分级供货计费', requestId])
   }
   return {
     reserve: (connection, userId, points, id, model) => move(connection, userId, decimal(-micros(points)), id, model, 'supply_reserve'),
@@ -260,11 +261,11 @@ export function sqlUserBank() {
     async refund(connection, tenant, userId, points, requestId, modelId, reason) {
       if (!connection) throw new Error('Refund requires a database transaction')
       const [[user]] = await connection.query('SELECT credit_balance,organization_id FROM ai_end_users WHERE id=? FOR UPDATE', [userId])
-      if (!user || user.organization_id !== tenant.localOrganizationId) throw failure('REFUND_SCOPE_CHANGED', '原终端用户已不属于本组织，不能退入其他组织', 409)
+      if (!user?.organization_id || user.organization_id !== tenant.localOrganizationId) throw failure('REFUND_SCOPE_CHANGED', '原终端用户已不属于本组织，不能退入其他组织', 409)
       const balanceAfter = decimal(micros(String(user.credit_balance)) + micros(points))
       await connection.query('UPDATE ai_end_users SET credit_balance=? WHERE id=?', [balanceAfter, userId])
-      await connection.query('INSERT INTO ai_credit_ledger (id,user_id,change_type,points_delta,balance_after,model_name,note,request_id) VALUES (?,?,?,?,?,?,?,?)',
-        [crypto.randomUUID(), userId, 'supply_refund', points, balanceAfter, modelId, `分级调用全额退积分：${reason}`.slice(0, 255), requestId])
+      await connection.query('INSERT INTO ai_credit_ledger (id,user_id,organization_id,change_type,points_delta,balance_after,model_name,note,request_id) VALUES (?,?,?,?,?,?,?,?,?)',
+        [crypto.randomUUID(), userId, user.organization_id, 'supply_refund', points, balanceAfter, modelId, `分级调用全额退积分：${reason}`.slice(0, 255), requestId])
       return { balanceAfter }
     },
   }

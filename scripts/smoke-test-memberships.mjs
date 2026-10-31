@@ -40,7 +40,7 @@ function fakeDatabase({ balance = 0, activeMembershipId = '' } = {}) {
     async query(sql, params = []) {
       if (sql.includes('FROM ai_payment_refunds')) return [[], []]
       state.queries.push({ sql, params })
-      if (sql.includes('SELECT id, credit_balance FROM ai_end_users')) return [[{ id: params[0], credit_balance: state.balance }], []]
+      if (sql.includes('SELECT id, credit_balance, organization_id FROM ai_end_users')) return [[{ id: params[0], credit_balance: state.balance, organization_id: 'test-member-child' }], []]
       if (sql.includes('SELECT id FROM ai_end_user_memberships')) {
         return [state.activeMembershipId ? [{ id: state.activeMembershipId }] : [], []]
       }
@@ -103,7 +103,7 @@ function fallbackDatabase() {
     release() {},
     async query(sql, params = []) {
       if (sql.includes('FROM ai_payment_refunds')) return [[], []]
-      if (sql.startsWith('SELECT id FROM ai_end_users')) return [[{ id: params[0] }], []]
+      if (sql.startsWith('SELECT id, organization_id FROM ai_end_users')) return [[{ id: params[0], organization_id: 'test-member-child' }], []]
       if (sql.startsWith('UPDATE ai_end_user_memberships') && sql.includes("status = 'expired'")) {
         state.expiredUpdates += 1
         if (state.active?.expires_at) state.active = null

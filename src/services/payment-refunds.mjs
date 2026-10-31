@@ -39,8 +39,9 @@ export function createPaymentRefundService({ pool, configForOrder, freeCardForOw
     return decodePaymentRefund(row)
   }
   async function userFor(connection, order) {
-    const [[user]] = await connection.query('SELECT id,CAST(credit_balance AS CHAR) AS balance FROM ai_end_users WHERE id=? FOR UPDATE', [order.user_id])
+    const [[user]] = await connection.query('SELECT id,CAST(credit_balance AS CHAR) AS balance,organization_id FROM ai_end_users WHERE id=? FOR UPDATE', [order.user_id])
     if (!user) throw failure('PAYMENT_RIGHTS_UNCONFIRMED', '原用户不存在，保留退款待核对状态', 409)
+    if (!user.organization_id) throw failure('PAYMENT_RIGHTS_UNCONFIRMED', '原退款用户组织归属未确认', 409)
     return user
   }
   async function clock(connection) { return databaseClock ? databaseClock(connection) : (await connection.query('SELECT CAST(CURRENT_TIMESTAMP(3) AS CHAR) AS clock'))[0][0].clock }
@@ -54,12 +55,13 @@ export function createPaymentRefundService({ pool, configForOrder, freeCardForOw
       config: await configForOrder(order, connection), pendingWork: await pendingWork(connection, order, scope), clock: await clock(connection) })
   }
   async function movePoints(connection, userId, amount, refundNo, kind) {
-    const [[user]] = await connection.query('SELECT CAST(credit_balance AS CHAR) AS balance FROM ai_end_users WHERE id=? FOR UPDATE', [userId])
+    const [[user]] = await connection.query('SELECT CAST(credit_balance AS CHAR) AS balance,organization_id FROM ai_end_users WHERE id=? FOR UPDATE', [userId])
     if (!user) throw failure('PAYMENT_RIGHTS_UNCONFIRMED', '原退款用户不存在', 409)
+    if (!user.organization_id) throw failure('PAYMENT_RIGHTS_UNCONFIRMED', '原退款用户组织归属未确认', 409)
     const balance = decimal(micros(user.balance) + micros(amount))
     await connection.query('UPDATE ai_end_users SET credit_balance=? WHERE id=?', [balance, userId])
-    await connection.query('INSERT INTO ai_credit_ledger(id,user_id,change_type,points_delta,balance_after,note,request_id) VALUES (?,?,?,?,?,?,?)',
-      [`${kind}:${refundNo}`, userId, kind, amount, balance, kind === 'payment_refund_hold' ? '原支付退款权益暂扣' : '原支付退款关闭返还暂扣', refundNo])
+    await connection.query('INSERT INTO ai_credit_ledger(id,user_id,change_type,points_delta,balance_after,note,request_id,organization_id) VALUES (?,?,?,?,?,?,?,?)',
+      [`${kind}:${refundNo}`, userId, kind, amount, balance, kind === 'payment_refund_hold' ? '原支付退款权益暂扣' : '原支付退款关闭返还暂扣', refundNo, user.organization_id])
   }
   async function save(connection, row) {
     await connection.query('UPDATE ai_payment_refunds SET state=?,next_retry_at=?,lease_until=?,attempts=?,payload=?,updated_at=? WHERE order_id=?',
@@ -168,7 +170,7 @@ export function createPaymentRefundService({ pool, configForOrder, freeCardForOw
       const command = paymentRefundCommand(input, actor), fingerprint = paymentFulfillmentHash({ orderId, ownerUserId: scope.ownerUserId, command })
       await transaction(async connection => {
         const order = await ownedOrder(connection, scope, orderId)
-        await userFor(connection, order)
+        const user = await userFor(connection, order)
         const existing = await rowFor(connection, orderId)
         if (existing) {
           if (existing.fingerprint !== fingerprint) throw failure('IDEMPOTENCY_CONFLICT', '原退款已存在，不能更换指令、原因或权益预览', 409)
@@ -186,7 +188,7 @@ export function createPaymentRefundService({ pool, configForOrder, freeCardForOw
           [order.id, id, scope.ownerUserId, order.user_id, command.commandId, fingerprint, 'prepared', JSON.stringify(payload), now(), now()])
         if (micros(plan.pointsToWithdraw) > 0n) await movePoints(connection, order.user_id, decimal(-micros(plan.pointsToWithdraw)), id, 'payment_refund_hold')
         await connection.query("UPDATE ai_end_user_memberships SET status='cancelled' WHERE id=? AND user_id=?", [plan.cancelMembership.id, order.user_id])
-        await connection.query("INSERT INTO ai_end_user_memberships(id,user_id,card_id,package_name,expires_at,points_expires_at,status,source,created_by) VALUES (?,?,?,'退款处理中免费权益',NULL,NULL,'active','refund',?)", [temporaryMembershipId, order.user_id, freeCardId, scope.ownerUserId])
+        await connection.query("INSERT INTO ai_end_user_memberships(id,user_id,card_id,package_name,expires_at,points_expires_at,status,source,created_by,organization_id) VALUES (?,?,?,'退款处理中免费权益',NULL,NULL,'active','refund',?,?)", [temporaryMembershipId, order.user_id, freeCardId, scope.ownerUserId, user.organization_id])
         await connection.query("UPDATE ai_payment_orders SET status='refunding',last_error='' WHERE id=?", [order.id])
         await appendPaymentRefundEvent(connection, id, 'prepared', actor, { commandId: command.commandId, points: plan.pointsToWithdraw, amountFen: plan.amountFen, receiptFingerprint: plan.receiptFingerprint }, now())
       })

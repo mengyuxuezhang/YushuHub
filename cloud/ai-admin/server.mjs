@@ -2970,14 +2970,15 @@ async function allowedProviderModelIdSetForUser(userId) {
 }
 
 async function appendCreditLedger(conn, userId, input = {}) {
-  const [[row]] = await conn.query('SELECT credit_balance FROM ai_end_users WHERE id = ? LIMIT 1', [userId])
+  const [[row]] = await conn.query('SELECT credit_balance, organization_id FROM ai_end_users WHERE id = ? LIMIT 1', [userId])
+  if (!row?.organization_id) throw new Error('终端用户组织归属未确认，不能记录积分流水')
   const balanceAfter = Number(row?.credit_balance || 0)
   await conn.query(
     `INSERT INTO ai_credit_ledger (
       id, user_id, change_type, points_delta, balance_after, cost_usd, upstream_log_id, upstream_quota,
       provider_id, provider_name, provider_key_id, provider_key_preview, pricing_rule_id, billing_type, deduct_status,
-      model_name, prompt_tokens, completion_tokens, total_tokens, note, request_id, raw_usage_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      model_name, prompt_tokens, completion_tokens, total_tokens, note, request_id, raw_usage_json, organization_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       crypto.randomUUID(),
       userId,
@@ -3001,6 +3002,7 @@ async function appendCreditLedger(conn, userId, input = {}) {
       String(input.note || '').slice(0, 255),
       String(input.requestId || '').slice(0, 80),
       input.rawUsage ? JSON.stringify(input.rawUsage) : null,
+      row.organization_id,
     ],
   )
   return balanceAfter

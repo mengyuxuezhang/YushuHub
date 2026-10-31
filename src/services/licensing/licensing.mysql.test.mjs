@@ -192,9 +192,9 @@ test('real MySQL: independent services, HTTP activation, concurrent accounting, 
     assert.equal(reservations.filter(r => r.status === 'fulfilled').length, 9)
     assert.equal((await restarted.view('mysql-first')).reserved, '9.000000')
     // Verify user funds and child money roll back together in one actual transaction.
-    await gatewayPool.query('CREATE TABLE ai_end_users (id VARCHAR(64) PRIMARY KEY, status VARCHAR(16), credit_balance DECIMAL(18,6))')
-    await gatewayPool.query('CREATE TABLE ai_credit_ledger (id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),model_name VARCHAR(120),note VARCHAR(255),request_id VARCHAR(80))')
-    await gatewayPool.query('INSERT INTO ai_end_users VALUES (?,?,?)', ['test-user', 'enabled', '10'])
+    await gatewayPool.query('CREATE TABLE ai_end_users (id VARCHAR(64) PRIMARY KEY, status VARCHAR(16), credit_balance DECIMAL(18,6),organization_id VARCHAR(64))')
+    await gatewayPool.query('CREATE TABLE ai_credit_ledger (id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),model_name VARCHAR(120),note VARCHAR(255),request_id VARCHAR(80),organization_id VARCHAR(64))')
+    await gatewayPool.query('INSERT INTO ai_end_users VALUES (?,?,?,?)', ['test-user', 'enabled', '10', 'test-local-child'])
     const commerceStore = mysqlAccountingStore(gatewayPool, 'commerce', 'commerce')
     await migrateAccounting({ pool: gatewayPool, book: 'commerce', kind: 'commerce', sourceId: 'commerce-legacy' })
     const usage = [{ meter: 'request', phase: 'request', quantity: '1' }]
@@ -217,6 +217,18 @@ test('real MySQL: independent services, HTTP activation, concurrent accounting, 
     await commerce.submit(second, 'test-user', { requestId: 'child-req', modelId: 'test-chat', request: { text: 'hello' } })
     const [[count]] = await gatewayPool.query('SELECT COUNT(*) AS count FROM ai_credit_ledger')
     assert.equal(Number(count.count), 2)
+    const [[ownership]] = await gatewayPool.query("SELECT COUNT(*) n FROM ai_credit_ledger WHERE organization_id IS NULL OR organization_id<>'test-local-child'")
+    assert.equal(Number(ownership.n), 0, 'New supply entries must carry the actual terminal organization before restart')
+    await gatewayPool.query("INSERT INTO ai_end_users VALUES ('unbound-bank-user','enabled',10,'')")
+    const unbound = await gatewayPool.getConnection()
+    try {
+      await unbound.beginTransaction()
+      await assert.rejects(sqlUserBank().reserve(unbound, 'unbound-bank-user', '1', 'unbound-reserve', 'test-chat'), { code: 'USER_ORGANIZATION_REQUIRED' })
+      await assert.rejects(sqlUserBank().refund(unbound, { localOrganizationId: '' }, 'unbound-bank-user', '1', 'unbound-refund', 'test-chat', 'TEST'), { code: 'REFUND_SCOPE_CHANGED' })
+      await unbound.rollback()
+    } finally { unbound.release() }
+    const [[unboundProof]] = await gatewayPool.query("SELECT CAST(credit_balance AS CHAR) balance,(SELECT COUNT(*) FROM ai_credit_ledger WHERE user_id='unbound-bank-user') entries FROM ai_end_users WHERE id='unbound-bank-user'")
+    assert.equal(unboundProof.balance, '10.000000'); assert.equal(Number(unboundProof.entries), 0)
     disableDuringInvoke = true
     const completedWhileDisabled = await commerce.submit(second, 'test-user', { requestId: 'accepted-before-disable', modelId: 'test-chat', request: { text: 'hello' } })
     assert.equal(completedWhileDisabled.state, 'settled')
@@ -476,11 +488,11 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     await migrateAccounting({ pool, book: 'stream-official', kind: 'ledger', sourceId: 'stream-official-old' })
     await migrateAccounting({ pool, book: 'commerce-v2', kind: 'commerce', sourceId: 'runtime-source' })
     await mysqlStateStore(pool, 'commerce-v2-custom-definitions', emptyCustomDefinitions()).migrate()
-    await pool.query('CREATE TABLE IF NOT EXISTS ai_end_users (id VARCHAR(64) PRIMARY KEY,status VARCHAR(16),credit_balance DECIMAL(18,6))')
-    await pool.query('CREATE TABLE IF NOT EXISTS ai_credit_ledger (id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),model_name VARCHAR(120),note VARCHAR(255),request_id VARCHAR(80))')
+    await pool.query('CREATE TABLE IF NOT EXISTS ai_end_users (id VARCHAR(64) PRIMARY KEY,status VARCHAR(16),credit_balance DECIMAL(18,6),organization_id VARCHAR(64))')
+    await pool.query('CREATE TABLE IF NOT EXISTS ai_credit_ledger (id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),model_name VARCHAR(120),note VARCHAR(255),request_id VARCHAR(80),organization_id VARCHAR(64))')
     await pool.query('CREATE TABLE ai_membership_cards (id VARCHAR(64) PRIMARY KEY,created_by VARCHAR(64),status VARCHAR(16),discount_percent DECIMAL(8,3),discount_modules JSON,updated_at DATETIME(3))')
     await pool.query('CREATE TABLE ai_end_user_memberships (id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),card_id VARCHAR(64),status VARCHAR(16),started_at DATETIME(3),expires_at DATETIME(3),created_at DATETIME(3))')
-    await pool.query('INSERT INTO ai_end_users VALUES (?,?,?)', ['stream-user', 'enabled', '100'])
+    await pool.query('INSERT INTO ai_end_users VALUES (?,?,?,?)', ['stream-user', 'enabled', '100', 'stream-local-child'])
     const keys = crypto.generateKeyPairSync('ed25519'), center = createLicenseCenter({ store: memoryStateStore(emptyCenterState()), privateKey: keys.privateKey,
       publicKeys: { test: keys.publicKey }, keyId: 'test', credentialKey: crypto.randomBytes(32) })
     const issued = await center.issue({ id: 'stream-root', name: '测试一级', packageId: 'first-fixed', domain: 'https://stream.example.com', modelIds: ['stream-chat', 'public-speech', 'async-speech'], expiresAt: null }, 'operator')
@@ -764,7 +776,7 @@ test('real MySQL historical usage includes settled supply points and metering wi
   if (config.host !== '127.0.0.1' || !/^yushu_[a-z0-9_]+$/.test(gatewayDatabase)) throw new Error('Disposable test database required')
   const pool = mysql.createPool({ ...config, database: gatewayDatabase })
   try {
-    await pool.query(`ALTER TABLE ai_end_users ADD organization_id VARCHAR(64) DEFAULT '', ADD username VARCHAR(64), ADD display_name VARCHAR(64), ADD email VARCHAR(64), ADD source_agent_id VARCHAR(64) DEFAULT '', ADD source_project_id VARCHAR(64) DEFAULT ''`)
+    await pool.query(`ALTER TABLE ai_end_users ADD username VARCHAR(64), ADD display_name VARCHAR(64), ADD email VARCHAR(64), ADD source_agent_id VARCHAR(64) DEFAULT '', ADD source_project_id VARCHAR(64) DEFAULT ''`)
     await pool.query(`ALTER TABLE ai_credit_ledger ADD deduct_status VARCHAR(32) DEFAULT 'succeeded',ADD prompt_tokens BIGINT DEFAULT 0,ADD completion_tokens BIGINT DEFAULT 0,ADD total_tokens BIGINT DEFAULT 0,ADD billing_type VARCHAR(32),ADD raw_usage_json JSON,ADD created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)`)
     await pool.query("UPDATE ai_end_users SET organization_id='stream-child',username=id,display_name=id WHERE id='stream-user'")
     for (const statement of [
@@ -1201,6 +1213,8 @@ test('real MySQL terminal refunds preserve upstream balances, serialize duplicat
     for (const original of originals) assert.deepEqual(state.requests[original.requestId], frozenRequests[original.requestId])
     const [[count]] = await pool.query("SELECT COUNT(*) AS n FROM ai_credit_ledger WHERE change_type='supply_refund' AND request_id IN ('refund-root-request','refund-child-request')")
     assert.equal(Number(count.n), 2)
+    const [[ownership]] = await pool.query("SELECT COUNT(*) n FROM ai_credit_ledger l JOIN ai_end_users u ON u.id=l.user_id WHERE l.request_id IN ('refund-root-request','refund-child-request') AND (l.organization_id IS NULL OR l.organization_id<>u.organization_id)")
+    assert.equal(Number(ownership.n), 0, 'Supply reserves, settlements and refunds must inherit the actual terminal organization immediately')
     const rootReport = await service.balance(root), childReport = await service.balance(child)
     assert.deepEqual(rootReport.usage.map(operation => operation.requestId), ['refund-root-request'])
     assert.equal(rootReport.entries.some(entry => entry.kind === 'terminal_refund' && entry.organizationId === child.id), false)
@@ -1394,7 +1408,7 @@ test('real MySQL private voice core meters three ledgers, serializes activation 
     for (const name of names) { await admin.query('CREATE DATABASE ??', [name]); created.push(name) }
     officialPool = mysql.createPool({ ...config, database: names[0], connectionLimit: 12 }); localPool = mysql.createPool({ ...config, database: names[1], connectionLimit: 12 })
     await localPool.query('CREATE TABLE ai_end_users(id VARCHAR(64) PRIMARY KEY,status VARCHAR(16),credit_balance DECIMAL(18,6),organization_id VARCHAR(64))')
-    await localPool.query('CREATE TABLE ai_credit_ledger(id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),model_name VARCHAR(120),note VARCHAR(255),request_id VARCHAR(80))')
+    await localPool.query('CREATE TABLE ai_credit_ledger(id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),model_name VARCHAR(120),note VARCHAR(255),request_id VARCHAR(80),organization_id VARCHAR(64))')
     await localPool.query("INSERT INTO ai_end_users VALUES ('private-core-user','enabled',100,'private-core-local-child')")
     await migrateAccounting({ pool: officialPool, book: 'official-v2', kind: 'ledger', sourceId: 'private-empty-official' })
     await migrateAccounting({ pool: localPool, book: 'commerce-v2', kind: 'commerce', sourceId: 'private-empty-local' })

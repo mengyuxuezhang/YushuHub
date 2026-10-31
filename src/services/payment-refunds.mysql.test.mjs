@@ -27,12 +27,12 @@ test('real MySQL cash refund core holds original entitlements once and recovers 
   try {
     await admin.query('CREATE DATABASE ??', [name]); created = true
     pool = mysql.createPool({ ...config, timezone: 'local', database: name, connectionLimit: 12 }); setPool(pool)
-    await pool.query("CREATE TABLE ai_end_users(id VARCHAR(64) PRIMARY KEY,credit_balance DECIMAL(18,6),status VARCHAR(16) DEFAULT 'enabled')")
+    await pool.query("CREATE TABLE ai_end_users(id VARCHAR(64) PRIMARY KEY,credit_balance DECIMAL(18,6),status VARCHAR(16) DEFAULT 'enabled',organization_id VARCHAR(64) DEFAULT 'test-payment-org')")
     await pool.query(`CREATE TABLE ai_membership_cards(id VARCHAR(64) PRIMARY KEY,name VARCHAR(120),level INT,discount_percent DECIMAL(6,2),discount_modules JSON,redeem_only TINYINT,
       status VARCHAR(16),packages_json JSON,description TEXT,created_by VARCHAR(64),system_builtin TINYINT DEFAULT 0)`)
     await pool.query(`CREATE TABLE ai_end_user_memberships(id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),card_id VARCHAR(64),package_name VARCHAR(120),
-      started_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),expires_at DATETIME(3),points_expires_at DATETIME(3),status VARCHAR(24),source VARCHAR(32),created_by VARCHAR(64),created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3))`)
-    await pool.query('CREATE TABLE ai_credit_ledger(id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),note VARCHAR(255),request_id VARCHAR(80))')
+      started_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),expires_at DATETIME(3),points_expires_at DATETIME(3),status VARCHAR(24),source VARCHAR(32),created_by VARCHAR(64),created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),organization_id VARCHAR(64))`)
+    await pool.query('CREATE TABLE ai_credit_ledger(id VARCHAR(64) PRIMARY KEY,user_id VARCHAR(64),change_type VARCHAR(32),points_delta DECIMAL(18,6),balance_after DECIMAL(18,6),note VARCHAR(255),request_id VARCHAR(80),organization_id VARCHAR(64))')
     await pool.query(`CREATE TABLE ai_payment_orders(id VARCHAR(64) PRIMARY KEY,order_no VARCHAR(32),owner_user_id VARCHAR(64),user_id VARCHAR(64),config_id VARCHAR(64),provider VARCHAR(24),
       card_id VARCHAR(64),card_name VARCHAR(120),package_name VARCHAR(120),package_snapshot_json JSON,amount_fen BIGINT,currency VARCHAR(8),status VARCHAR(24),provider_trade_no VARCHAR(128),
       paid_at DATETIME(3),fulfilled_at DATETIME(3),fulfillment_membership_id VARCHAR(64),last_error VARCHAR(500))`)
@@ -44,7 +44,7 @@ test('real MySQL cash refund core holds original entitlements once and recovers 
     const merchant = { version: 1, provider: 'alipay', appId: 'original-app', sellerId: 'original-seller', environment: 'sandbox' }, scope = { ownerUserId: 'owner', centralOrganizationId: 'cash-root' }
     for (const id of ['success', 'closed', 'closed-late', 'lease', 'stale', 'unknown', 'commit', 'apply', 'not-found', 'insufficient', 'membership', 'pending', 'pending-voice', 'pending-supply', 'merchant', 'legacy', 'manual-close', 'manual-success', 'cancel-prepared', 'manual-contradiction', 'manual-pending', 'expired-held', 'expired-member']) {
       await pool.query('INSERT INTO ai_end_users(id,credit_balance) VALUES (?,10)', [`user-${id}`])
-      await pool.query("INSERT INTO ai_end_user_memberships(id,user_id,card_id,package_name,started_at,expires_at,status,source,created_by) VALUES (?,?,'vip','原会员','2026-01-01','2070-01-01','active','admin','owner')", [`prior-${id}`, `user-${id}`])
+      await pool.query("INSERT INTO ai_end_user_memberships(id,user_id,card_id,package_name,started_at,expires_at,status,source,created_by,organization_id) VALUES (?,?,'vip','原会员','2026-01-01','2070-01-01','active','admin','owner','test-payment-org')", [`prior-${id}`, `user-${id}`])
       await pool.query("INSERT INTO ai_payment_orders(id,order_no,owner_user_id,user_id,config_id,provider,card_id,card_name,package_name,package_snapshot_json,amount_fen,currency,status,provider_trade_no,fulfillment_membership_id,last_error) VALUES (?,?,'owner',?,'original-config','alipay','vip','虚构付费会员','新会员',?,990,'CNY','pending','','','')",
         [`order-${id}`, `ORDER_${id}`, `user-${id}`, JSON.stringify({ name: '新会员', durationDays: 30, bonusPoints: 20, pointsDurationDays: id === 'expired-member' ? 36500 : 30, ...(id === 'legacy' ? {} : { _paymentMerchant: merchant }) })])
       await fulfillPaidOrder(`order-${id}`, `TRADE_${id}`, 990)
@@ -183,7 +183,7 @@ test('real MySQL cash refund core holds original entitlements once and recovers 
     const lateCommand = await command('closed-late')
     assert.equal((await service.request(scope, 'order-closed-late', lateCommand, 'owner')).state, 'processing')
     await pool.query("UPDATE ai_end_users SET credit_balance=5 WHERE id='user-closed-late'")
-    await pool.query("INSERT INTO ai_credit_ledger VALUES ('fictional-other-use','user-closed-late','consume',-5,5,'虚构原余额消费','other-use')")
+    await pool.query("INSERT INTO ai_credit_ledger(id,user_id,change_type,points_delta,balance_after,note,request_id) VALUES ('fictional-other-use','user-closed-late','consume',-5,5,'虚构原余额消费','other-use')")
     time += 60_001; assert.equal((await make().recover(scope, 'order-closed-late')).state, 'closed')
     assert.equal(await reads.balance('closed-late'), '25.000000')
     const leaseCommand = await command('lease'), firstWorker = service.request(scope, 'order-lease', leaseCommand, 'owner')
@@ -270,6 +270,10 @@ test('real MySQL cash refund core holds original entitlements once and recovers 
     })
     if (backupVerified) console.log('Cash backup/restore: all table hashes, original hold, final recovery and no cash resubmission verified in disposable databases.')
     assert(errors.some(value => value.includes('response lost')))
+    for (const table of ['ai_credit_ledger', 'ai_end_user_memberships']) {
+      const [[ownership]] = await pool.query(`SELECT COUNT(*) n FROM ${table} t JOIN ai_end_users u ON u.id=t.user_id WHERE t.id<>'fictional-other-use' AND (t.organization_id IS NULL OR t.organization_id<>u.organization_id)`)
+      assert.equal(Number(ownership.n), 0, 'Refund holds, releases and fallback rights must retain the original terminal organization')
+    }
   } finally {
     if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
     setPool(previousPool || null); await pool?.end()

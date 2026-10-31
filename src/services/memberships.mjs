@@ -77,8 +77,9 @@ export async function ensureFreeMembershipFallback({
   const conn = await database.getConnection()
   try {
     await conn.beginTransaction()
-    const [[user]] = await conn.query('SELECT id FROM ai_end_users WHERE id = ? FOR UPDATE', [targetUserId])
+    const [[user]] = await conn.query('SELECT id, organization_id FROM ai_end_users WHERE id = ? FOR UPDATE', [targetUserId])
     if (!user) throw new Error('终端用户不存在')
+    if (!user.organization_id) throw new Error('终端用户组织归属未确认')
     const pendingRefund = await pendingPaymentRefund(conn, targetUserId)
     if (pendingRefund) {
       await conn.commit()
@@ -117,9 +118,9 @@ export async function ensureFreeMembershipFallback({
     await conn.query(
       `INSERT INTO ai_end_user_memberships (
          id, user_id, card_id, package_name, started_at, expires_at,
-         points_expires_at, status, source, created_by
-       ) VALUES (?, ?, ?, ?, ?, NULL, NULL, 'active', 'fallback', ?)`,
-      [membershipId, targetUserId, card.id, membershipPackage.name, toMysqlDateTime(startedAt), ownerId],
+         points_expires_at, status, source, created_by, organization_id
+       ) VALUES (?, ?, ?, ?, ?, NULL, NULL, 'active', 'fallback', ?, ?)`,
+      [membershipId, targetUserId, card.id, membershipPackage.name, toMysqlDateTime(startedAt), ownerId, user.organization_id],
     )
     await conn.commit()
     return {
@@ -174,8 +175,9 @@ export async function grantMembershipBenefits({
 
   try {
     if (ownsConnection) await conn.beginTransaction()
-    const [[user]] = await conn.query('SELECT id, credit_balance FROM ai_end_users WHERE id = ? FOR UPDATE', [targetUserId])
+    const [[user]] = await conn.query('SELECT id, credit_balance, organization_id FROM ai_end_users WHERE id = ? FOR UPDATE', [targetUserId])
     if (!user) throw new Error('终端用户不存在')
+    if (!user.organization_id) throw new Error('终端用户组织归属未确认')
     await assertPaymentRefundClear(conn, targetUserId)
 
     const [[active]] = await conn.query(
@@ -193,8 +195,8 @@ export async function grantMembershipBenefits({
     await conn.query(
       `INSERT INTO ai_end_user_memberships (
          id, user_id, card_id, package_name, started_at, expires_at,
-         points_expires_at, status, source, created_by
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+         points_expires_at, status, source, created_by, organization_id
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
       [
         membershipId,
         targetUserId,
@@ -205,6 +207,7 @@ export async function grantMembershipBenefits({
         toMysqlDateTime(pointsExpiresAt),
         String(source || 'admin').trim().slice(0, 32),
         String(createdBy || '').trim().slice(0, 64),
+        user.organization_id,
       ],
     )
 
@@ -214,8 +217,8 @@ export async function grantMembershipBenefits({
       const [[balance]] = await conn.query('SELECT credit_balance FROM ai_end_users WHERE id = ? LIMIT 1', [targetUserId])
       balanceAfter = Number(balance?.credit_balance || 0)
       await conn.query(
-        `INSERT INTO ai_credit_ledger (id, user_id, change_type, points_delta, balance_after, note, request_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO ai_credit_ledger (id, user_id, change_type, points_delta, balance_after, note, request_id, organization_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           `ledger-${crypto.randomBytes(8).toString('hex')}`,
           targetUserId,
@@ -224,6 +227,7 @@ export async function grantMembershipBenefits({
           balanceAfter,
           String(ledgerNote || `会员权益赠送：${card.name || card.id} / ${selected.name || '默认权益'}`).trim().slice(0, 255),
           String(requestId || '').trim().slice(0, 80),
+          user.organization_id,
         ],
       )
     }
