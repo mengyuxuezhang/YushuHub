@@ -33,6 +33,7 @@ import { assertAccountingRuntime } from '../src/services/licensing/accounting-mo
 import { verifyRetirementBackup } from './test-accounting-retirement-backup.mjs'
 import { readTestHttpsMaterial, startTestHttpsProxy, verifyTestHttpsBoundary } from './test-https-transport.mjs'
 import { readRuntimeVersionFixture, verifyRuntimeVersionRehearsal } from './test-runtime-version-rehearsal.mjs'
+import { migratedModelHttpFixture, verifyMigratedModelHttp, seedMigratedMembership } from './test-migrated-model-http.mjs'
 // Invoked by the disposable MySQL runner. Boot both real admin processes with
 // fictional resources; never inherit a deployment database or paid model route.
 if (!process.env.LICENSING_TEST_DB) throw new Error('Run through npm run test:licensing:mysql with its disposable database')
@@ -44,10 +45,11 @@ const names=['local','official','center'].map(n=>`yushu_resources_${n}_${suffix}
 const createdNames=[]
 let centerServer, localPool, officialPool, centerPool, center, credential, completed=false
 const password=crypto.randomBytes(24).toString('hex'), processes={}, logs={}
+const legacyClientPassword=crypto.randomBytes(24).toString('hex')
 await fs.mkdir(dir,{recursive:true,mode:0o700})
 async function freePort(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p}
 const ports={local:await freePort(),official:await freePort()}, urls=Object.fromEntries(Object.entries(ports).map(([n,p])=>[n,`http://127.0.0.1:${p}`]))
-let centerUrl, envLocal, tlsMaterial, httpsBoundary
+let centerUrl, envLocal, tlsMaterial, httpsBoundary, modelHttpFixture, migratedHttp
 const httpsProxies=[]
 async function stop(n){const p=processes[n];if(p&&p.exitCode===null){p.kill('SIGTERM');await new Promise(r=>p.once('exit',r))}delete processes[n];if(logs[n])await fs.writeFile(`${dir}/${n}.log`,logs[n],{mode:0o600})}
 async function start(n,mode,extra={},sourceRoot=n==='local'&&versionFixture?versionFixture.current.root:root){
@@ -66,10 +68,11 @@ async function login(n,username='admin',pwd=password){const c=ok(await request(n
 const ids={skill:`resource-skill-${suffix}`,mcp:`resource-mcp-${suffix}`,agent:`resource-agent-${suffix}`}, marker=`PRIVATE_PROOF_${crypto.randomBytes(18).toString('hex')}`
 async function uploadSkill(cookie,version){const zip=new AdmZip();zip.addFile('SKILL.md',Buffer.from(`---\nname: fixture\ndescription: controlled test\n---\n${marker}`));const form=new FormData();form.append('package',new Blob([zip.toBuffer()],{type:'application/zip'}),'test.zip');form.append('version',version);const v=ok(await request('official',`/api/curated-skills/${ids.skill}/versions`,form,'POST',cookie));ok(await request('official',`/api/curated-skills/${ids.skill}/versions/${v.id}/publish`,{},'POST',cookie));return v.id}
 async function sync(cookie){for(const kind of ['skill','mcp','agent']){const data=ok(await request('local',`/api/curated-${kind}-sync`,{},'POST',cookie));assert.deepEqual(data.failed,[])} }
-async function clientLogin(id,owner,organization){const pwd=crypto.randomBytes(20).toString('hex'),device=`device-${id}`;await localPool.query("INSERT INTO ai_end_users(id,username,display_name,password_hash,status,source_agent_id,organization_id,device_id) VALUES (?,?,?,?,'enabled',?,?,?)",[id,id,id,hashPassword(pwd),owner,organization,device]);const c=ok(await request('local','/api/client/auth/login-captcha'));const svg=Buffer.from(c.imageDataUrl.split(',')[1],'base64').toString();const answer=[...svg.matchAll(/<text[^>]*>([^<]+)<\/text>/g)].map(m=>m[1]).join('');const data=ok(await request('local','/api/client/auth/login',{username:id,password:pwd,deviceId:device,deviceName:'isolated',appVersion:'9.0.0',challengeId:c.challengeId,captchaAnswer:answer}));return {auth:`Bearer ${data.token}`,device}}
+async function clientLogin(id,owner,organization,existingPassword){const pwd=existingPassword||crypto.randomBytes(20).toString('hex'),device=`device-${id}`;if(!existingPassword)await localPool.query("INSERT INTO ai_end_users(id,username,display_name,password_hash,status,source_agent_id,organization_id,device_id) VALUES (?,?,?,?,'enabled',?,?,?)",[id,id,id,hashPassword(pwd),owner,organization,device]);const c=ok(await request('local','/api/client/auth/login-captcha'));const svg=Buffer.from(c.imageDataUrl.split(',')[1],'base64').toString();const answer=[...svg.matchAll(/<text[^>]*>([^<]+)<\/text>/g)].map(m=>m[1]).join('');const data=ok(await request('local','/api/client/auth/login',{username:id,password:pwd,deviceId:device,deviceName:'isolated',appVersion:'9.0.0',challengeId:c.challengeId,captchaAnswer:answer}));return {auth:`Bearer ${data.token}`,device}}
 const path=version=>`/api/client/skill-market/${ids.skill}/versions/${version}`
 try{
  tlsMaterial=await readTestHttpsMaterial()
+ modelHttpFixture=await migratedModelHttpFixture(tlsMaterial)
  if(tlsMaterial)for(const n of ['local','official']){const proxy=await startTestHttpsProxy(tlsMaterial,ports[n]);httpsProxies.push(proxy);urls[n]=proxy.url}
  for(const name of names){await admin.query('CREATE DATABASE ??',[name]);createdNames.push(name)}
  localPool=mysql.createPool({...config,database:names[0]});officialPool=mysql.createPool({...config,database:names[1]});centerPool=mysql.createPool({...config,database:names[2]})
@@ -88,7 +91,8 @@ try{
  await mysqlStateStore(localPool,'local-resources-v1',emptyResourceIntents()).migrate();await mysqlStateStore(localPool,'commerce-v2-price-notifications',emptyPriceNotificationState()).migrate();await mysqlStateStore(localPool,'commerce-v2-custom-definitions',emptyCustomDefinitions()).migrate()
  envLocal={AI_LICENSE_CENTER_URL:centerUrl,AI_LICENSE_INSTANCE_ID:'resource-instance',AI_LICENSE_PUBLIC_KEYS_FILE:dir+'/public-keys.json',AI_BUILD_CENTER_URL:urls.official}
  const [[legacyOrganization]]=await localPool.query('SELECT id FROM ai_organizations WHERE agent_level=1')
- await localPool.query("INSERT INTO ai_model_providers(id,name,base_url,organization_id) VALUES ('legacy-provider','虚构旧供应商','https://legacy-provider.example/v1',?)",[legacyOrganization.id])
+ if(modelHttpFixture)await seedMigratedMembership({pool:localPool,userId:`root-user-${suffix}`,organizationId:legacyOrganization.id,passwordHash:hashPassword(legacyClientPassword)})
+ await localPool.query("INSERT INTO ai_model_providers(id,name,base_url,organization_id) VALUES ('legacy-provider','虚构旧供应商',?,?)",[modelHttpFixture?.baseUrl||'https://legacy-provider.example/v1',legacyOrganization.id])
  await localPool.query("INSERT INTO ai_provider_models(id,provider_id,model_id,display_name,organization_id,context_window) VALUES ('legacy-model','legacy-provider','legacy-model-client','虚构旧文本',?,100)",[legacyOrganization.id])
  await localPool.query("INSERT INTO ai_model_task_capabilities(id,provider_model_id,organization_id,task_type,protocol_adapter) VALUES ('legacy-capability','legacy-model',?,'chat','legacy.compatible')",[legacyOrganization.id])
  await localPool.query("INSERT INTO ai_model_pricing_plans(id,provider_model_id,capability_id,organization_id,task_type,status) VALUES ('legacy-plan','legacy-model','legacy-capability',?,'chat','enabled')",[legacyOrganization.id])
@@ -284,7 +288,7 @@ try{
  assert.deepEqual(await fs.readFile(modelMaster),originalMaster)
  assert.equal(Number((await localPool.query('SELECT COUNT(*) n FROM ai_model_provider_keys WHERE provider_id=?',[provider.id]))[0][0].n),1)
  assert.equal(ok(await request('local',`/api/model-providers/${provider.id}/keys`,{id:managedKey.id,apiKey:'fictional-review-rotated',providerModelId:localModel.id},'POST',rootCookie)).id,managedKey.id)
- const stageRuntime=await verifyLegacyStageRuntime({pool:localPool,keyFile:modelMaster,proposal:oldText.proposal,rootId:'resources-root',organizationId:rootOrg.id,ownerId:rootOrg.legacy_owner_user_id,
+ const stageRuntime=await verifyLegacyStageRuntime({pool:localPool,keyFile:modelMaster,proposal:oldText.proposal,rootId:'resources-root',organizationId:rootOrg.id,ownerId:rootOrg.legacy_owner_user_id,expectedBaseUrl:modelHttpFixture?.baseUrl||'https://legacy-provider.example/v1',
   api:async(path,body,method)=>ok(await request('local',path,body,method,rootCookie)),createUser:clientLogin})
  assert.equal(stageRuntime.installedRuntimeSettlement,true)
  await fs.writeFile(dir+'/model-bounds.json',JSON.stringify(stageInput),{mode:0o600})
@@ -306,7 +310,14 @@ try{
  ok(await request('official','/api/curated-agents',{id:ids.agent,name:'隔离依赖专家',description:'测试用途',prompt:'test instruction',skillIds:[ids.skill],mcpIds:[ids.mcp]},'POST',officialCookie));ok(await request('official',`/api/curated-agents/${ids.agent}/publish`,{},'POST',officialCookie))
  await sync(rootCookie)
  for(const [kind,id] of Object.entries(ids))ok(await request('local',`/api/curated-${kind}-distributions/${id}`,{enabled:true,versionPolicy:'follow_latest',audienceType:'all'},'PUT',childCookie))
- const childUser=await clientLogin(`child-user-${suffix}`,childOwner.legacy_owner_user_id,'resources-child'), rootUser=await clientLogin(`root-user-${suffix}`,rootOrg.legacy_owner_user_id,rootOrg.id)
+ const childUser=await clientLogin(`child-user-${suffix}`,childOwner.legacy_owner_user_id,'resources-child'), rootUser=await clientLogin(`root-user-${suffix}`,rootOrg.legacy_owner_user_id,rootOrg.id,modelHttpFixture?legacyClientPassword:undefined)
+ if(modelHttpFixture){
+   ok(await request('local','/api/supply/custom-models',{providerModelId:'legacy-model',clientId:'legacy-model-client',status:'enabled',currency:'CNY',adapter:'openai.chat',contextWindow:100,maxOutputTokens:20,costComponents:oldText.proposal.supplierCost.components,memo:oldText.proposal.costReview,expectedRevision:3},'PUT',rootCookie))
+   ok(await request('local','/api/supply/offers',{modelId:'legacy-model',enabled:true,expectedVersion:3,pointsPerCny:oldText.proposal.pointsPerCny,consumptionMultiplier:oldText.proposal.consumptionMultiplier,saleMarkup:oldText.proposal.saleMarkup,supplyMarkup:oldText.proposal.saleMarkup},'POST',rootCookie))
+
+   migratedHttp=await verifyMigratedModelHttp({fixture:modelHttpFixture,pool:localPool,userId:`root-user-${suffix}`,modelId:'legacy-model',
+     submit:async input=>ok(await request('local','/api/client/supply/requests',input,'POST',rootUser.auth))})
+ }
  for(const kind of ['skill','mcp','agent'])assert(ok(await request('local',`/api/client/${kind}-market`,undefined,'GET',childUser.auth)).items.some(x=>x.id===ids[kind]))
  const download=await request('local',path('1.0.0')+'/package',undefined,'GET',childUser.auth);assert.equal(download.status,200);assert(download.binary);assert(!download.binary.includes(Buffer.from(marker)))
  const manifest=JSON.parse(Buffer.from(download.headers.get('x-agent-skill-manifest'),'base64').toString()), unsigned={...manifest};delete unsigned.signature
@@ -376,16 +387,18 @@ try{
    stop:()=>stop('local'),start:sourceRoot=>start('local','center',envLocal,sourceRoot),
    rejectLegacy:async sourceRoot=>{await assert.rejects(start('local','legacy',{},sourceRoot));assert(logs.local.includes('ACCOUNTING_MODE_DOWNGRADE_FORBIDDEN'))},
    runtimeInfo:async()=>ok(await request('local','/api/runtime-info')),
-   replay:async()=>{const cookie=await login('local','resource_child',childPwd);return ok(await request('local','/api/supply/requests/inactive-refund-call/refund-points',refundInput,'POST',cookie))}})
+   replay:async()=>{await migratedHttp?.replay();const cookie=await login('local','resource_child',childPwd);return ok(await request('local','/api/supply/requests/inactive-refund-call/refund-points',refundInput,'POST',cookie))}})
  await assert.rejects(runTransfer('runtime-preview',dir+'/transfer.json',dir+'/readonly-receipt.json','retire',dir+'/runtime-after-charge.json'))
  const afterChargeRetirement=JSON.parse(await fs.readFile(dir+'/runtime-after-charge.json','utf8'));assert(afterChargeRetirement.blockers.includes('NEW_ACCOUNTING_HISTORY_PRESENT'));assert(afterChargeRetirement.blockers.includes('SECONDARY_ORGANIZATIONS_PRESENT'))
  await stop('local');await localPool.end();localPool=null
  await assert.rejects(runTransfer('runtime-apply',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/runtime-after-charge.json','retire-after-charge',dir+'/runtime-after-charge-denied.json'))
  const report={actualOfficialAndLocalProcesses:true,httpsTransport:Boolean(tlsMaterial),...(httpsBoundary?{httpsCertificateBoundary:httpsBoundary}:{}),legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,officialScopeBackfillCli:true,oldBuildReadableByRootOnly:true,legacyPriceReviewCli:true,legacyUsageShadowCli:true,disabledModelStageCli:true,atomicModelStageRetry:true,installedModelRuntimeMock:true,preSettlementRetirementAndResume:true,retirementBackupAndFencesRestored:true,retiredSqlWriterBlocked:true,postSettlementRetirementDenied:true,cachedLegacyPricePreserved:true,sourcePriceMutationRejected:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,masterKeyReplacementDenied:true,restoredMasterAllowsRotation:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,inactiveTerminalRefundHttp:true,terminalRefundDoesNotCreditSupply:true,paidSupplierCalls:0,productionChanged:false}
  if(versionRehearsal)report.compatibleVersionRehearsal=versionRehearsal
+ if(migratedHttp)report.migratedModelHttp=migratedHttp.report
  await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2),{mode:0o600});console.log('Resource HTTP regression: '+JSON.stringify(report));completed=true
 }finally{
  await stop('local');await stop('official');if(centerServer){centerServer.closeAllConnections();await new Promise(r=>centerServer.close(r))}
  for(const proxy of httpsProxies)await proxy.close()
+ await modelHttpFixture?.close()
  await localPool?.end();await officialPool?.end();await centerPool?.end();for(const name of createdNames){assert.match(name,/^yushu_resources_(local|official|center)_[a-f0-9]{10}$/);await admin.query('DROP DATABASE IF EXISTS ??',[name])}await admin.end();console.log('Only newly created resource acceptance databases removed.');if(completed){assert(pathModule.resolve(dir).startsWith(pathModule.resolve(os.tmpdir())+pathModule.sep));await fs.rm(dir,{recursive:true,force:true})}else{console.log('Protected failure logs: '+dir)}
 }

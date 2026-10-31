@@ -3,7 +3,7 @@ import { agentCommerceRuntime } from '../src/services/licensing/commerce-runtime
 
 // Called only by the disposable resource acceptance harness. The real adapter
 // and SQL wallet run; the fetch boundary is an in-memory fictional supplier.
-export async function verifyLegacyStageRuntime({ pool, keyFile, proposal, rootId, organizationId, ownerId, api, createUser }) {
+export async function verifyLegacyStageRuntime({ pool, keyFile, proposal, rootId, organizationId, ownerId, api, createUser, expectedBaseUrl = 'https://legacy-provider.example/v1' }) {
   const [[database]] = await pool.query('SELECT DATABASE() AS name')
   assert.match(database.name, /^yushu_resources_local_[a-f0-9]+$/)
   const root = { id: rootId, level: 1, modelMode: 'custom', version: 1, localOrganizationId: organizationId, billingOwnerUserId: ownerId }
@@ -13,7 +13,7 @@ export async function verifyLegacyStageRuntime({ pool, keyFile, proposal, rootId
       benefits: async () => ({ discount: '0.8', fixture: 'installed-migration-benefit' }),
       env: { AI_MODEL_CREDENTIAL_KEY_PATH: keyFile, AI_AGENT_CUSTOM_MODELS_FILE: '', AI_SUPPLY_PRIVATE_VOICE_ENABLED: '0' },
       fetchImpl: async (url, options) => {
-        assert.equal(url, 'https://legacy-provider.example/v1/chat/completions')
+        assert.equal(url, expectedBaseUrl + '/chat/completions')
         assert.equal(options.headers.Authorization, 'Bearer fictional-stage-key')
         const body = JSON.parse(options.body)
         assert.equal(body.model, 'legacy-model-client'); assert.equal(body.max_tokens, 1)
