@@ -490,7 +490,7 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     const root = await grant('stream-root'), second = { ...await grant('stream-child'), billingOwnerUserId: 'fixture-owner' }
     const price = { version: 1, components: [{ meter: 'request', phase: 'request', amount: '1', unitSize: '1' },
       ...['input_tokens', 'cached_tokens', 'output_tokens'].map(meter => ({ meter, amount: '0.1', unitSize: '1' }))] }
-    const model = { id: 'stream-chat', name: '流式模型', model: 'stream-physical', adapter: 'newapi.chat', supportsStreaming: true, settlementProtocol: 'okpa-v1', status: 'enabled', version: 1,
+    const model = { id: 'stream-chat', taskType: 'chat', name: '流式模型', model: 'stream-physical', adapter: 'newapi.chat', supportsStreaming: true, settlementProtocol: 'okpa-v1', status: 'enabled', version: 1,
       baseUrl: 'https://stream-provider.example.com/v1', keyEnv: 'STREAM_FIXTURE_INFERENCE', settlementKeyEnv: 'STREAM_FIXTURE_SETTLEMENT', contextWindow: 100, maxOutputTokens: 10, price }
     const speech = { id: 'public-speech', clientId: 'public-speech-client', name: '公共语音', taskType: 'speech_synthesis', model: 'speech-02-turbo', adapter: 'minimax.speech', status: 'enabled', version: 1,
       baseUrl: 'https://stream-provider.example.com', keyEnv: 'STREAM_FIXTURE_INFERENCE', allowedVoiceIds: ['approved-public-voice'],
@@ -528,10 +528,15 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
         const metadata = { id: `chat-${id}`, model: 'stream-physical', created: 1 }
         let release; const gate = new Promise(resolve => { release = resolve }); releases.set(id, release)
         const frame = value => `data: ${JSON.stringify(value)}\n\n`
+        const functionTurn = body.tools && body.messages.at(-1).role === 'user'
+        if (body.tools) { assert.equal(body.max_completion_tokens, 10); assert.equal(body.parallel_tool_calls, false) }
         return new Response(new ReadableStream({ start(controller) {
-          controller.enqueue(Buffer.from(frame({ ...metadata, choices: [{ index: 0, delta: { role: 'assistant', content: '你' }, finish_reason: null }] })))
+          controller.enqueue(Buffer.from(frame({ ...metadata, choices: [{ index: 0, delta: functionTurn
+            ? { role: 'assistant', tool_calls: [{ index: 0, id: 'call-sql', type: 'function', function: { name: 'lookup', arguments: '{"value":' } }] }
+            : { role: 'assistant', content: '你' }, finish_reason: null }] })))
           void gate.then(() => {
-            controller.enqueue(Buffer.from(frame({ ...metadata, choices: [{ index: 0, delta: { content: '好' }, finish_reason: 'stop' }] })))
+            controller.enqueue(Buffer.from(frame({ ...metadata, choices: [{ index: 0, delta: functionTurn
+              ? { tool_calls: [{ index: 0, function: { arguments: 'false}' } }] } : { content: '好' }, finish_reason: functionTurn ? 'tool_calls' : 'stop' }] })))
             if (id !== 'stream-missing') {
               ready.add(id)
               controller.enqueue(Buffer.from(frame({ ...metadata, choices: [], usage: { prompt_tokens: 8, completion_tokens: 3, prompt_tokens_details: { cached_tokens: 2 } } })))
@@ -715,6 +720,33 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     assert.notEqual((await runtime.store.readRequest('stream-missing')).state, 'settled')
     assert.equal((await ledger.view(root.id)).reserved, (Number(heldSpeech) + 22).toFixed(6))
     assert.equal(submissions, 3)
+    const functionHeaders = { 'Content-Type': 'application/json', Authorization: 'Bearer stream-client' }
+    const functions = { tools: [{ type: 'function', function: { name: 'lookup', strict: false, parameters: { type: 'object', properties: { apiKey: { type: 'string' } } } } }],
+      model: model.id, stream: true, max_completion_tokens: 10, parallel_tool_calls: false }
+    const invokeFunction = (id, messages) => fetch(localUrl, { method: 'POST', headers: { ...functionHeaders, 'Idempotency-Key': id }, body: JSON.stringify({ ...functions, messages }) })
+    const [[beforeFunctions]] = await pool.query('SELECT credit_balance FROM ai_end_users WHERE id=?', ['stream-user'])
+    const beforeOfficial = await ledger.view(root.id), beforeChild = (await service.balance(second)).wallet
+    const messages = [{ role: 'user', content: 'function fixture' }]
+    const firstFunction = await invokeFunction('stream-functions', messages)
+    await wait(() => releases.has('stream-functions'), 'function admission'); releases.get('stream-functions')()
+    const functionText = await firstFunction.text()
+    assert(functionText.includes('"name":"lookup"')); assert(functionText.includes('[DONE]'))
+    await wait(async () => (await runtime.store.readRequest('stream-functions'))?.state === 'settled', 'function settlement')
+    const firstSaved = await runtime.store.readRequest('stream-functions')
+    assert.deepEqual(firstSaved.result.choices[0].message.tool_calls[0].function, { name: 'lookup', arguments: '{"value":false}' })
+    assert((await (await invokeFunction('stream-functions', messages)).text()).includes('call-sql')); assert.equal(submissions, 4)
+    messages.push(firstSaved.result.choices[0].message, { role: 'tool', tool_call_id: 'call-sql', content: 'fixture result' })
+    const secondFunction = await invokeFunction('stream-functions-result', messages)
+    await wait(() => releases.has('stream-functions-result'), 'function result admission'); releases.get('stream-functions-result')()
+    assert((await secondFunction.text()).includes('[DONE]'))
+    await wait(async () => (await runtime.store.readRequest('stream-functions-result'))?.state === 'settled', 'function result settlement')
+    const [[afterFunctions]] = await pool.query('SELECT credit_balance FROM ai_end_users WHERE id=?', ['stream-user'])
+    const sixPlaces = value => BigInt(value.replace('.', ''))
+    assert.equal(sixPlaces(beforeFunctions.credit_balance) - sixPlaces(afterFunctions.credit_balance), 5200000n)
+    assert.equal(sixPlaces(beforeOfficial.balance) - sixPlaces((await ledger.view(root.id)).balance), 4200000n)
+    assert.equal(sixPlaces(beforeChild.balance) - sixPlaces((await service.balance(second)).wallet.balance), 4800000n)
+    assert.equal((await ledger.view(root.id)).reserved, beforeOfficial.reserved)
+    assert.equal(submissions, 5)
   } finally {
     for (const release of releases.values()) release()
     runtime?.stop()

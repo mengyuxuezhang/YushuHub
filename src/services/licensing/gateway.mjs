@@ -135,7 +135,7 @@ export function createModelGateway({ ledger, authorize, models, adapters, privat
     },
     async submit(token, input, { onChunk, onAccepted } = {}) {
       const claims = await check(token), { model, adapter } = select(claims, input.modelId)
-      const requestId = identifier(input.requestId), request = assertSafeTaskRequest(input.request)
+      const requestId = identifier(input.requestId), request = assertSafeTaskRequest(input.request, { allowChatFunctions: model.taskType === 'chat' })
       const legacyFingerprint = digest(JSON.stringify({ modelId: model.id, organizationId: claims.sub, request }))
       const fingerprint = claims.subjectHash ? digest(JSON.stringify({ modelId: model.id, organizationId: claims.sub, request, subjectHash: claims.subjectHash })) : legacyFingerprint
       let existing

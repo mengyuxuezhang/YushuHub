@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { publicInvocationError } from './model-invoke/errors.mjs'
 import { quotePricing } from './compound-pricing.mjs'
+import { chatFunctionSchemaRoots } from './chat-functions.mjs'
 
 const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const parse = value => {
@@ -9,12 +10,14 @@ const parse = value => {
 }
 const quoteFromSnapshot = (snapshot, usage) => quotePricing(snapshot.plan, usage, snapshot.exchangeRates)
 const SENSITIVE_FIELD = /^(api[_-]?key|authorization|credential|secret|providerVoiceId)$/i
-export function assertSafeTaskRequest(request) {
+export function assertSafeTaskRequest(request, { allowChatFunctions = false } = {}) {
+  const schemaRoots = allowChatFunctions ? chatFunctionSchemaRoots(request) : new Set()
   const serialized = JSON.stringify(request ?? {})
   if (serialized.length > 262144) throw Object.assign(new Error('任务参数过大，请通过专用媒体上传接口提交文件'), { statusCode: 413, code: 'MODEL_TASK_INPUT_TOO_LARGE' })
   const visit = value => {
     if (!value || typeof value !== 'object') return
     if (Buffer.isBuffer(value) || ArrayBuffer.isView(value)) throw Object.assign(new Error('二进制内容不能进入模型任务参数'), { statusCode: 400, code: 'MODEL_TASK_BINARY_REJECTED' })
+    if (schemaRoots.has(value)) return // Validated JSON schema is data, not a provider connection envelope.
     for (const [key, child] of Object.entries(value)) {
       if (SENSITIVE_FIELD.test(key)) throw Object.assign(new Error('客户端不能提交凭据或真实上游资源标识'), { statusCode: 400, code: 'MODEL_TASK_SECRET_REJECTED' })
       visit(child)

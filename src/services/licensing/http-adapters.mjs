@@ -5,6 +5,7 @@ import { readChatStream } from './streaming.mjs'
 import { asyncSpeechAdapter } from './async-speech.mjs'
 import { privateVoiceAdapter, preparePrivateVoice } from './private-voice-adapter.mjs'
 import { normalizeImageGenerationRequest, buildUpstreamImagePayload, resolveResolutionTier } from '../image-generation.mjs'
+import { validateChatFunctionMessages } from '../chat-functions.mjs'
 
 const event = (meter, quantity, extra = {}) => ({ meter, quantity: String(quantity), ...extra })
 const requestEvent = () => event('request', 1, { phase: 'request' })
@@ -49,11 +50,15 @@ export function httpGatewayAdapters(fetcher = fetch, { privateVoiceStore } = {})
     'openai.chat': {
       prepare(model, request) {
         if (!Array.isArray(request.messages) || !request.messages.length || !Number.isSafeInteger(model.contextWindow) || !Number.isSafeInteger(model.maxOutputTokens)) throw failure('UNBOUNDED_REQUEST', '文本模型需配置上下文和输出上限')
+        validateChatFunctionMessages(request)
+        if (request.max_tokens != null && request.max_completion_tokens != null) throw failure('INVALID_BOUND', '只能选择一种输出上限参数')
         const max = boundedInteger(request.max_tokens ?? request.max_completion_tokens, model.maxOutputTokens, model.maxOutputTokens)
         if (request.stream === true && model.supportsStreaming !== true) throw failure('STREAM_UNAVAILABLE', '该模型尚未开放实时流式供货')
         // Context capacity is a conservative bound enforced by the supplier model.
         if (request.n !== undefined && request.n !== 1) throw failure('INVALID_BOUND', '当前供货适配只支持每次生成一个候选结果')
-        return { request: { ...request, model: model.model, max_tokens: max, max_completion_tokens: undefined, n: 1, stream: request.stream === true, stream_options: request.stream === true ? { include_usage: true } : undefined },
+        const { requestId, modelId, capabilityId, idempotencyKey, ...providerRequest } = request
+        const completionLimit = request.max_completion_tokens != null
+        return { request: { ...providerRequest, model: model.model, max_tokens: completionLimit ? undefined : max, max_completion_tokens: completionLimit ? max : undefined, n: 1, stream: request.stream === true, stream_options: request.stream === true ? { include_usage: true } : undefined },
           upperUsage: [requestEvent(), event('input_tokens', model.contextWindow), event('cached_tokens', model.contextWindow), event('output_tokens', max)] }
       },
       async submit(model, request, context) {

@@ -24,7 +24,8 @@ const fetcher = async (target, options) => {
   if (endpoint.pathname.endsWith('/chat/completions')) {
     calls++
     assert.equal(response.status, 200)
-    if (JSON.parse(options.body).stream === true) return response
+    const body = JSON.parse(options.body)
+    if (body.stream === true || body.tools || body.functions) return response
     await response.arrayBuffer()
     // Drop even the headers as seen by the caller; the prior durable caller
     // correlation must recover usage without this response's request ID.
@@ -32,7 +33,7 @@ const fetcher = async (target, options) => {
   }
   return response
 }
-const model = { id: 'chat', model: 'gpt-4o-mini', status: 'enabled', version: 1, adapter: 'newapi.chat', settlementProtocol: 'okpa-v1',
+const model = { id: 'chat', taskType: 'chat', model: 'gpt-4o-mini', status: 'enabled', version: 1, adapter: 'newapi.chat', settlementProtocol: 'okpa-v1',
   supportsStreaming: true,
   baseUrl: 'https://okpa-fixture.example.com/v1', keyEnv: 'OKPA_ACCEPTANCE_INFERENCE', settlementKeyEnv: 'OKPA_ACCEPTANCE_SETTLEMENT', contextWindow: 100, maxOutputTokens: 10,
   price: { version: 1, components: [{ meter: 'request', phase: 'request', unitSize: '1', amount: '1' },
@@ -70,5 +71,34 @@ assert.notEqual((await gateway.submit(token, missing, { onChunk: () => {} })).st
 await gateway.submit(token, missing, { onChunk: () => {} })
 assert.equal(calls, 3)
 assert.equal((await ledger.view('acceptance')).balance, '95.800000'); assert.equal((await ledger.view('acceptance')).reserved, '22.000000')
-console.log(JSON.stringify({ passed: true, inferenceSubmissions: calls, settledRequests: 2, actualPerSettledCny: '2.100000',
+// Two turns for each protocol: the gateway transports function data and charges
+// actual text usage, while only the client executes the requested function.
+for (const modern of [true, false]) {
+  const functions = modern ? { tools: [{ type: 'function', function: { name: 'lookup', strict: false,
+    parameters: { type: 'object', properties: { apiKey: { type: 'string' }, audio: { type: 'string' } } } } }], parallel_tool_calls: false }
+    : { functions: [{ name: 'lookup', parameters: {} }], function_call: 'auto' }
+  const first = { requestId: `wire-functions-${modern}`, modelId: 'chat', request: { ...functions, stream: modern,
+    max_completion_tokens: 10, messages: [{ role: 'user', content: `wire-node-functions-${modern}` }] } }
+  let fragments = 0
+  const turn = await gateway.submit(token, first, { onChunk: chunk => { if (chunk.choices[0]?.delta.tool_calls) fragments++; throw new Error('detached client') } })
+  assert.equal(turn.state, 'settled'); assert.equal(turn.actual, '2.100000')
+  const message = turn.result.choices[0].message
+  const call = modern ? message.tool_calls[0].function : message.function_call
+  assert.deepEqual(call, { name: 'lookup', arguments: '{"value":false}' })
+  if (modern) assert.ok(fragments >= 2)
+  const before = calls; await gateway.submit(token, first); assert.equal(calls, before)
+  const resultMessage = modern ? { role: 'tool', tool_call_id: message.tool_calls[0].id, content: 'fixture result' } : { role: 'function', name: 'lookup', content: 'fixture result' }
+  const second = { requestId: `wire-functions-result-${modern}`, modelId: 'chat', request: { ...functions,
+    max_completion_tokens: 10, messages: [...first.request.messages, message, resultMessage] } }
+  const completed = await gateway.submit(token, second)
+  assert.equal(completed.state, 'settled'); assert.equal(completed.result.choices[0].message.content, 'acceptance mock')
+  for (const accepted of [first, second]) {
+    const recovery = (await center.recoveryToken(activation.credential, 'acceptance', accepted.requestId)).token
+    await gateway.acknowledgeRecovery(recovery, accepted.requestId)
+  }
+}
+assert.equal(calls, 7)
+assert.equal((await ledger.view('acceptance')).balance, '87.400000')
+assert.equal((await ledger.view('acceptance')).reserved, '22.000000')
+console.log(JSON.stringify({ passed: true, inferenceSubmissions: calls, settledRequests: 6, clientFunctionRoundTrips: 2, actualPerSettledCny: '2.100000',
   missingUsageHeldCny: '22.000000', firstChunkBeforeCompletion: true, originalResponseUnavailable: true, virtualFundsOnly: true }))

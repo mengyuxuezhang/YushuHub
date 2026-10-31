@@ -1,4 +1,5 @@
 import { failure } from './protocol.mjs'
+import { assertChatJsonData, validateChatFunctionMessages } from '../chat-functions.mjs'
 
 // Incremental SSE parser shared by the provider stream and the private gateway
 // hop. Limits apply even when the downstream reader has disconnected.
@@ -60,6 +61,14 @@ export async function emitChunk(callback, chunk) {
 
 export function chatStreamCollector() {
   let usage, metadata, content = '', reasoning = '', refusal = '', finish, size = 0
+  const tools = new Map(); let legacy
+  const invalid = () => failure('INVALID_STREAM', '上游函数增量无效', 502)
+  function append(target, source, keys) {
+    for (const key of keys) if (source[key] != null) {
+      if (typeof source[key] !== 'string') throw invalid()
+      size += Buffer.byteLength(source[key]); target[key] = (target[key] || '') + source[key]
+    }
+  }
   return {
     add(value) {
       if (value.error || !Array.isArray(value.choices) || value.choices.length > 1 || typeof value.id !== 'string' || value.id.length > 256
@@ -67,8 +76,34 @@ export function chatStreamCollector() {
       if (metadata && (metadata.id !== value.id || metadata.model !== value.model)) throw failure('INVALID_STREAM', '上游请求身份发生变化', 502)
       metadata ||= { id: value.id, created: value.created, model: value.model }
       const choices = value.choices.map(choice => {
-        if (choice.index !== 0 || !choice.delta || choice.delta.tool_calls || choice.delta.function_call) throw failure('UNSUPPORTED_STREAM', '该事件不属于纯文本流', 502)
+        if (choice.index !== 0 || !choice.delta || typeof choice.delta !== 'object' || Array.isArray(choice.delta)) throw invalid()
         const delta = {}
+        if (choice.delta.tool_calls != null) {
+          if (legacy || !Array.isArray(choice.delta.tool_calls) || choice.delta.tool_calls.length > 1024) throw invalid()
+          delta.tool_calls = choice.delta.tool_calls.map(call => {
+            if (!call || !Number.isSafeInteger(call.index) || call.index < 0 || call.index >= 1024 || (call.type != null && call.type !== 'function')) throw invalid()
+            const target = tools.get(call.index) || { type: 'function', function: {} }
+            append(target, call, ['id'])
+            if (call.function != null) {
+              if (typeof call.function !== 'object' || Array.isArray(call.function)) throw invalid()
+              append(target.function, call.function, ['name', 'arguments'])
+            }
+            const extensions = {}
+            for (const key of ['extra_content', 'provider_specific_fields']) if (call[key] !== undefined) {
+              try { assertChatJsonData(call[key]) } catch { throw invalid() }
+              // Opaque provider signatures are complete JSON values, never executable configuration.
+              size += Buffer.byteLength(JSON.stringify(call[key])); target[key] = structuredClone(call[key]); extensions[key] = call[key]
+            }
+            tools.set(call.index, target)
+            return { index: call.index, ...(call.id != null ? { id: call.id } : {}), ...(call.type != null ? { type: call.type } : {}),
+              ...(call.function != null ? { function: { ...call.function } } : {}), ...extensions }
+          })
+        }
+        if (choice.delta.function_call != null) {
+          if (tools.size || typeof choice.delta.function_call !== 'object' || Array.isArray(choice.delta.function_call)) throw invalid()
+          legacy ||= {}; append(legacy, choice.delta.function_call, ['name', 'arguments'])
+          delta.function_call = { ...choice.delta.function_call }
+        }
         for (const key of ['role', 'content', 'reasoning_content', 'refusal']) if (choice.delta[key] !== undefined && choice.delta[key] !== null) {
           if (typeof choice.delta[key] !== 'string') throw failure('INVALID_STREAM', '文本增量无效', 502)
           delta[key] = choice.delta[key]; size += Buffer.byteLength(delta[key])
@@ -92,8 +127,12 @@ export function chatStreamCollector() {
     },
     result() {
       if (!finish || !usage) throw failure('TRUNCATED_STREAM', '上游缺少结束原因或最终用量，需要对账', 502)
-      return { ...metadata, object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content,
-        ...(reasoning ? { reasoning_content: reasoning } : {}), ...(refusal ? { refusal } : {}) }, finish_reason: finish }], usage }
+      const message = { role: 'assistant', content: content || (tools.size || legacy ? null : ''),
+        ...(reasoning ? { reasoning_content: reasoning } : {}), ...(refusal ? { refusal } : {}),
+        ...(tools.size ? { tool_calls: [...tools].sort(([a], [b]) => a - b).map(([, call]) => ({ ...call, function: { arguments: '', ...call.function } })) } : {}),
+        ...(legacy ? { function_call: { arguments: '', ...legacy } } : {}) }
+      try { validateChatFunctionMessages({ messages: [message] }, { textOnly: true }) } catch { throw invalid() }
+      return { ...metadata, object: 'chat.completion', choices: [{ index: 0, message, finish_reason: finish }], usage }
     },
   }
 }

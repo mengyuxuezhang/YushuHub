@@ -1,4 +1,5 @@
 import { failure, identifier } from './protocol.mjs'
+import { validateTextFunctionRequest } from '../chat-functions.mjs'
 
 // Separate read/ack credential; never use a New API management token for recovery.
 export function withNewApiSettlement(base, fetcher) {
@@ -51,9 +52,10 @@ export function withNewApiSettlement(base, fetcher) {
         const url = new URL(model.baseUrl), inferenceKey = process.env[model.keyEnv]
         if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw failure('INVALID_UPSTREAM', 'New API供货必须使用HTTPS')
         if (!inferenceKey || inferenceKey.startsWith('nap_')) throw failure('INVALID_INFERENCE_KEY', 'New API供货需专用推理令牌')
-        if (input.tools || input.functions || !Array.isArray(input.messages) || input.messages.some(m => typeof m.content !== 'string')) throw failure('UNSUPPORTED_SETTLEMENT', '当前自动对账仅支持纯文本')
       }
-      return base.prepare(model, input)
+      const prepared = base.prepare(model, input)
+      if (managed(model)) validateTextFunctionRequest(prepared.request)
+      return prepared
     },
     async submit(model, input, context) {
       if (!managed(model)) return base.submit(model, input, context)

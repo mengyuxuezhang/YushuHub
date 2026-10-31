@@ -30,6 +30,8 @@ import { auditAccounting } from './accounting-migration.mjs'
 import { createAccountingMonitor, emptyMonitorState } from './accounting-monitor.mjs'
 import { ModelCredentialVault } from '../model-credentials.mjs'
 import { readChatStream, readSse } from './streaming.mjs'
+import { validateTextFunctionRequest } from '../chat-functions.mjs'
+import { assertSafeTaskRequest } from '../model-task-service.mjs'
 import { deploymentRuntime, officialAuthorization } from './admin-runtime.mjs'
 import { licenseNotifications } from './license-notifications.mjs'
 import { reserveCentralQuota } from './quotas.mjs'
@@ -73,6 +75,36 @@ test('SSE streams incrementally across UTF-8/CRLF boundaries and rejects missing
   await assert.rejects(readSse(source('data: too-long\n\n'), () => {}, { maxFrame: 8 }), { code: 'STREAM_LIMIT' })
   const lines = []; await readSse(source('data: first\rdata: second\r\r'), frame => lines.push(frame.data))
   assert.deepEqual(lines, ['first\nsecond'])
+})
+test('client function streams preserve fragmented parallel calls and permit a bounded text-result round trip', async () => {
+  const frame = (delta, finish_reason = null) => ({ id: 'functions', model: 'chat', created: 1, choices: [{ index: 0, delta, finish_reason }] })
+  const usage = { id: 'functions', model: 'chat', created: 1, choices: [], usage: { prompt_tokens: 8, completion_tokens: 3 } }
+  const read = async frames => readChatStream(new Response([...frames, usage].map(v => `data: ${JSON.stringify(v)}\n\n`).join('') + 'data: [DONE]\n\n',
+    { headers: { 'content-type': 'text/event-stream' } }), () => { throw new Error('reader disconnected') })
+  const result = await read([
+    frame({ role: 'assistant', tool_calls: [{ index: 1, id: 'call-b', type: 'function', function: { name: 'second', arguments: '' } },
+      { index: 0, id: 'call-a', type: 'function', function: { name: 'first', arguments: '{"value":' }, extra_content: { google: { thought_signature: 'opaque' } } }] }),
+    frame({ tool_calls: [{ index: 0, function: { arguments: 'false}' } }, { index: 1, function: { arguments: '{}' } }] }), frame({}, 'tool_calls'),
+  ])
+  const message = result.choices[0].message
+  assert.equal(message.content, null)
+  assert.deepEqual(message.tool_calls.map(c => [c.id, c.function.name, c.function.arguments]), [['call-a', 'first', '{"value":false}'], ['call-b', 'second', '{}']])
+  assert.equal(message.tool_calls[0].extra_content.google.thought_signature, 'opaque')
+  const tools = [{ type: 'function', function: { name: 'first', strict: false, parameters: { type: 'object', properties: { apiKey: { type: 'string' }, audio: { type: 'string' } } } } }]
+  const request = { messages: [{ role: 'user', content: 'hello' }, message, { role: 'tool', tool_call_id: 'call-a', content: 'done' }, { role: 'tool', tool_call_id: 'call-b', content: 'done' }], tools, parallel_tool_calls: false, max_completion_tokens: 10 }
+  validateTextFunctionRequest(request); assertSafeTaskRequest(request, { allowChatFunctions: true })
+  const model = { model: 'trusted', contextWindow: 100, maxOutputTokens: 10 }
+  const prepared = httpGatewayAdapters()['openai.chat'].prepare(model, { ...request, requestId: 'private-id', modelId: 'local-id' }).request
+  assert.equal(prepared.max_completion_tokens, 10); assert.equal(prepared.max_tokens, undefined)
+  assert.equal(prepared.requestId, undefined); assert.equal(prepared.model, 'trusted'); assert.equal(prepared.parallel_tool_calls, false)
+  assert.throws(() => assertSafeTaskRequest({ ...request, apiKey: 'injection' }, { allowChatFunctions: true }))
+  for (const bad of [{ ...request, tools: [{ type: 'web_search' }] }, { ...request, web_search_options: {} },
+    { ...request, messages: [{ role: 'user', content: null }] }, { ...request, messages: [{ ...message, tool_calls: [message.tool_calls[0], message.tool_calls[0]] }] }]) assert.throws(() => validateTextFunctionRequest(bad))
+  const old = await read([frame({ function_call: { name: 'first', arguments: '{' } }), frame({ function_call: { arguments: '}' } }, 'function_call')])
+  assert.deepEqual(old.choices[0].message.function_call, { name: 'first', arguments: '{}' })
+  validateTextFunctionRequest({ functions: [{ name: 'first', parameters: {} }], messages: [old.choices[0].message, { role: 'function', name: 'first', content: 'done' }] })
+  await assert.rejects(read([frame({ tool_calls: [{ index: -1 }] }, 'tool_calls')]), { code: 'INVALID_STREAM' })
+  await assert.rejects(read([frame({ tool_calls: [{ index: 0, id: 'a', function: { name: 'first' } }, { index: 1, id: 'a', function: { name: 'second' } }] }, 'tool_calls')]), { code: 'INVALID_STREAM' })
 })
 async function root(center) {
   const issued = await center.issue({ id: 'first', name: '演示一级', packageId: 'first-fixed', domain: 'https://agent.example.com', modelIds: ['chat'], expiresAt: '2027-10-29T00:00:00Z' }, 'operator')

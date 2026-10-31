@@ -173,14 +173,14 @@ export function createAgentCommerce({ store, catalog, invoke, lookup, rootId, us
     },
     async submit(tenant, userId, input, { onChunk, onAccepted } = {}) {
       const requestId = identifier(input.requestId), modelId = identifier(input.modelId)
-      const request = assertSafeTaskRequest(input.request)
-      const fingerprint = digest(JSON.stringify({ organizationId: tenant.id, userId, modelId, request }))
       const previous = await find(requestId)
+      const snapshot = previous?.snapshot || await selected(await configuration(), tenant, modelId)
+      const request = assertSafeTaskRequest(input.request, { allowChatFunctions: snapshot.model.taskType === 'chat' })
+      const fingerprint = digest(JSON.stringify({ organizationId: tenant.id, userId, modelId, request }))
       if (previous) {
         if (previous.fingerprint !== fingerprint) throw failure('IDEMPOTENCY_CONFLICT', '请求ID冲突', 409)
         return previous
       }
-      const state = await configuration(), snapshot = await selected(state, tenant, modelId)
       if (snapshot.model.source === 'custom' && !snapshot.model.supplierCost) throw failure('SUPPLIER_COST_REQUIRED', '自接模型须单独配置人民币供应商成本，不能把基础售价当作成本')
       // Trusted model adapters calculate bounds; client estimatedUsage is ignored.
       const subjectContext = { requestId, organizationId: tenant.id, rootId, subjectHash: digest(JSON.stringify([tenant.id, userId])) }
