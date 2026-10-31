@@ -28,6 +28,7 @@ import { auditLegacyAuthorization, compareMigration } from './migration.mjs'
 import { httpGatewayAdapters } from './http-adapters.mjs'
 import { auditAccounting } from './accounting-migration.mjs'
 import { createAccountingMonitor, emptyMonitorState } from './accounting-monitor.mjs'
+import { checkAuthorizationAvailability, createAvailabilityMonitor, emptyAvailabilityState } from './availability-monitor.mjs'
 import { ModelCredentialVault } from '../model-credentials.mjs'
 import { readChatStream, readSse } from './streaming.mjs'
 import { validateTextFunctionRequest } from '../chat-functions.mjs'
@@ -49,6 +50,62 @@ function setup() {
 test('explicit legacy deployment mode does not become a licensed instance just because the official service uses a center URL', () => {
   assert.equal(deploymentRuntime({ AI_AUTHORIZATION_MODE: 'legacy', AI_LICENSE_CENTER_URL: 'https://center.example.com', NODE_ENV: 'production' }), null)
   assert.throws(() => officialAuthorization({ AI_OFFICIAL_AUTHORIZATION_MODE: 'center', AI_LICENSE_CENTER_URL: 'http://127.0.0.1', NODE_ENV: 'production' }), /HTTPS/)
+})
+
+test('external availability verifies signed identity and real scoped catalog without submitting inference', async () => {
+  const { center, publicKeys, now } = setup()
+  const issued = await center.issue({ id: 'observer', name: '只读存活检查', packageId: 'first-fixed', modelIds: [], domain: 'https://observer.example.com', expiresAt: null }, 'operator')
+  const activation = await center.activate({ code: issued.code, requestId: 'observe-activate', instanceId: 'observer-instance', domain: 'https://observer.example.com' })
+  let down = false, scopes = 0; const paths = []
+  const fetchImpl = async (url, options) => {
+    const pathname = new URL(url).pathname; paths.push(pathname)
+    if (pathname === '/health') return new Response(JSON.stringify({ success: !down }), { status: down ? 503 : 200 })
+    const token = options.headers.Authorization?.slice(7), body = options.body && JSON.parse(options.body)
+    let data
+    if (pathname.endsWith('/refresh')) data = await center.refresh(token)
+    else if (pathname.endsWith('/service-token')) data = await center.serviceToken(token, body.audience, body.organizationId)
+    else if (pathname.endsWith('/catalog')) { const claims = await center.introspect(token, 'official-models'); assert.equal(claims.sub, 'observer'); scopes++; data = [] }
+    else throw new Error('No inference or operator endpoint is allowed')
+    return new Response(JSON.stringify({ success: true, data }))
+  }
+  const config = { centerOrigin: 'https://license.example.com', gatewayOrigin: 'https://supply.example.com', credential: activation.credential,
+    publicKeys, grantId: 'observer', instanceId: 'observer-instance', publicUrl: 'https://observer.example.com' }
+  assert.equal((await checkAuthorizationAvailability(config, { fetchImpl, now })).healthy, true); assert.equal(scopes, 1)
+  down = true
+  assert.deepEqual((await checkAuthorizationAvailability(config, { fetchImpl, now })).failed, ['center-health', 'gateway-health'])
+  down = false
+  assert.deepEqual((await checkAuthorizationAvailability({ ...config, publicKeys: { test: crypto.generateKeyPairSync('ed25519').publicKey } }, { fetchImpl, now })).failed, ['certificate'])
+  assert.deepEqual((await checkAuthorizationAvailability({ ...config, publicUrl: 'https://wrong.example.com' }, { fetchImpl, now })).failed, ['certificate'])
+  await assert.rejects(checkAuthorizationAvailability({ ...config, centerOrigin: 'http://license.example.com' }, { fetchImpl, now }))
+  assert.ok(paths.every(value => !value.includes('/requests') && !value.includes('/operator')))
+})
+
+test('external availability alerts persist across restarts, retry business errors and stay quiet while unchanged', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'yushu-availability-'))
+  try {
+    let healthy = true, timestamp = Date.now(), rejected = true; const delivered = []
+    const store = memoryStateStore(emptyAvailabilityState()), vault = new ModelCredentialVault(path.join(dir, 'monitor.key'))
+    const make = () => createAvailabilityMonitor({ store, vault, label: 'TEST-availability', now: () => timestamp,
+      check: async () => ({ healthy, failed: healthy ? [] : ['center-health'] }), fetchImpl: async (_url, options) => {
+        delivered.push(JSON.parse(options.body).content.text)
+        const code = rejected ? 1 : 0; rejected = false
+        return new Response(JSON.stringify({ code }))
+      } })
+    let monitor = make()
+    const url = `https://open.feishu.cn/open-apis/bot/v2/hook/${'a'.repeat(32)}`
+    await monitor.configure({ enabled: true, expectedVersion: 0, url }, 'fixture-operator')
+    await monitor.tick(); healthy = false; await monitor.tick(); assert.equal(delivered.length, 0)
+    monitor = make(); await monitor.tick(); assert.equal(delivered.length, 1)
+    assert.equal((await store.read()).deliveries[0].state, 'pending')
+    timestamp += 2001; await monitor.tick(); assert.equal(delivered.length, 2)
+    assert.equal(delivered[0].split('事件ID=')[1].split('\n')[0], delivered[1].split('事件ID=')[1].split('\n')[0])
+    await monitor.tick(); assert.equal(delivered.length, 2)
+    healthy = true; await monitor.tick(); assert.equal(delivered.length, 3)
+    await monitor.tick(); assert.equal(delivered.length, 3)
+    const state = await store.read(); assert.equal(state.availability.generation, 2); assert.equal(state.availability.firing, false)
+    assert.equal(state.metrics, null); assert.equal(JSON.stringify(state).includes(url), false)
+    assert.equal(state.deliveries.filter(row => row.state === 'delivered').length, 2)
+  } finally { await fs.rm(dir, { recursive: true, force: true }) }
 })
 
 test('SSE streams incrementally across UTF-8/CRLF boundaries and rejects missing usage, truncation and oversized frames', async () => {
