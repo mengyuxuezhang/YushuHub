@@ -6,19 +6,19 @@
 
 | 权限/能力 | 菜单 | 新路径/边界 | 模板：自定义/固定/二级 | API实现位置 | 验证入口 |
 | --- | --- | --- | --- | --- | --- |
-| `curated_agents.view` 查看精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP链路已验，实际桌面另验 | 有/有/有 | `src/routes/curated-agents.mjs` | `npm run test:curated-agents` |
-| `curated_agents.manage` 管理精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP链路已验，实际桌面另验 | 有/有/有 | `src/routes/curated-agents.mjs`<br>`src/routes/users.mjs` | `npm run test:curated-agents` |
-| `curated_agents.publish` 发布精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP链路已验，实际桌面另验 | 有/有/有 | `src/routes/curated-agents.mjs` | `npm run test:curated-agents` |
-| `curated_agents.distribute` 分发精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP链路已验，实际桌面另验 | 有/有/有 | `src/routes/curated-agents.mjs` | `npm run test:curated-agents` |
-| `curated_mcps.view` 查看精选 MCP | /markets/mcps | MCP配置、版本、来源安全与分发；不等同于桌面执行验收 | 有/有/有 | `src/routes/curated-mcps.mjs` | `npm run test:curated-mcps` |
-| `curated_mcps.manage` 管理精选 MCP | /markets/mcps | MCP配置、版本、来源安全与分发；不等同于桌面执行验收 | 有/有/有 | `src/routes/curated-mcps.mjs`<br>`src/routes/users.mjs` | `npm run test:curated-mcps` |
-| `curated_mcps.publish` 发布精选 MCP | /markets/mcps | MCP配置、版本、来源安全与分发；不等同于桌面执行验收 | 有/有/有 | `src/routes/curated-mcps.mjs` | `npm run test:curated-mcps` |
-| `curated_mcps.distribute` 分发精选 MCP | /markets/mcps | MCP配置、版本、来源安全与分发；不等同于桌面执行验收 | 有/有/有 | `src/routes/curated-mcps.mjs` | `npm run test:curated-mcps` |
-| `curated_skills.view` 查看精选技能 | /markets/skills | 签名/加密包、版本、会员分发、租约、安装与撤销；实际桌面仍需验收 | 有/有/有 | `src/routes/curated-skills.mjs` | `npm run test:curated-skills` |
-| `curated_skills.manage` 管理自有技能 | /markets/skills | 签名/加密包、版本、会员分发、租约、安装与撤销；实际桌面仍需验收 | 有/有/有 | `src/routes/curated-skills.mjs`<br>`src/routes/users.mjs` | `npm run test:curated-skills` |
-| `curated_skills.publish` 发布自有技能 | /markets/skills | 签名/加密包、版本、会员分发、租约、安装与撤销；实际桌面仍需验收 | 有/有/有 | `src/routes/curated-skills.mjs` | `npm run test:curated-skills` |
-| `curated_skills.distribute` 分发精选技能 | /markets/skills | 签名/加密包、版本、会员分发、租约、安装与撤销；实际桌面仍需验收 | 有/有/有 | `src/routes/curated-skills.mjs` | `npm run test:curated-skills` |
-| `curated_skills.audit` 技能审计 | /markets/skills | 签名/加密包、版本、会员分发、租约、安装与撤销；实际桌面仍需验收 | 有/有/有 | `src/routes/curated-skills.mjs` | `npm run test:curated-skills` |
+| `curated_agents.view` 查看精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP及隔离Desktop实际安装/执行已验 | 有/有/有 | `src/routes/curated-agents.mjs` | `npm run test:curated-agents` |
+| `curated_agents.manage` 管理精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP及隔离Desktop实际安装/执行已验 | 有/有/有 | `src/routes/curated-agents.mjs`<br>`src/routes/users.mjs` | `npm run test:curated-agents` |
+| `curated_agents.publish` 发布精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP及隔离Desktop实际安装/执行已验 | 有/有/有 | `src/routes/curated-agents.mjs` | `npm run test:curated-agents` |
+| `curated_agents.distribute` 分发精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP及隔离Desktop实际安装/执行已验 | 有/有/有 | `src/routes/curated-agents.mjs` | `npm run test:curated-agents` |
+| `curated_mcps.view` 查看精选 MCP | /markets/mcps | MCP配置、版本、来源安全与分发；隔离Desktop实际只读工具执行已验 | 有/有/有 | `src/routes/curated-mcps.mjs` | `npm run test:curated-mcps` |
+| `curated_mcps.manage` 管理精选 MCP | /markets/mcps | MCP配置、版本、来源安全与分发；隔离Desktop实际只读工具执行已验 | 有/有/有 | `src/routes/curated-mcps.mjs`<br>`src/routes/users.mjs` | `npm run test:curated-mcps` |
+| `curated_mcps.publish` 发布精选 MCP | /markets/mcps | MCP配置、版本、来源安全与分发；隔离Desktop实际只读工具执行已验 | 有/有/有 | `src/routes/curated-mcps.mjs` | `npm run test:curated-mcps` |
+| `curated_mcps.distribute` 分发精选 MCP | /markets/mcps | MCP配置、版本、来源安全与分发；隔离Desktop实际只读工具执行已验 | 有/有/有 | `src/routes/curated-mcps.mjs` | `npm run test:curated-mcps` |
+| `curated_skills.view` 查看精选技能 | /markets/skills | 签名/加密包、版本、会员分发、租约、安装与撤销；隔离Desktop安装、原生展开与撤销已验 | 有/有/有 | `src/routes/curated-skills.mjs` | `npm run test:curated-skills` |
+| `curated_skills.manage` 管理自有技能 | /markets/skills | 签名/加密包、版本、会员分发、租约、安装与撤销；隔离Desktop安装、原生展开与撤销已验 | 有/有/有 | `src/routes/curated-skills.mjs`<br>`src/routes/users.mjs` | `npm run test:curated-skills` |
+| `curated_skills.publish` 发布自有技能 | /markets/skills | 签名/加密包、版本、会员分发、租约、安装与撤销；隔离Desktop安装、原生展开与撤销已验 | 有/有/有 | `src/routes/curated-skills.mjs` | `npm run test:curated-skills` |
+| `curated_skills.distribute` 分发精选技能 | /markets/skills | 签名/加密包、版本、会员分发、租约、安装与撤销；隔离Desktop安装、原生展开与撤销已验 | 有/有/有 | `src/routes/curated-skills.mjs` | `npm run test:curated-skills` |
+| `curated_skills.audit` 技能审计 | /markets/skills | 签名/加密包、版本、会员分发、租约、安装与撤销；隔离Desktop安装、原生展开与撤销已验 | 有/有/有 | `src/routes/curated-skills.mjs` | `npm run test:curated-skills` |
 | `organizations.view` 组织主体 | /organizations | 中心资格 + 本地组织/成员/员工岗位；二级隔离 | 有/有/有 | `src/routes/organizations.mjs` | `npm run test:access-control`<br>`npm run test:organization-expiry`<br>`npm run test:licensing` |
 | `organizations.children.manage` 下级代理管理 | /organizations | 原本地创建/改期限/改能力关闭；中心码兑换、供货和经营停用保留 | 有/有/无 | `src/routes/agent-supply.mjs`<br>`src/routes/deployment-authorization.mjs`<br>`src/routes/organizations.mjs` | `npm run test:access-control`<br>`npm run test:organization-expiry`<br>`npm run test:licensing` |
 | `organizations.members.manage` 组织成员管理 | /organizations | 中心资格 + 本地组织/成员/员工岗位；二级隔离 | 有/有/有 | `src/routes/organizations.mjs` | `npm run test:access-control`<br>`npm run test:organization-expiry`<br>`npm run test:licensing` |
@@ -31,8 +31,8 @@
 | `authorization.view` 授权状态 | /authorization | 状态、激活及续期；签发只在中心 | 有/有/有 | `src/routes/organizations.mjs` | `npm run test:licensing` |
 | `center_suppliers.manage` 供应商接入 | /center-suppliers | 新签发/重置关闭；中心身份只作原官方业务数据关联 | 无/无/无 | `src/routes/admin-business.mjs`<br>`src/routes/organizations.mjs` | `npm run test:licensing` |
 | `projects.manage` AI 项目管理 | /projects | 有效项目数；持久协调与业务SQL原子提交 | 有/有/有 | `src/routes/admin-business.mjs`<br>`src/routes/organizations.mjs`<br>`src/routes/users.mjs` | `npm run test:supplier-quotas`<br>`npm run test:licensing:mysql` |
-| `builds.create` 提交测试打包 | /builds、/workers | 累计受理、不因重试/续期清零；真实构建机另验 | 有/有/有 | `src/routes/admin-business.mjs`<br>`src/routes/builds.mjs`<br>`src/routes/organizations.mjs` | `npm run test:supplier-quotas`<br>`npm run test:licensing:mysql` |
-| `builds.publish` 推送正式版本 | /builds、/workers | 累计受理、不因重试/续期清零；真实构建机另验 | 有/有/有 | `src/routes/admin-business.mjs`<br>`src/routes/builds.mjs` | `npm run test:supplier-quotas`<br>`npm run test:licensing:mysql` |
+| `builds.create` 提交测试打包 | /builds、/workers | 累计受理、不因重试/续期清零；独立Windows实际构建、下载及手动覆盖安装已验；正式签名自动更新未验 | 有/有/有 | `src/routes/admin-business.mjs`<br>`src/routes/builds.mjs`<br>`src/routes/organizations.mjs` | `npm run test:supplier-quotas`<br>`npm run test:licensing:mysql` |
+| `builds.publish` 推送正式版本 | /builds、/workers | 累计受理、不因重试/续期清零；独立Windows实际构建、下载及手动覆盖安装已验；正式签名自动更新未验 | 有/有/有 | `src/routes/admin-business.mjs`<br>`src/routes/builds.mjs` | `npm run test:supplier-quotas`<br>`npm run test:licensing:mysql` |
 | `client_notices.view` 查看消息推送 | /notices | 组织内消息与发送历史，不与中心到期提醒混用 | 有/有/有 | `src/routes/client-notices.mjs` | `npm run check` |
 | `client_notices.publish` 发送消息推送 | /notices | 组织内消息与发送历史，不与中心到期提醒混用 | 有/有/有 | `src/routes/client-notices.mjs` | `npm run check` |
 | `user_usage.view` 查看使用报表 | /user-usage | 历史/分级供货计量和CSV；失效保留只读 | 有/有/有 | `src/routes/user-usage-report.mjs` | `npm run test:user-usage`<br>`npm run test:licensing:mysql` |
@@ -61,7 +61,7 @@
 | 代理身份/能力/期限/绑定 | 中心独立库；本地组织与用户ID保留 | 中心统一签发；8号旧登记仅业务关系，不再是授权源 |
 | 终端、会员、订单、积分、兑换码 | 一级原数据库 | 原权益不换算为上游余额；失效仍保留员工有权查看的账单与报表 |
 | 官方供货/二级供货 | 官方库/一级本地独立账表 | 初始0；审核凭证入账；价格链和优惠受理时锁定 |
-| 品牌项目/构建 | 原项目和官方任务保留 | 中心明确额度 + 本地持久协调；迁入基线不清零；真实构建机另验 |
+| 品牌项目/构建 | 原项目和官方任务保留 | 中心明确额度 + 本地持久协调；迁入基线不清零；独立Windows实际构建、下载及手动覆盖安装已验；正式签名自动更新未验 |
 | 专家/Skills/MCP | 原目录、版本、分发、签名和安装记录保留 | 新中心用途令牌；原内容目标、用户/会员范围和客户端校验继续生效 |
 | 自更新/构建产物/资源 | 原业务/存储服务 | 替换鉴权来源，保持现有调用格式；不发布开发分支为正式更新源 |
 | 模型供应商/密钥 | 官方侧及一级自定义各持有自己的配置 | 官方密钥不下发；原本地加密Key池已可由受控供货定义引用；供货定义图形化审核已接通；旧价格/权益批量迁入仍待完成 |
