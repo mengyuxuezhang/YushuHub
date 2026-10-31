@@ -73,6 +73,15 @@ assert.equal(calls, 3)
 assert.equal((await ledger.view('acceptance')).balance, '95.800000'); assert.equal((await ledger.view('acceptance')).reserved, '22.000000')
 // Two turns for each protocol: the gateway transports function data and charges
 // actual text usage, while only the client executes the requested function.
+async function settledFunction(operation, requestId) {
+  const recovery = (await center.recoveryToken(activation.credential, 'acceptance', requestId)).token
+  for (let attempt = 0; operation.state !== 'settled' && attempt < 20; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 200))
+    operation = await gateway.recover(recovery, requestId, true)
+  }
+  assert.equal(operation.state, 'settled')
+  return operation
+}
 for (const modern of [true, false]) {
   const functions = modern ? { tools: [{ type: 'function', function: { name: 'lookup', strict: false,
     parameters: { type: 'object', properties: { apiKey: { type: 'string' }, audio: { type: 'string' } } } } }], parallel_tool_calls: false }
@@ -80,7 +89,7 @@ for (const modern of [true, false]) {
   const first = { requestId: `wire-functions-${modern}`, modelId: 'chat', request: { ...functions, stream: modern,
     max_completion_tokens: 10, messages: [{ role: 'user', content: `wire-node-functions-${modern}` }] } }
   let fragments = 0
-  const turn = await gateway.submit(token, first, { onChunk: chunk => { if (chunk.choices[0]?.delta.tool_calls) fragments++; throw new Error('detached client') } })
+  const turn = await settledFunction(await gateway.submit(token, first, { onChunk: chunk => { if (chunk.choices[0]?.delta.tool_calls) fragments++; throw new Error('detached client') } }), first.requestId)
   assert.equal(turn.state, 'settled'); assert.equal(turn.actual, '2.100000')
   const message = turn.result.choices[0].message
   const call = modern ? message.tool_calls[0].function : message.function_call
@@ -90,7 +99,7 @@ for (const modern of [true, false]) {
   const resultMessage = modern ? { role: 'tool', tool_call_id: message.tool_calls[0].id, content: 'fixture result' } : { role: 'function', name: 'lookup', content: 'fixture result' }
   const second = { requestId: `wire-functions-result-${modern}`, modelId: 'chat', request: { ...functions,
     max_completion_tokens: 10, messages: [...first.request.messages, message, resultMessage] } }
-  const completed = await gateway.submit(token, second)
+  const completed = await settledFunction(await gateway.submit(token, second), second.requestId)
   assert.equal(completed.state, 'settled'); assert.equal(completed.result.choices[0].message.content, 'acceptance mock')
   for (const accepted of [first, second]) {
     const recovery = (await center.recoveryToken(activation.credential, 'acceptance', accepted.requestId)).token
