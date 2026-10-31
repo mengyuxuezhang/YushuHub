@@ -54,6 +54,10 @@ test('native pilot CLI holds a kernel single-writer lock, exits cleanly and resu
     }
     const config = { trial, sourceFiles, stateFile, keyFile: path.join(directory, 'webhook.key') }
     await fs.writeFile(cfgFile, JSON.stringify(config), { mode: 0o600 })
+    await assert.rejects(promisify(execFile)(process.execPath, [cli, 'initialize', cfgFile], {
+      timeout: 5000, env: { ...process.env, YUSHU_PILOT_LOCK_ATTEMPTED: '1' },
+    }), error => error.code === 1)
+    await assert.rejects(fs.access(stateFile), { code: 'ENOENT' })
     await run('initialize', cfgFile); await run('tick', cfgFile)
     child = spawn(process.execPath, [cli, 'run', cfgFile], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
     child.stdout.resume(); child.stderr.resume(); exited = new Promise(resolve => child.once('exit', resolve))

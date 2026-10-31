@@ -20,6 +20,8 @@ const targets = [
   'scripts/pilot-command-runtime.mjs',
   'scripts/pilot-command-runtime.test.mjs',
   'scripts/authorization-pilot-monitor.mjs',
+  'scripts/authorization-pilot-collector.mjs',
+  'scripts/authorization-pilot-watchdog.mjs',
   'src/repositories/accounting.mjs',
   'src/repositories/supply-voices.mjs',
   'src/repositories/supply-voice-artifacts.mjs',

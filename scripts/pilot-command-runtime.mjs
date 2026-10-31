@@ -34,7 +34,13 @@ export async function exclusivePilotCommand(stateFile, work) {
       && BigInt('0x' + device[0]) === major && BigInt('0x' + device[1]) === minor && device[2] === String(stat.ino)
   })
   if (own) return work()
-  const child = spawn('/usr/bin/flock', ['--no-fork', '--nonblock', lock, process.execPath, ...process.argv.slice(1)], { stdio: 'inherit' })
+  // A kernel/runtime that cannot expose the inherited lock must fail closed.
+  // This flag only DENIES another acquisition; it never grants lock ownership.
+  // Without a bound, an unsupported runtime could recursively re-exec forever.
+  if (process.env.YUSHU_PILOT_LOCK_ATTEMPTED) throw new Error('Inherited pilot kernel lock could not be verified')
+  const child = spawn('/usr/bin/flock', ['--no-fork', '--nonblock', lock, process.execPath, ...process.argv.slice(1)], {
+    stdio: 'inherit', env: { ...process.env, YUSHU_PILOT_LOCK_ATTEMPTED: '1' },
+  })
   const forward = signal => child.kill(signal), term = () => forward('SIGTERM'), interrupt = () => forward('SIGINT')
   process.on('SIGTERM', term); process.on('SIGINT', interrupt)
   try { process.exitCode = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', code => resolve(code ?? 1)) }) }
