@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import crypto from 'node:crypto'
 import net from 'node:net'
+import https from 'node:https'
 import os from 'node:os'
 import pathModule from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,6 +31,7 @@ import { canonicalJson } from '../src/services/curated-skills.mjs'
 import { verifyLegacyStageRuntime } from './test-legacy-stage-runtime.mjs'
 import { assertAccountingRuntime } from '../src/services/licensing/accounting-mode.mjs'
 import { verifyRetirementBackup } from './test-accounting-retirement-backup.mjs'
+import { readTestHttpsMaterial, startTestHttpsProxy, verifyTestHttpsBoundary } from './test-https-transport.mjs'
 // Invoked by the disposable MySQL runner. Boot both real admin processes with
 // fictional resources; never inherit a deployment database or paid model route.
 if (!process.env.LICENSING_TEST_DB) throw new Error('Run through npm run test:licensing:mysql with its disposable database')
@@ -43,7 +45,8 @@ const password=crypto.randomBytes(24).toString('hex'), processes={}, logs={}
 await fs.mkdir(dir,{recursive:true,mode:0o700})
 async function freePort(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p}
 const ports={local:await freePort(),official:await freePort()}, urls=Object.fromEntries(Object.entries(ports).map(([n,p])=>[n,`http://127.0.0.1:${p}`]))
-let centerUrl, envLocal
+let centerUrl, envLocal, tlsMaterial, httpsBoundary
+const httpsProxies=[]
 async function stop(n){const p=processes[n];if(p&&p.exitCode===null){p.kill('SIGTERM');await new Promise(r=>p.once('exit',r))}delete processes[n];if(logs[n])await fs.writeFile(`${dir}/${n}.log`,logs[n],{mode:0o600})}
 async function start(n,mode,extra={}){
  logs[n]='';const p=spawn(process.execPath,['cloud/ai-admin/server.mjs'],{cwd:root,env:{...process.env,NODE_ENV:'test',AI_AUTHORIZATION_MODE:mode,AI_OFFICIAL_AUTHORIZATION_MODE:'legacy',AI_CENTER_SUPPLIER_MANAGEMENT:'0',AI_AGENT_CUSTOM_MODELS_FILE:'',AI_MODEL_GATEWAY_URL:'',AI_ADMIN_PORT:String(ports[n]),AI_ADMIN_HOST:'127.0.0.1',AI_ADMIN_PUBLIC_URL:`https://resources-${n}.example.com`,AI_ADMIN_PASSWORD:password,AI_DB_HOST:config.host,AI_DB_PORT:String(config.port),AI_DB_USER:config.user,AI_DB_PASSWORD:config.password,AI_DB_NAME:names[n==='local'?0:1],AI_BUILD_CENTER_URL:'',AI_BUILD_CENTER_TOKEN:'',AI_BUILD_CENTER_SUPPLIER_ID:'',AI_LICENSE_STATE_FILE:`${dir}/${n}-deployment.json`,AI_CURATED_SKILL_ROOT:`${dir}/${n}-skills`,AI_CURATED_SKILL_KEK_PATH:`${dir}/${n}-kek`,AI_CURATED_SKILL_SIGNING_PRIVATE_PATH:`${dir}/${n}-signing-private.pem`,AI_CURATED_SKILL_SIGNING_PUBLIC_PATH:`${dir}/${n}-signing-public.pem`,AI_UPLOAD_DIR:`${dir}/${n}-uploads`,AI_MODEL_CREDENTIAL_KEY_PATH:`${dir}/${n}-model-credentials.key`,AI_PRICE_NOTIFICATIONS_KEY_FILE:`${dir}/${n}-notifications.key`,...extra},stdio:['ignore','pipe','pipe'],windowsHide:true})
@@ -63,11 +66,14 @@ async function sync(cookie){for(const kind of ['skill','mcp','agent']){const dat
 async function clientLogin(id,owner,organization){const pwd=crypto.randomBytes(20).toString('hex'),device=`device-${id}`;await localPool.query("INSERT INTO ai_end_users(id,username,display_name,password_hash,status,source_agent_id,organization_id,device_id) VALUES (?,?,?,?,'enabled',?,?,?)",[id,id,id,hashPassword(pwd),owner,organization,device]);const c=ok(await request('local','/api/client/auth/login-captcha'));const svg=Buffer.from(c.imageDataUrl.split(',')[1],'base64').toString();const answer=[...svg.matchAll(/<text[^>]*>([^<]+)<\/text>/g)].map(m=>m[1]).join('');const data=ok(await request('local','/api/client/auth/login',{username:id,password:pwd,deviceId:device,deviceName:'isolated',appVersion:'9.0.0',challengeId:c.challengeId,captchaAnswer:answer}));return {auth:`Bearer ${data.token}`,device}}
 const path=version=>`/api/client/skill-market/${ids.skill}/versions/${version}`
 try{
+ tlsMaterial=await readTestHttpsMaterial()
+ if(tlsMaterial)for(const n of ['local','official']){const proxy=await startTestHttpsProxy(tlsMaterial,ports[n]);httpsProxies.push(proxy);urls[n]=proxy.url}
  for(const name of names){await admin.query('CREATE DATABASE ??',[name]);createdNames.push(name)}
  localPool=mysql.createPool({...config,database:names[0]});officialPool=mysql.createPool({...config,database:names[1]});centerPool=mysql.createPool({...config,database:names[2]})
  const store=mysqlStateStore(centerPool,'state-v1',emptyCenterState());await store.migrate();const keys=crypto.generateKeyPairSync('ed25519'),publicKeys={test:keys.publicKey.export({type:'spki',format:'pem'})}
  center=createLicenseCenter({store,privateKey:keys.privateKey,publicKeys,keyId:'test',credentialKey:crypto.randomBytes(32)})
- const centerOperators=createOperatorAuth({store,operators:[{id:'fixture-operator',passwordHash:passwordHash(password),totpSecret:'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'}]});const app=serviceApp();registerLicenseCenterRoutes(app,{center,operators:centerOperators});serviceErrors(app);centerServer=await new Promise(r=>{const s=app.listen(0,'127.0.0.1',()=>r(s))});centerUrl=`http://127.0.0.1:${centerServer.address().port}`
+ const centerOperators=createOperatorAuth({store,operators:[{id:'fixture-operator',passwordHash:passwordHash(password),totpSecret:'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'}]});const app=serviceApp();registerLicenseCenterRoutes(app,{center,operators:centerOperators});serviceErrors(app);centerServer=await new Promise(r=>{const s=tlsMaterial?https.createServer(tlsMaterial,app).listen(0,'127.0.0.1',()=>r(s)):app.listen(0,'127.0.0.1',()=>r(s))});centerUrl=`${tlsMaterial?'https':'http'}://127.0.0.1:${centerServer.address().port}`
+ if(tlsMaterial)httpsBoundary=await verifyTestHttpsBoundary(centerUrl)
  await fs.writeFile(dir+'/public-keys.json',JSON.stringify(publicKeys),{mode:0o600})
  const operatorLogin=await fetch(centerUrl+'/api/license-center/v1/operator/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'fixture-operator',password,code:totp('JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',Math.floor(Date.now()/30000))})})
  const operatorSession=await operatorLogin.json();assert(operatorSession.success);await fs.writeFile(dir+'/operator-token',operatorSession.data.token,{mode:0o600})
@@ -359,9 +365,10 @@ try{
  const afterChargeRetirement=JSON.parse(await fs.readFile(dir+'/runtime-after-charge.json','utf8'));assert(afterChargeRetirement.blockers.includes('NEW_ACCOUNTING_HISTORY_PRESENT'));assert(afterChargeRetirement.blockers.includes('SECONDARY_ORGANIZATIONS_PRESENT'))
  await stop('local');await localPool.end();localPool=null
  await assert.rejects(runTransfer('runtime-apply',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/runtime-after-charge.json','retire-after-charge',dir+'/runtime-after-charge-denied.json'))
- const report={actualOfficialAndLocalProcesses:true,legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,officialScopeBackfillCli:true,oldBuildReadableByRootOnly:true,legacyPriceReviewCli:true,legacyUsageShadowCli:true,disabledModelStageCli:true,atomicModelStageRetry:true,installedModelRuntimeMock:true,preSettlementRetirementAndResume:true,retirementBackupAndFencesRestored:true,retiredSqlWriterBlocked:true,postSettlementRetirementDenied:true,cachedLegacyPricePreserved:true,sourcePriceMutationRejected:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,masterKeyReplacementDenied:true,restoredMasterAllowsRotation:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,inactiveTerminalRefundHttp:true,terminalRefundDoesNotCreditSupply:true,paidSupplierCalls:0,productionChanged:false}
+ const report={actualOfficialAndLocalProcesses:true,httpsTransport:Boolean(tlsMaterial),...(httpsBoundary?{httpsCertificateBoundary:httpsBoundary}:{}),legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,officialScopeBackfillCli:true,oldBuildReadableByRootOnly:true,legacyPriceReviewCli:true,legacyUsageShadowCli:true,disabledModelStageCli:true,atomicModelStageRetry:true,installedModelRuntimeMock:true,preSettlementRetirementAndResume:true,retirementBackupAndFencesRestored:true,retiredSqlWriterBlocked:true,postSettlementRetirementDenied:true,cachedLegacyPricePreserved:true,sourcePriceMutationRejected:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,masterKeyReplacementDenied:true,restoredMasterAllowsRotation:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,inactiveTerminalRefundHttp:true,terminalRefundDoesNotCreditSupply:true,paidSupplierCalls:0,productionChanged:false}
  await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2),{mode:0o600});console.log('Resource HTTP regression: '+JSON.stringify(report));completed=true
 }finally{
  await stop('local');await stop('official');if(centerServer){centerServer.closeAllConnections();await new Promise(r=>centerServer.close(r))}
+ for(const proxy of httpsProxies)await proxy.close()
  await localPool?.end();await officialPool?.end();await centerPool?.end();for(const name of createdNames){assert.match(name,/^yushu_resources_(local|official|center)_[a-f0-9]{10}$/);await admin.query('DROP DATABASE IF EXISTS ??',[name])}await admin.end();console.log('Only newly created resource acceptance databases removed.');if(completed){assert(pathModule.resolve(dir).startsWith(pathModule.resolve(os.tmpdir())+pathModule.sep));await fs.rm(dir,{recursive:true,force:true})}else{console.log('Protected failure logs: '+dir)}
 }

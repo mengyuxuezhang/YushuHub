@@ -4,10 +4,12 @@ import mysql from 'mysql2/promise'
 import { mysqlAccountingStore } from '../src/repositories/accounting.mjs'
 import { auditAccounting, migrateAccounting } from '../src/services/licensing/accounting-migration.mjs'
 import { createSupplyLedger } from '../src/services/licensing/ledger.mjs'
+import { createTestHttpsCredentials } from './test-https-credentials.mjs'
 
 const argumentsForTest = process.argv.slice(2)
-const resourcesOnly = argumentsForTest.length === 1 && argumentsForTest[0] === '--resources-only'
-if (argumentsForTest.length > 1 || (argumentsForTest.length && !resourcesOnly && !argumentsForTest[0].startsWith('--test-name-pattern='))) throw new Error('Only --test-name-pattern or --resources-only is supported')
+const httpsResourcesOnly = argumentsForTest.length === 1 && argumentsForTest[0] === '--https-resources-only'
+const resourcesOnly = httpsResourcesOnly || (argumentsForTest.length === 1 && argumentsForTest[0] === '--resources-only')
+if (argumentsForTest.length > 1 || (argumentsForTest.length && !resourcesOnly && !argumentsForTest[0].startsWith('--test-name-pattern='))) throw new Error('Only --test-name-pattern, --resources-only or --https-resources-only is supported')
 const focused = argumentsForTest.length === 1 && !resourcesOnly
 if (focused) { if (argumentsForTest[0].length > 220) throw new Error('Bounded test pattern required'); new RegExp(argumentsForTest[0].slice('--test-name-pattern='.length)) }
 
@@ -17,8 +19,9 @@ function docker(args, env = process.env, input) {
   if (result.status !== 0) throw new Error(`Docker ${args[0]} failed: ${result.stderr || 'unavailable'}`)
   return result.stdout.trim()
 }
-let started = false
+let started = false, httpsCredentials
 try {
+  if (httpsResourcesOnly) httpsCredentials = await createTestHttpsCredentials()
   docker(['run', '--detach', '--name', name, '--label', 'yushu-purpose=licensing-isolated-test', '--env', 'MYSQL_ROOT_PASSWORD', '--publish', '127.0.0.1::3306', 'mysql:8.4'], { ...process.env, MYSQL_ROOT_PASSWORD: password })
   started = true
   const info = JSON.parse(docker(['inspect', name]))[0], port = Number(info.NetworkSettings.Ports['3306/tcp'][0].HostPort)
@@ -44,7 +47,7 @@ try {
   }
   if (process.exitCode === 0 && !focused) {
     const resources = spawn(process.execPath, ['scripts/test-authorization-resources.mjs'], {
-      stdio: 'inherit', windowsHide: true, env: { ...process.env, LICENSING_TEST_DB: JSON.stringify(config), LICENSING_TEST_CONTAINER: name },
+      stdio: 'inherit', windowsHide: true, env: { ...process.env, ...httpsCredentials?.env, LICENSING_TEST_DB: JSON.stringify(config), LICENSING_TEST_CONTAINER: name },
     })
     const resourceCode = await new Promise(resolve => { resources.on('error', () => resolve(1)); resources.on('exit', code => resolve(typeof code === 'number' ? code : 1)) })
     if (resourceCode !== 0) throw new Error('Isolated authorization resource HTTP regression failed')
@@ -111,5 +114,5 @@ try {
     }
   }
 } finally {
-  if (started) docker(['rm', '--force', '--volumes', name])
+  try { if (started) docker(['rm', '--force', '--volumes', name]) } finally { await httpsCredentials?.cleanup() }
 }
