@@ -32,12 +32,14 @@ import { verifyLegacyStageRuntime } from './test-legacy-stage-runtime.mjs'
 import { assertAccountingRuntime } from '../src/services/licensing/accounting-mode.mjs'
 import { verifyRetirementBackup } from './test-accounting-retirement-backup.mjs'
 import { readTestHttpsMaterial, startTestHttpsProxy, verifyTestHttpsBoundary } from './test-https-transport.mjs'
+import { readRuntimeVersionFixture, verifyRuntimeVersionRehearsal } from './test-runtime-version-rehearsal.mjs'
 // Invoked by the disposable MySQL runner. Boot both real admin processes with
 // fictional resources; never inherit a deployment database or paid model route.
 if (!process.env.LICENSING_TEST_DB) throw new Error('Run through npm run test:licensing:mysql with its disposable database')
 const config=JSON.parse(process.env.LICENSING_TEST_DB)
 assert.equal(config.host,'127.0.0.1');assert(Number.isInteger(config.port) && config.port>0)
 const root=fileURLToPath(new URL('..',import.meta.url)), dir=await fs.mkdtemp(pathModule.join(os.tmpdir(),'yushu-resources-')), suffix=crypto.randomBytes(5).toString('hex')
+const versionFixture=await readRuntimeVersionFixture(process.env.LICENSING_TEST_RUNTIME_VERSIONS_FILE,root)
 const names=['local','official','center'].map(n=>`yushu_resources_${n}_${suffix}`), admin=await mysql.createConnection(config)
 const createdNames=[]
 let centerServer, localPool, officialPool, centerPool, center, credential, completed=false
@@ -48,8 +50,9 @@ const ports={local:await freePort(),official:await freePort()}, urls=Object.from
 let centerUrl, envLocal, tlsMaterial, httpsBoundary
 const httpsProxies=[]
 async function stop(n){const p=processes[n];if(p&&p.exitCode===null){p.kill('SIGTERM');await new Promise(r=>p.once('exit',r))}delete processes[n];if(logs[n])await fs.writeFile(`${dir}/${n}.log`,logs[n],{mode:0o600})}
-async function start(n,mode,extra={}){
- logs[n]='';const p=spawn(process.execPath,['cloud/ai-admin/server.mjs'],{cwd:root,env:{...process.env,NODE_ENV:'test',AI_AUTHORIZATION_MODE:mode,AI_OFFICIAL_AUTHORIZATION_MODE:'legacy',AI_CENTER_SUPPLIER_MANAGEMENT:'0',AI_AGENT_CUSTOM_MODELS_FILE:'',AI_MODEL_GATEWAY_URL:'',AI_ADMIN_PORT:String(ports[n]),AI_ADMIN_HOST:'127.0.0.1',AI_ADMIN_PUBLIC_URL:`https://resources-${n}.example.com`,AI_ADMIN_PASSWORD:password,AI_DB_HOST:config.host,AI_DB_PORT:String(config.port),AI_DB_USER:config.user,AI_DB_PASSWORD:config.password,AI_DB_NAME:names[n==='local'?0:1],AI_BUILD_CENTER_URL:'',AI_BUILD_CENTER_TOKEN:'',AI_BUILD_CENTER_SUPPLIER_ID:'',AI_LICENSE_STATE_FILE:`${dir}/${n}-deployment.json`,AI_CURATED_SKILL_ROOT:`${dir}/${n}-skills`,AI_CURATED_SKILL_KEK_PATH:`${dir}/${n}-kek`,AI_CURATED_SKILL_SIGNING_PRIVATE_PATH:`${dir}/${n}-signing-private.pem`,AI_CURATED_SKILL_SIGNING_PUBLIC_PATH:`${dir}/${n}-signing-public.pem`,AI_UPLOAD_DIR:`${dir}/${n}-uploads`,AI_MODEL_CREDENTIAL_KEY_PATH:`${dir}/${n}-model-credentials.key`,AI_PRICE_NOTIFICATIONS_KEY_FILE:`${dir}/${n}-notifications.key`,...extra},stdio:['ignore','pipe','pipe'],windowsHide:true})
+async function start(n,mode,extra={},sourceRoot=n==='local'&&versionFixture?versionFixture.current.root:root){
+ assert(!processes[n]||processes[n].exitCode!==null,'Stop the tracked TEST writer before starting another version')
+ logs[n]='';const p=spawn(process.execPath,['cloud/ai-admin/server.mjs'],{cwd:sourceRoot,env:{...process.env,NODE_ENV:'test',AI_AUTHORIZATION_MODE:mode,AI_OFFICIAL_AUTHORIZATION_MODE:'legacy',AI_CENTER_SUPPLIER_MANAGEMENT:'0',AI_AGENT_CUSTOM_MODELS_FILE:'',AI_MODEL_GATEWAY_URL:'',AI_ADMIN_PORT:String(ports[n]),AI_ADMIN_HOST:'127.0.0.1',AI_ADMIN_PUBLIC_URL:`https://resources-${n}.example.com`,AI_ADMIN_PASSWORD:password,AI_DB_HOST:config.host,AI_DB_PORT:String(config.port),AI_DB_USER:config.user,AI_DB_PASSWORD:config.password,AI_DB_NAME:names[n==='local'?0:1],AI_BUILD_CENTER_URL:'',AI_BUILD_CENTER_TOKEN:'',AI_BUILD_CENTER_SUPPLIER_ID:'',AI_LICENSE_STATE_FILE:`${dir}/${n}-deployment.json`,AI_CURATED_SKILL_ROOT:`${dir}/${n}-skills`,AI_CURATED_SKILL_KEK_PATH:`${dir}/${n}-kek`,AI_CURATED_SKILL_SIGNING_PRIVATE_PATH:`${dir}/${n}-signing-private.pem`,AI_CURATED_SKILL_SIGNING_PUBLIC_PATH:`${dir}/${n}-signing-public.pem`,AI_UPLOAD_DIR:`${dir}/${n}-uploads`,AI_MODEL_CREDENTIAL_KEY_PATH:`${dir}/${n}-model-credentials.key`,AI_PRICE_NOTIFICATIONS_KEY_FILE:`${dir}/${n}-notifications.key`,...extra},stdio:['ignore','pipe','pipe'],windowsHide:true})
  processes[n]=p;p.stdout.on('data',b=>logs[n]+=String(b));p.stderr.on('data',b=>logs[n]+=String(b))
  for(let i=0;i<120;i++){if(p.exitCode!==null){await stop(n);throw Error(`${n} stopped; protected log retained`)}try{if((await fetch(urls[n]+'/api/runtime-info')).ok)return}catch{}await new Promise(r=>setTimeout(r,500))}throw Error('startup timed out')
 }
@@ -369,11 +372,17 @@ try{
  await restartLocal()
  assert(ok(await request('local','/api/client/skill-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.skill))
  assert(ok(await request('local','/api/client/agent-market',undefined,'GET',childUser.auth)).items.some(x=>x.id===ids.agent))
+ const versionRehearsal=await verifyRuntimeVersionRehearsal({fixture:versionFixture,pool:localPool,
+   stop:()=>stop('local'),start:sourceRoot=>start('local','center',envLocal,sourceRoot),
+   rejectLegacy:async sourceRoot=>{await assert.rejects(start('local','legacy',{},sourceRoot));assert(logs.local.includes('ACCOUNTING_MODE_DOWNGRADE_FORBIDDEN'))},
+   runtimeInfo:async()=>ok(await request('local','/api/runtime-info')),
+   replay:async()=>{const cookie=await login('local','resource_child',childPwd);return ok(await request('local','/api/supply/requests/inactive-refund-call/refund-points',refundInput,'POST',cookie))}})
  await assert.rejects(runTransfer('runtime-preview',dir+'/transfer.json',dir+'/readonly-receipt.json','retire',dir+'/runtime-after-charge.json'))
  const afterChargeRetirement=JSON.parse(await fs.readFile(dir+'/runtime-after-charge.json','utf8'));assert(afterChargeRetirement.blockers.includes('NEW_ACCOUNTING_HISTORY_PRESENT'));assert(afterChargeRetirement.blockers.includes('SECONDARY_ORGANIZATIONS_PRESENT'))
  await stop('local');await localPool.end();localPool=null
  await assert.rejects(runTransfer('runtime-apply',dir+'/transfer.json',dir+'/readonly-receipt.json',dir+'/runtime-after-charge.json','retire-after-charge',dir+'/runtime-after-charge-denied.json'))
  const report={actualOfficialAndLocalProcesses:true,httpsTransport:Boolean(tlsMaterial),...(httpsBoundary?{httpsCertificateBoundary:httpsBoundary}:{}),legacySnapshotAndSignedImport:true,exportBindShadowRollbackCli:true,officialScopeBackfillCli:true,oldBuildReadableByRootOnly:true,legacyPriceReviewCli:true,legacyUsageShadowCli:true,disabledModelStageCli:true,atomicModelStageRetry:true,installedModelRuntimeMock:true,preSettlementRetirementAndResume:true,retirementBackupAndFencesRestored:true,retiredSqlWriterBlocked:true,postSettlementRetirementDenied:true,cachedLegacyPricePreserved:true,sourcePriceMutationRejected:true,sourceMutationRejected:true,localIdentityAndRightsPreserved:true,repeatedBindingNoReset:true,businessPauseSurvivesLicenseSync:true,customSupplyReviewHttp:true,noLocalModelPreregistration:true,existingKeyPoolCrud:true,masterKeyReplacementDenied:true,restoredMasterAllowsRotation:true,legacyTokenUnconfigured:true,threeResourceCatalogs:true,childProtectedLeaseIdentity:true,signedEncryptedPackage:true,authenticatedDecryption:true,installationReport:true,wrongDeviceDenied:true,optOutSurvivesNewVersionAndWithdrawal:true,childCapabilityRevocation:true,requiredExpertDependencyRevocation:true,rootNotAffected:true,parentBusinessStop:true,suspensionAndExplicitRestoration:true,inactiveTerminalRefundHttp:true,terminalRefundDoesNotCreditSupply:true,paidSupplierCalls:0,productionChanged:false}
+ if(versionRehearsal)report.compatibleVersionRehearsal=versionRehearsal
  await fs.writeFile(dir+'/report.json',JSON.stringify(report,null,2),{mode:0o600});console.log('Resource HTTP regression: '+JSON.stringify(report));completed=true
 }finally{
  await stop('local');await stop('official');if(centerServer){centerServer.closeAllConnections();await new Promise(r=>centerServer.close(r))}
