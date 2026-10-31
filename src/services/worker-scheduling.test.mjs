@@ -4,14 +4,54 @@ import test from 'node:test'
 import {
   annotateWorkerSourceStatus,
   filterManagedWorkers,
+  filterRemoteWorkers,
   higherPriorityWorkerIds,
   isIdleCompatibleWorker,
   isManagedWorkerId,
   isDelegatedBuildRecord,
   isWorkerDisabled,
   parseWorkerPriority,
+  configuredManagedWorkerIds,
   resolveWorkerHeartbeatBuildId,
 } from './worker-scheduling.mjs'
+
+test('schedules only credentials registered by the operator and observes revocation', () => {
+  let workers = { 'isolated-test-worker': 'a'.repeat(64) }
+  const options = { identitiesFile: 'operator-owned.json', filesystem: { readFileSync: () => Buffer.from(JSON.stringify({ version: 1, workers })) } }
+  assert.equal(isManagedWorkerId('isolated-test-worker', options), true)
+  assert.equal(isManagedWorkerId('local-windows-v3', options), false)
+  assert.equal(isManagedWorkerId('request-invented-worker', options), false)
+  assert.deepEqual(parseWorkerPriority('request-invented-worker,isolated-test-worker', options), ['isolated-test-worker'])
+  assert.deepEqual(filterManagedWorkers([{ id: 'isolated-test-worker' }, { id: 'local-windows-v3' }], options), [{ id: 'isolated-test-worker' }])
+  workers = {}
+  assert.deepEqual(configuredManagedWorkerIds(options), [])
+  assert.deepEqual(parseWorkerPriority('', options), [])
+  assert.equal(isManagedWorkerId('isolated-test-worker', options), false)
+})
+
+test('an invalid or ambiguous identity registry cannot fall back to old builders', () => {
+  for (const value of ['{', JSON.stringify({ version: 2, workers: {} }), JSON.stringify({ version: 1, workers: { '../outside': 'a'.repeat(64) } }), JSON.stringify({ version: 1, workers: { first: 'a'.repeat(64), second: 'a'.repeat(64) } }), 'x'.repeat(65537)]) {
+    const options = { identitiesFile: 'operator-owned.json', legacyWorkerIds: ['local-windows-v3'], filesystem: { readFileSync: () => Buffer.from(value) } }
+    assert.deepEqual(configuredManagedWorkerIds(options), [])
+    assert.equal(isManagedWorkerId('local-windows-v3', options), false)
+  }
+  assert.deepEqual(configuredManagedWorkerIds({ identitiesFile: 'missing', filesystem: { readFileSync: () => { throw new Error('missing') } } }), [])
+})
+
+test('explicit legacy identity configuration also constrains scheduling', () => {
+  const options = { identitiesFile: '', legacyWorkerIds: ['legacy-test-worker', 'legacy-test-worker', '../bad'] }
+  assert.deepEqual(configuredManagedWorkerIds(options), ['legacy-test-worker'])
+  assert.deepEqual(parseWorkerPriority('', options), ['legacy-test-worker'])
+  assert.equal(isManagedWorkerId('local-windows-v3', options), false)
+})
+
+test('downstream keeps the authenticated center registry without admitting local credentials', () => {
+  const registered = { id: 'isolated-center-worker', metadata: { packageVersion: '3.0.79' } }
+  assert.deepEqual(filterRemoteWorkers([registered, { id: '../outside' }, registered, null]), [registered])
+  assert.equal(isManagedWorkerId(registered.id, { identitiesFile: '', legacyWorkerIds: [] }), false)
+  assert.deepEqual(filterRemoteWorkers(null), [])
+  assert.equal(filterRemoteWorkers(Array.from({ length: 150 }, (_, index) => ({ id: `center-worker-${index}` }))).length, 100)
+})
 
 test('preserves the build center target version for downstream worker status', () => {
   const [worker] = annotateWorkerSourceStatus([{

@@ -143,7 +143,7 @@ import { ModelTaskService } from '../../src/services/model-task-service.mjs'
 import { UpstreamAccountService } from '../../src/services/upstream-accounts.mjs'
 import { ModelServiceV2Sync } from '../../src/services/model-service-v2-sync.mjs'
 import { assertSupplierBuildQuota, normalizeSupplierProjectIds, planSupplierProjectReservation } from '../../src/services/supplier-quotas.mjs'
-import { filterManagedWorkers, higherPriorityWorkerIds, isDelegatedBuildRecord, isIdleCompatibleWorker, isManagedWorkerId, isWorkerDisabled, MANAGED_WORKER_ID_LIST, parseWorkerPriority } from '../../src/services/worker-scheduling.mjs'
+import { configuredManagedWorkerIds, filterRemoteWorkers, higherPriorityWorkerIds, isDelegatedBuildRecord, isIdleCompatibleWorker, isManagedWorkerId, isWorkerDisabled, parseWorkerPriority } from '../../src/services/worker-scheduling.mjs'
 import { preserveConfiguredSecret, withEffectiveBuildCenterSettings } from '../../src/services/platform-secrets.mjs'
 import { buildListSearch } from '../../src/services/list-search.mjs'
 import { canManageBuiltinRoleTemplates } from '../../src/services/role-template-lifecycle.mjs'
@@ -4634,7 +4634,9 @@ async function findWorkerById(workerId) {
 }
 
 async function listWorkers() {
-  const managedWorkerPlaceholders = MANAGED_WORKER_ID_LIST.map(() => '?').join(', ')
+  const managedWorkerIds = configuredManagedWorkerIds()
+  if (!managedWorkerIds.length) return []
+  const managedWorkerPlaceholders = managedWorkerIds.map(() => '?').join(', ')
   const [rows] = await db().query(`
     SELECT
       ai_workers.*,
@@ -4642,7 +4644,7 @@ async function listWorkers() {
     FROM ai_workers
     WHERE id IN (${managedWorkerPlaceholders})
     ORDER BY last_seen_at DESC, updated_at DESC
-  `, MANAGED_WORKER_ID_LIST)
+  `, managedWorkerIds)
   return rows.map((row) => {
     const worker = normalizeWorker(row)
     const heartbeatAgeSeconds = Number(row.heartbeat_age_seconds)
@@ -4656,7 +4658,7 @@ async function listVisibleWorkers() {
   if (!config.enabled) return listWorkers()
   try {
     const workers = await buildCenterApi('/api/center/workers', { supplierId: config.supplierId }, config)
-    return filterManagedWorkers(workers)
+    return filterRemoteWorkers(workers)
   } catch (err) {
     console.warn('[ai-admin] Failed to load build center workers:', err instanceof Error ? err.message : err)
     return []
