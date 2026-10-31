@@ -259,6 +259,14 @@ try{
  const hiddenBuilds=ok(await request('official','/api/center/builds/status',{buildIds:['legacy-remote']},'POST',`Bearer ${(await center.serviceToken(credential,'official-build','resources-child')).token}`));assert.equal(hiddenBuilds.length,0)
  // Configure existing model/key management and review its new supply definition
  // through real HTTP, with no center preregistration of local model identities.
+ // A licensed custom first-level owner may retain the old agent role marker.
+ // That marker must not deny the provider permission actually granted by center.
+ await localPool.query("UPDATE ai_users SET role='agent' WHERE id='admin'")
+ try{
+  const licensedProvider=ok(await request('local','/api/model-providers',{id:'licensed-agent-provider',name:'虚构授权代理供应商',baseUrl:'https://licensed-provider.example/v1'},'POST',rootCookie))
+  assert.equal(licensedProvider.id,'licensed-agent-provider')
+  ok(await request('local',`/api/model-providers/${licensedProvider.id}/delete`,undefined,'DELETE',rootCookie))
+ }finally{await localPool.query("UPDATE ai_users SET role='admin' WHERE id='admin'")}
  const provider=ok(await request('local','/api/model-providers',{id:'review-provider',name:'虚构自接供应商',baseUrl:'https://review-provider.example/v1'},'POST',rootCookie))
  const localModel=ok(await request('local','/api/provider-models',{providerId:provider.id,modelId:'vendor-reviewed',displayName:'虚构审核文本',modelType:'text',contextWindow:100},'POST',rootCookie))
  const managedKey=ok(await request('local',`/api/model-providers/${provider.id}/keys`,{apiKey:'fictional-review-key',providerModelId:localModel.id},'POST',rootCookie))

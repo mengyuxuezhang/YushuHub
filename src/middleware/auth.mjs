@@ -80,6 +80,11 @@ export function requireModelServiceManager(req, res, next) {
 }
 
 export function requireModelProviderWriter(req, res, next) {
+  if (req.organizationContext?.authorizationSource === 'license-center') {
+    if (req.organizationContext.organizationLevel === 1 && req.organizationContext.modelMode === 'custom') return next()
+    res.status(403).json({ success: false, code: 'MODEL_FIXED', error: '继承模型不能修改供应商连接' })
+    return
+  }
   if (req.user?.role === 'agent') {
     res.status(403).json({ success: false, error: '代理商账号只能查看和同步服务商，不能新增、编辑、禁用或删除服务商' })
     return

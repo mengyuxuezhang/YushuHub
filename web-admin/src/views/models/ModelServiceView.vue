@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, toRef } from 'vue'
+import { RouterLink } from 'vue-router'
 import { CloudCog, Database, KeyRound, Plus, RefreshCw, Trash2 } from '@lucide/vue'
 import ModelServiceDrawer from '@/components/models/ModelServiceDrawer.vue'
 import KeyUsageDrawer from '@/components/models/KeyUsageDrawer.vue'
@@ -10,6 +11,10 @@ import type { ModelProviderKey } from '@/types/model-service'
 import ModelSearchToolbar from '@/components/models/ModelSearchToolbar.vue'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import { useModelServicePage, type ModelSection } from '@/composables/models/useModelServicePage'
+import { useAuthStore } from '@/stores/auth'
+import { inheritsModelConfiguration } from '@/utils/model-permissions'
+const auth = useAuthStore()
+const inheritedModels = computed(() => inheritsModelConfiguration(auth.user))
 const props = defineProps<{ section: ModelSection }>()
 const section = toRef(props, 'section')
 const model = useModelServicePage(section)
@@ -41,6 +46,7 @@ function pricingSummary(item: any) {
 
 <template><section class="management-page">
   <header class="page-heading management-heading"><div><span class="eyebrow">{{ meta.eyebrow }}</span><h1>{{ meta.title }}</h1><p>{{ meta.description }}</p></div><div class="heading-actions"><button class="secondary-button" :disabled="store.loading" @click="model.load"><RefreshCw :size="16" :class="{ spinning: store.loading }" />刷新</button><button v-if="canWrite" class="primary-button" :disabled="section === 'keys' && !store.providers.length" :title="section === 'keys' && !store.providers.length ? '请先创建服务商' : undefined" @click="openCreate"><Plus :size="17" />新建{{ meta.item }}</button></div></header>
+  <p v-if="inheritedModels" class="inline-alert">当前使用继承模型。请前往<RouterLink to="/supply">模型供货与收益</RouterLink>设置启停与加价。</p>
   <ModelSearchToolbar :section="section" :model="model" />
   <div v-if="section === 'keys' || section === 'catalog'" class="key-pool-workspace">
     <nav class="key-provider-nav panel-card" :aria-label="section === 'keys' ? '按服务商筛选 Key' : '按服务商筛选模型'">
@@ -77,7 +83,7 @@ function pricingSummary(item: any) {
       </section>
     </div>
   </div>
-  <div v-else class="table-panel panel-card"><div v-if="store.loading && !rows.length" class="table-loading">正在加载…</div><div v-else-if="!rows.length" class="empty-state"><component :is="icon" :size="36" /><h2>暂无{{ meta.item }}</h2><p>使用右上角按钮创建第一条清晰、可追踪的配置。</p><button v-if="canWrite" class="primary-button" @click="openCreate"><Plus :size="17" />新建{{ meta.item }}</button></div><div v-else class="data-table-scroll"><table class="data-table model-table"><thead><tr><th>{{ meta.item }}</th><th>状态</th><th>配置摘要</th><th>更新时间</th><th class="action-column">操作</th></tr></thead><tbody><tr v-for="item in rows" :key="item.id"><td><div class="entity-cell"><span class="entity-avatar"><component :is="icon" :size="18" /></span><div><strong>{{ title(item) }}</strong><span>{{ subtitle(item) }}</span><small>{{ item.id }}</small><span v-if="item.isSystem" class="soft-tag system-tag">系统内置</span></div></div></td><td><StatusBadge :status="item.status" /></td><td><template v-if="section === 'providers'">{{ item.keyCount || 0 }} 个 Key · {{ item.modelCount || 0 }} 个模型</template><template v-else>{{ pricingSummary(item) }}</template></td><td><span class="date-cell">{{ item.updatedAt ? new Date(item.updatedAt).toLocaleString('zh-CN') : '—' }}</span></td><td class="action-column"><div class="row-actions"><button v-if="canWrite" class="text-button" @click="openEdit(item)">编辑</button><button v-if="canWrite && item.status !== 'disabled'" class="text-button" @click="disable(item)">停用</button><button v-if="canWrite && item.status === 'disabled'" class="text-button" @click="enable(item)">启用</button><button v-if="canWrite" class="icon-danger" title="永久删除" @click="remove(item)"><Trash2 :size="16" /></button></div></td></tr></tbody></table></div></div>
+  <div v-else class="table-panel panel-card"><div v-if="store.loading && !rows.length" class="table-loading">正在加载…</div><div v-else-if="!rows.length" class="empty-state"><component :is="icon" :size="36" /><h2>暂无{{ meta.item }}</h2><p>{{ canWrite ? '使用右上角按钮创建第一条清晰、可追踪的配置。' : '当前没有可查看的配置。' }}</p><button v-if="canWrite" class="primary-button" @click="openCreate"><Plus :size="17" />新建{{ meta.item }}</button></div><div v-else class="data-table-scroll"><table class="data-table model-table"><thead><tr><th>{{ meta.item }}</th><th>状态</th><th>配置摘要</th><th>更新时间</th><th class="action-column">操作</th></tr></thead><tbody><tr v-for="item in rows" :key="item.id"><td><div class="entity-cell"><span class="entity-avatar"><component :is="icon" :size="18" /></span><div><strong>{{ title(item) }}</strong><span>{{ subtitle(item) }}</span><small>{{ item.id }}</small><span v-if="item.isSystem" class="soft-tag system-tag">系统内置</span></div></div></td><td><StatusBadge :status="item.status" /></td><td><template v-if="section === 'providers'">{{ item.keyCount || 0 }} 个 Key · {{ item.modelCount || 0 }} 个模型</template><template v-else>{{ pricingSummary(item) }}</template></td><td><span class="date-cell">{{ item.updatedAt ? new Date(item.updatedAt).toLocaleString('zh-CN') : '—' }}</span></td><td class="action-column"><div class="row-actions"><button v-if="canWrite" class="text-button" @click="openEdit(item)">编辑</button><button v-if="canWrite && item.status !== 'disabled'" class="text-button" @click="disable(item)">停用</button><button v-if="canWrite && item.status === 'disabled'" class="text-button" @click="enable(item)">启用</button><button v-if="canWrite" class="icon-danger" title="永久删除" @click="remove(item)"><Trash2 :size="16" /></button></div></td></tr></tbody></table></div></div>
   <ModelServiceDrawer :open="drawerOpen" :section="section" :form="form" :providers="store.providers" :models="store.models" :saving="saving" :testing="testing" :error-message="errorMessage" @close="close" @save="save" @test="testConnection" />
   <KeyVoicesDrawer :open="Boolean(voiceKey)" :model-key="voiceKey" @close="voiceKey = null" />
   <KeyUsageDrawer :open="usageOpen" :usage="usageKey" :loading="usageLoading" :error-message="usageError" :rows="usageRows" :pagination="usagePagination" @close="closeUsage" @update:page="setUsagePage" @update:page-size="setUsagePageSize" />

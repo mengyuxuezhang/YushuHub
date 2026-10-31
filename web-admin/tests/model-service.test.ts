@@ -10,6 +10,8 @@ import { defaultKeyProviderId, filterKeyPoolRows, groupModelKeysByProvider } fro
 import { defaultModelProviderId, groupProviderModelsByProvider } from '@/utils/provider-models'
 import { createPinia, setActivePinia } from 'pinia'
 import { useFeedbackStore } from '@/stores/feedback'
+import { useAuthStore } from '@/stores/auth'
+import { canWriteModelConfiguration } from '@/utils/model-permissions'
 import type { ModelProvider, ModelProviderKey, ProviderModel } from '@/types/model-service'
 
 const ok = (data: unknown) => Promise.resolve(new Response(JSON.stringify({ success: true, data }), { status: 200, headers: { 'content-type': 'application/json' } }))
@@ -28,6 +30,27 @@ describe('media pricing units', () => {
       expect(document.body.textContent).toContain('积分兑换比例')
       expect(document.body.textContent).not.toContain('估算毛利')
     } finally { app.unmount(); host.remove() }
+  })
+})
+
+describe('licensed model configuration permissions', () => {
+  it('keeps fixed/second-level configuration read-only and honors custom first-level staff permissions', async () => {
+    setActivePinia(createPinia())
+    const auth = useAuthStore(), sections: ModelSection[] = ['providers', 'keys', 'catalog', 'pricing']
+    const permissions = ['model_providers.manage', 'model_keys.manage', 'provider_models.manage', 'pricing_rules.manage']
+    const user = { id: 'fixture', username: 'fixture', role: 'admin', permissionKeys: permissions, organizationContext: { authorizationSource: 'license-center', organizationLevel: 1, modelMode: 'fixed' } }
+    for (const section of sections) expect(canWriteModelConfiguration(user, section)).toBe(false)
+    expect(canWriteModelConfiguration({ ...user, role: 'agent', organizationContext: { ...user.organizationContext, modelMode: 'custom' } }, 'providers')).toBe(true)
+    expect(canWriteModelConfiguration({ ...user, permissionKeys: [], organizationContext: { ...user.organizationContext, modelMode: 'custom' } }, 'providers')).toBe(false)
+    expect(canWriteModelConfiguration({ ...user, organizationContext: { ...user.organizationContext, organizationLevel: 2, modelMode: 'custom' } }, 'providers')).toBe(false)
+    expect(canWriteModelConfiguration({ ...user, role: 'agent', organizationContext: { authorizationSource: 'legacy' } }, 'providers')).toBe(false)
+    auth.user = user
+    const fetchMock = vi.spyOn(globalThis, 'fetch'), scope = effectScope()
+    try {
+      const page = scope.run(() => useModelServicePage(ref<ModelSection>('providers')))!
+      page.openCreate(); expect(page.drawerOpen.value).toBe(false)
+      await page.save(); expect(fetchMock).not.toHaveBeenCalled()
+    } finally { scope.stop(); vi.restoreAllMocks() }
   })
 })
 
@@ -149,6 +172,7 @@ describe('provider-grouped model catalog', () => {
 describe('model connectivity test failure notification', () => {
   it('shows returned failures and thrown API errors as error toasts', async () => {
     setActivePinia(createPinia())
+    useAuthStore().user = { id: 'fixture-admin', username: 'fixture-admin', role: 'admin', permissionKeys: ['provider_models.manage'] }
     const feedback = useFeedbackStore()
     const notify = vi.spyOn(feedback, 'notify')
     const testApi = vi.spyOn(modelServiceApi, 'testProviderModel')
@@ -198,7 +222,7 @@ describe('model V2 editor layout', () => {
     expect(pricingView).toContain('系统内置 · 可编辑不可删除')
     expect(pricingView).toContain('<Pencil :size="14" />编辑报价')
     expect(pricingView).toContain('sourcePlanId: form.sourcePlanId || undefined')
-    expect(pricingView).toContain('v-if="!protectedPlan(plan)"')
+    expect(pricingView).toContain('v-if="canWrite && !protectedPlan(plan)"')
     const drawer = readFileSync(resolve(process.cwd(), 'src/components/models/PricingPlanDrawer.vue'), 'utf8')
     expect(drawer).toContain("form.sourcePlanId ? '保存修改' : '创建方案'")
     expect(drawer).not.toContain('保存新版本')

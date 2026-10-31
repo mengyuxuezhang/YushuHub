@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canAccessProject, canOperateProject, requireClientAuth, requirePermission, setAuthDependencies } from './auth.mjs'
+import { canAccessProject, canOperateProject, requireClientAuth, requirePermission, requireModelProviderWriter, requireModelServiceManager, setAuthDependencies } from './auth.mjs'
 
 test('project access is isolated by organization, including parent and sibling agents', () => {
   const agentA = { id: 'user-a', organizationContext: { organizationId: 'org-a', legacyOwnerUserId: 'user-a', dataScope: 'subtree' } }
@@ -20,6 +20,28 @@ test('legacy projects without organization attribution retain owner-based access
   const legacyProject = { id: 'legacy', organizationId: '', ownerUserId: 'user-a' }
   assert.equal(canAccessProject(agent, legacyProject), true)
   assert.equal(canOperateProject(agent, legacyProject), true)
+})
+
+test('center custom first-level provider writes use licensed scope and still require employee permission', async () => {
+  setAuthDependencies({ getEffectivePermissionKeys: async user => user.permissionKeys, permissionByKey: () => null })
+  const context = (organizationLevel, modelMode) => ({ authorizationSource: 'license-center', organizationLevel, modelMode })
+  const invoke = async req => {
+    req = { ...req }; delete req.permissionKeys // Each case is a fresh HTTP request.
+    let status = 200, passed = false
+    const res = { status(value) { status = value; return this }, json() {} }
+    const handlers = [requireModelServiceManager, requirePermission('model_providers.manage'), requireModelProviderWriter]
+    const step = async index => { if (index === handlers.length) { passed = true; return }; let next = false; await handlers[index](req, res, () => { next = true }); if (next) await step(index + 1) }
+    await step(0); return { status, passed }
+  }
+  const allowed = { user: { role: 'agent', permissionKeys: ['model_providers.manage'] }, method: 'POST', path: '/api/model-providers', organizationContext: context(1, 'custom') }
+  assert.equal((await invoke(allowed)).passed, true)
+  for (const request of [
+    { ...allowed, user: { ...allowed.user, permissionKeys: [] } },
+    { ...allowed, user: { role: 'admin', permissionKeys: ['model_providers.manage'] }, organizationContext: context(1, 'fixed') },
+    { ...allowed, organizationContext: context(2, 'custom') },
+    { ...allowed, organizationContext: context(1, undefined) },
+    { ...allowed, organizationContext: { authorizationSource: 'legacy', organizationLevel: 1, modelMode: 'custom' } },
+  ]) assert.deepEqual(await invoke(request), { status: 403, passed: false })
 })
 
 test('organization wildcard authorizes newly introduced permissions', async () => {

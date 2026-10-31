@@ -1,5 +1,7 @@
 import { createApp, nextTick } from 'vue'
 import { createPinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import PricingCenterView from '@/views/models/PricingCenterView.vue'
 import * as pricing from '@/api/pricing-center'
 import { listModelProviders } from '@/api/model-service'
@@ -25,7 +27,9 @@ describe('text pricing provider filter', () => {
       { id: 'audio-b', providerId: 'b', taskType: 'speech_synthesis', status: 'enabled' },
     ] as never)
     const host = document.createElement('div')
-    const app = createApp(PricingCenterView, { group: 'text' }).use(createPinia())
+    const pinia = createPinia()
+    useAuthStore(pinia).user = { id: 'fixture-admin', username: 'fixture-admin', role: 'admin', permissionKeys: ['pricing_rules.manage'] }
+    const app = createApp(PricingCenterView, { group: 'text' }).use(pinia)
     app.mount(host)
     try {
       await settle()
@@ -55,6 +59,24 @@ describe('text pricing provider filter', () => {
       nav()[0]!.click()
       await nextTick()
       expect(host.querySelectorAll('tbody tr')).toHaveLength(3)
+    } finally { app.unmount() }
+  })
+
+  it.each([1, 2])('keeps inherited level %s pricing readable and directs changes to the supply page', async organizationLevel => {
+    vi.mocked(listModelProviders).mockResolvedValue([])
+    vi.mocked(pricing.listPricingPlans).mockResolvedValue([{ id: 'one', displayName: '已有模型方案', status: 'enabled', components: [] }] as never)
+    vi.mocked(pricing.listModelCapabilities).mockResolvedValue([{ id: 'capability', status: 'enabled', taskType: 'chat' }] as never)
+    const pinia = createPinia()
+    useAuthStore(pinia).user = { id: 'fixture', username: 'fixture', role: 'admin', permissionKeys: ['pricing_rules.manage'],
+      organizationContext: { authorizationSource: 'license-center', organizationLevel, modelMode: 'fixed' } }
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }, { path: '/supply', component: { template: '<div />' } }] })
+    const host = document.createElement('div'), app = createApp(PricingCenterView, { group: 'text' }).use(pinia).use(router)
+    app.mount(host)
+    try {
+      await settle()
+      expect(host.textContent).toContain('已有模型方案')
+      expect(host.querySelector('a[href="/supply"]')?.textContent).toBe('模型供货与收益')
+      expect([...host.querySelectorAll('button')].filter(button => /新建方案|编辑报价|启用|停用/.test(button.textContent || '') || button.title === '永久删除')).toHaveLength(0)
     } finally { app.unmount() }
   })
 })

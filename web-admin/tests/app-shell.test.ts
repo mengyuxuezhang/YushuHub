@@ -112,7 +112,7 @@ describe('admin v2 build contract', () => {
     const drawer = readFileSync(resolve(process.cwd(), 'src/components/models/ModelServiceDrawer.vue'), 'utf8')
     const keyForm = readFileSync(resolve(process.cwd(), 'src/components/models/ModelKeyForm.vue'), 'utf8')
     expect(router).toContain('item.path.startsWith("/models/")')
-    expect(workflow).toContain('if (saving.value) return')
+    expect(workflow).toContain("from '@/utils/model-permissions'")
     expect(keyForm).toContain('留空保持原 Key 不变')
     expect(drawer).toContain('测试连接')
   })
