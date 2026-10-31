@@ -723,7 +723,9 @@ test('real MySQL client supply: streaming recovery, public speech, ownership and
     const functionHeaders = { 'Content-Type': 'application/json', Authorization: 'Bearer stream-client' }
     const functions = { tools: [{ type: 'function', function: { name: 'lookup', strict: false, parameters: { type: 'object', properties: { apiKey: { type: 'string' } } } } }],
       model: model.id, stream: true, max_completion_tokens: 10, parallel_tool_calls: false }
-    const invokeFunction = (id, messages) => fetch(localUrl, { method: 'POST', headers: { ...functionHeaders, 'Idempotency-Key': id }, body: JSON.stringify({ ...functions, messages }) })
+    // Match the existing Desktop transport: X-Request-Id must remain the SQL
+    // operation identity through streaming, tool-result continuation and replay.
+    const invokeFunction = (id, messages) => fetch(localUrl, { method: 'POST', headers: { ...functionHeaders, 'X-Request-Id': id }, body: JSON.stringify({ ...functions, messages }) })
     const [[beforeFunctions]] = await pool.query('SELECT credit_balance FROM ai_end_users WHERE id=?', ['stream-user'])
     const beforeOfficial = await ledger.view(root.id), beforeChild = (await service.balance(second)).wallet
     const messages = [{ role: 'user', content: 'function fixture' }]

@@ -8,8 +8,16 @@ import { supplierLicenseAllowsPermission } from '../supplier-license-contract.mj
 import { registerOrganizationRoutes } from '../../routes/organizations.mjs'
 import { buildOrganizationContext } from '../organizations.mjs'
 import { publicSupplyOperation, publicSupplyCatalogRow, registerAgentSupplyRoutes } from '../../routes/agent-supply.mjs'
-import { chatCompletionChunks, projectSupplyCatalog } from '../../routes/client-supply-bridge.mjs'
+import { chatCompletionChunks, projectSupplyCatalog, clientSupplyRequestId } from '../../routes/client-supply-bridge.mjs'
 import { registerDeploymentAuthorizationRoutes } from '../../routes/deployment-authorization.mjs'
+
+test('client supply preserves Desktop request IDs and explicit idempotency precedence', () => {
+  assert.equal(clientSupplyRequestId({ headers: { 'x-request-id': 'desktop-trace' } }), 'desktop-trace')
+  assert.equal(clientSupplyRequestId({ headers: { 'x-request-id': 'transport-trace', 'idempotency-key': 'operation' }, body: { requestId: 'body-trace' } }), 'operation')
+  assert.equal(clientSupplyRequestId({ headers: {}, body: { idempotencyKey: 'legacy-operation' } }), 'legacy-operation')
+  for (const value of ['a'.repeat(81), '../unsafe']) assert.throws(() => clientSupplyRequestId({ headers: { 'x-request-id': value } }), error => error.code === 'INVALID_ID')
+  assert.match(clientSupplyRequestId({}), /^[0-9a-f-]{36}$/)
+})
 
 test('terminal resource access resolves its organization and requires independent distribution capabilities', async () => {
   let parentStatus = 'enabled', organizationId = 'local-child', level = 2, keys = ['curated_skills.distribute']

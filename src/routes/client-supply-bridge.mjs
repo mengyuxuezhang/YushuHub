@@ -9,6 +9,11 @@ import { registerClientVoiceSupplyRoutes } from './client-voice-supply.mjs'
 function sendError(res, error) {
   res.status(error.statusCode || 503).json({ success: false, code: error.code || 'SUPPLY_UNAVAILABLE', error: error.statusCode ? error.message : '模型供货服务暂不可用' })
 }
+export function clientSupplyRequestId(req) {
+  const requestId = identifier(String(req.headers?.['idempotency-key'] || req.body?.requestId || req.body?.idempotencyKey || req.headers?.['x-request-id'] || crypto.randomUUID()))
+  if (requestId.length > 80) throw failure('INVALID_ID', '请求ID不能超过80字符')
+  return requestId
+}
 export function chatCompletionChunks(result) {
   const common = { id: result.id, object: 'chat.completion.chunk', created: result.created, model: result.model }
   return [{ ...common, choices: (result.choices || []).map(choice => ({ index: choice.index || 0, delta: {
@@ -42,8 +47,7 @@ export function projectSupplyCatalog(rows) {
 export function registerClientSupplyBridge(app, { runtime, tenantForUser }) {
   if (!runtime) return
   async function submit(req, options = {}) {
-    const requestId = String(options.requestId || req.headers['idempotency-key'] || req.body.requestId || req.body.idempotencyKey || crypto.randomUUID())
-    if (requestId.length > 80) throw failure('INVALID_ID', '请求ID不能超过80字符')
+    const requestId = options.requestId || clientSupplyRequestId(req)
     const tenant = await tenantForUser(req), service = await runtime.service(), requested = req.body.model || req.body.modelId || req.body.capabilityId
     const row = (await service.list(tenant)).find(item => item.sale && (item.model.id === requested || item.model.clientId === requested))
     if (!row) throw failure('MODEL_UNAVAILABLE', '模型未授权或尚未启用', 403)
@@ -67,8 +71,7 @@ export function registerClientSupplyBridge(app, { runtime, tenantForUser }) {
       const writer = sseWriter(res)
       let chunks = 0
       try {
-        const requestId = identifier(String(req.headers['idempotency-key'] || req.body.requestId || crypto.randomUUID()))
-        if (requestId.length > 80) throw failure('INVALID_ID', '请求ID不能超过80字符')
+        const requestId = clientSupplyRequestId(req)
         res.setHeader('X-Request-Id', requestId)
         res.append('Access-Control-Expose-Headers', 'X-Request-Id')
         const operation = await submit(req, { requestId, onAccepted: () => writer.open(), onChunk: chunk => { chunks++; return writer.chunk(chunk) } })
