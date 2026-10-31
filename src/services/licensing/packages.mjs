@@ -2,10 +2,11 @@ import { LOCAL_PERMISSION_CATALOG } from '../../config/constants.mjs'
 import { failure } from './protocol.mjs'
 
 const forbidden = new Set(['center_suppliers.manage', 'organizations.capabilities.manage'])
-const serverOnly = new Set(['platform_settings.manage', 'self_update.manage', 'diagnostics.view', 'model_providers.manage', 'model_keys.manage', 'provider_models.manage', 'organizations.children.manage'])
+const optionalSupport = new Set(['organizations.children.details', 'organizations.children.support'])
+const serverOnly = new Set(['platform_settings.manage', 'self_update.manage', 'diagnostics.view', 'model_providers.manage', 'model_keys.manage', 'provider_models.manage', 'organizations.children.manage', ...optionalSupport])
 export const BASE_PACKAGES = Object.fromEntries(['first-custom', 'first-fixed', 'second'].map(id => [id, {
   id, version: 1, level: id === 'second' ? 2 : 1, modelMode: id === 'first-custom' ? 'custom' : 'fixed',
-  capabilities: LOCAL_PERMISSION_CATALOG.flatMap(group => group.permissions).filter(p => !p.deprecated && !p.officialCenterOnly && !forbidden.has(p.key)
+  capabilities: LOCAL_PERMISSION_CATALOG.flatMap(group => group.permissions).filter(p => !p.deprecated && !p.officialCenterOnly && !forbidden.has(p.key) && !optionalSupport.has(p.key)
     && !(id === 'second' && serverOnly.has(p.key)) && !(id === 'first-fixed' && ['model_keys.manage'].includes(p.key)))
     .map(p => ({ key: p.key, enabled: true, transferable: false, limitValue: 0 })),
   quotas: { projects: { mode: 'limited', value: 1 }, builds: { mode: 'limited', value: 10 } },

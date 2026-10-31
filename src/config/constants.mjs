@@ -68,6 +68,8 @@ export const LOCAL_PERMISSION_CATALOG = [
     permissions: [
       { key: 'organizations.view', name: '组织主体', description: '查看当前主体、上下级代理关系和部署归属。', role: 'admin_or_agent' },
       { key: 'organizations.children.manage', name: '下级代理管理', description: '创建、编辑、停用直属下级代理主体及其初始管理员。', role: 'admin', supplierAbility: 'allowAgentManagement' },
+      { key: 'organizations.children.details', name: '二级终端明细', description: '中心单独授予后，说明原因并审计查看直属二级的终端账号明细。', role: 'admin' },
+      { key: 'organizations.children.support', name: '二级终端协助', description: '中心单独授予后，审计启停直属二级终端账号；不授予密码、资金、模型或授权代操作。', role: 'admin' },
       { key: 'organizations.members.manage', name: '组织成员管理', description: '维护当前组织内部成员、岗位角色和数据范围。', role: 'admin' },
       { key: 'organizations.capabilities.manage', name: '主体能力授权', description: '在上级可转授能力范围内配置直属下级代理能力。', role: 'admin' },
       { key: 'organizations.audit.view', name: '组织审计', description: '查看组织、成员和能力授权变更记录。', role: 'admin' },

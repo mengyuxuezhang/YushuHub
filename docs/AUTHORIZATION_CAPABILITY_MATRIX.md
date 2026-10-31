@@ -1,10 +1,10 @@
 # 既有能力与新授权路径对应表
 
-最后核对：2026-10-30。来源为 `LOCAL_PERMISSION_CATALOG`、Vue导航、实际路由及三个基础套餐。此表是能力清单与回归入口，不把用例文件存在当成端到端验收通过。总规划和实际缺口仍以[进度](AUTHORIZATION_SUPPLY_STATUS.md)为准。
+最后核对：2026-10-31。来源为 `LOCAL_PERMISSION_CATALOG`、Vue导航、实际路由及三个基础套餐。此表是能力清单与回归入口，不把用例文件存在当成端到端验收通过。总规划和实际缺口仍以[进度](AUTHORIZATION_SUPPLY_STATUS.md)为准。
 
 有效权限＝中心适用能力 ∩ 层级限制 ∩ 员工岗位/分组权限；会话决定组织。一级/二级均不得签发新代理资格。表中“模板有”指开发模板初值，正式套餐须显式发布不可变版本并预览应用。
 
-| 既有权限 | 菜单 | 新路径/边界 | 模板：自定义/固定/二级 | API实现位置 | 验证入口 |
+| 权限/能力 | 菜单 | 新路径/边界 | 模板：自定义/固定/二级 | API实现位置 | 验证入口 |
 | --- | --- | --- | --- | --- | --- |
 | `curated_agents.view` 查看精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP链路已验，实际桌面另验 | 有/有/有 | `src/routes/curated-agents.mjs` | `npm run test:curated-agents` |
 | `curated_agents.manage` 管理精选专家 | /markets/agents | 专家目录、发布、依赖覆盖、用户分发；中心HTTP链路已验，实际桌面另验 | 有/有/有 | `src/routes/curated-agents.mjs`<br>`src/routes/users.mjs` | `npm run test:curated-agents` |
@@ -51,6 +51,9 @@
 | `diagnostics.view` 系统诊断 | /workers、/diagnostics | 一级诊断；不得向二级暴露部署信息 | 有/有/无 | `src/routes/admin-business.mjs`<br>`src/routes/organizations.mjs` | `npm run check` |
 | `account_security.manage` 账号安全 | /security | 本人密码，失效保留 | 有/有/有 | `src/routes/users.mjs` | `npm run check` |
 
+| `organizations.children.details` 二级终端明细 | /organizations 协助抽屉 | 中心单独授予；在线核验后按原因审计分页读取直属二级终端，保留一级身份 | 单独授予/单独授予/禁止 | `src/routes/organization-support.mjs` | `npm run check`、`npm run test:licensing:mysql` |
+| `organizations.children.support` 二级终端协助 | /organizations 协助抽屉 | 另需明细及终端管理岗位权限；事务启停、清除会话与审计；不开放资金/密码/授权代改 | 单独授予/单独授予/禁止 | `src/services/organization-support.mjs`、`src/repositories/organization-support.mjs` | 同上；真实MySQL并发/回滚及中心撤权验证 |
+
 ## 数据和服务归属
 
 | 领域 | 保留数据 | 新授权来源与迁移边界 |
@@ -68,7 +71,7 @@
 2026-10-31补充：Desktop独立分支P439-T01已完成真实Runtime的保护技能展开/执行、专家MCP调用、同登录撤权及账号隔离；T02已完成独立实际构建、上下级额度各1次、四文件及隔离覆盖安装/82账号文件保留，安装包Runtime文件工具通过。表内“实际桌面另验”等旧说明的此部分已有证据，详见[当前进度](AUTHORIZATION_SUPPLY_STATUS.md)及私有Desktop归档。低版本安装夹具使用当前源码，只验证安装升级流程；正式签名自动更新、生产迁移与7天门槛不因此通过。
 
 - 三类模板逐能力：启用/不授予/停用能力，界面与API同步；独立员工即使角色管理员也不能突破中心能力。模板发布拒绝重复、非布尔启用、转授以及固定模式密钥权限。
-- 组织隔离：伪造组织/owner/userId、兄弟组织、一级直接查看二级用户明细；默认拒绝，例外代操作尚未提供。员工停用不得借只读账单恢复权限。
+- 组织隔离：伪造组织/owner/userId、兄弟组织、一级直接查看二级用户明细；默认拒绝；新增中心可选授予的明细查看和账号启停协助，均须在线核验、岗位权限、直属绑定与事务审计，见[协助规则](ORGANIZATION_SUPPORT.md)。员工停用不得借只读账单恢复权限。
 - 资源：目录、包、签名、受保护租约、安装、撤销、中心停用及重启；`npm run test:licensing:mysql`已覆盖中心→官方→一级→二级→模拟终端HTTP链路，实际桌面执行另验。
 - 账务：原用户积分/会员/订单守恒，供货结算进入原报表但不把预占释放当消费；失败/未知不当成功消费，免费成功也计次。
 - 期限：失效禁止新业务，原角色有权的历史订单/积分流水/报表/导出保留；供货钱包已有不可变冲正；终端退款闭环仍待补齐，不把只读当成退款实现。
