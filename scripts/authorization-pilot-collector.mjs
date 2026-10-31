@@ -7,7 +7,7 @@ import mysql from 'mysql2/promise'
 import { fileStateStore } from '../src/repositories/licensing-file-state.mjs'
 import { identifier } from '../src/services/licensing/protocol.mjs'
 import { signPilotSample } from '../src/services/licensing/pilot-observation.mjs'
-import { pilotMetricsFromView, inspectPilotProcesses, pilotCodeFingerprint } from '../src/services/licensing/pilot-collector.mjs'
+import { pilotMetricsFromView, inspectPilotProcesses, pilotCodeFingerprint, archivePilotEnvelope } from '../src/services/licensing/pilot-collector.mjs'
 import { controlledPilotFile, pilotTarget, exclusivePilotCommand } from './pilot-command-runtime.mjs'
 
 const hash = value => crypto.createHash('sha256').update(value).digest('hex')
@@ -112,7 +112,9 @@ async function main() {
       return { trialId: source.trialId, sourceId: source.id, sequence: state.sequence, observedAt, version: result.version, codeSha256: result.codeSha256,
         available: result.available, metrics: result.metrics, canaries: result.canaries }
     })
-    await atomicReport(reportFile, signPilotSample(sample, privateKey))
+    const envelope = signPilotSample(sample, privateKey)
+    if (config.archiveDirectory) await archivePilotEnvelope(config.archiveDirectory, sample.sequence, envelope)
+    await atomicReport(reportFile, envelope)
     let published = false
     try { published = await publish(reportFile, config.publish) } catch { process.exitCode = 2 }
     await store.transaction(state => { if (state.sequence === sample.sequence) state.latest.published = published })

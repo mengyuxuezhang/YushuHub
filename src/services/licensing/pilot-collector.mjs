@@ -8,6 +8,20 @@ import { failure } from './protocol.mjs'
 const counters = ['unknownRequests', 'debts', 'accountingMismatches', 'activeHolds', 'pendingEvents', 'rejectedRequests', 'recoveryErrors']
 const fields = [...counters, 'monitorCheckedAt', 'licenseCheckedAt', 'licenseRejected', 'oldestHoldAt', 'oldestEventAt', ...[0, 1].flatMap(i => [`canary${i}Hash`, `canary${i}AmountMicros`, `canary${i}At`])]
 const invalid = () => failure('PILOT_METRICS_INVALID', '试点汇总字段不完整或无效', 503)
+
+export async function archivePilotEnvelope(directory, sequence, envelope) {
+  if (!path.isAbsolute(directory) || !Number.isSafeInteger(sequence) || sequence < 1) throw new Error('Absolute private archive and positive sequence required')
+  const stat = await fs.lstat(directory), content = JSON.stringify(envelope)
+  if (!stat.isDirectory() || stat.isSymbolicLink() || process.platform !== 'win32' && stat.mode & 0o077
+    || typeof envelope?.payload !== 'string' || typeof envelope?.signature !== 'string' || content.length > 32768) throw new Error('Private bounded signed-report archive required')
+  const target = path.join(directory, String(sequence).padStart(16, '0') + '.json'), temporary = target + '.' + crypto.randomUUID() + '.tmp'
+  try {
+    const handle = await fs.open(temporary, 'wx', 0o600)
+    try { await handle.writeFile(content); await handle.sync() } finally { await handle.close() }
+    // Linking is atomic and refuses an existing sequence; rename would replace it.
+    await fs.link(temporary, target)
+  } finally { await fs.rm(temporary, { force: true }) }
+}
 function count(value) {
   if (typeof value !== 'number' && (typeof value !== 'string' || !/^\d+$/.test(value))) throw invalid()
   const n = Number(value)

@@ -3,12 +3,34 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { pilotMetricsFromView, verifyPilotProcess, pilotCodeFingerprint } from './pilot-collector.mjs'
+import { pilotMetricsFromView, verifyPilotProcess, pilotCodeFingerprint, archivePilotEnvelope } from './pilot-collector.mjs'
 
 const now = Date.UTC(2026, 9, 31)
 const row = () => ({ unknownRequests: '0', debts: 0, accountingMismatches: '0', activeHolds: 0, pendingEvents: 0, rejectedRequests: 0, recoveryErrors: 0,
   monitorCheckedAt: String(now - 1000), licenseCheckedAt: String(now - 2000), licenseRejected: 0, oldestHoldAt: null, oldestEventAt: null,
   canary0Hash: 'a'.repeat(64), canary0AmountMicros: '11', canary0At: String(now - 3000), canary1Hash: null, canary1AmountMicros: null, canary1At: null })
+
+test('raw signed reports archive atomically and cannot overwrite a previous sequence', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'yushu-pilot-code-test-'))
+  try {
+    await fs.chmod(root, 0o700)
+    const envelope = { payload: 'signed-fixture', signature: 'fixture-signature' }
+    await archivePilotEnvelope(root, 1, envelope)
+    await assert.rejects(archivePilotEnvelope(root, 1, { ...envelope, payload: 'changed' }), { code: 'EEXIST' })
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(root, '0000000000000001.json'))), envelope)
+    assert.deepEqual(await fs.readdir(root), ['0000000000000001.json'])
+    await assert.rejects(archivePilotEnvelope(root, 0, envelope))
+    await assert.rejects(archivePilotEnvelope('relative', 2, envelope))
+    if (process.platform !== 'win32') {
+      const linked = path.join(root, 'linked'); await fs.symlink(root, linked)
+      await assert.rejects(archivePilotEnvelope(linked, 2, envelope))
+      await fs.chmod(root, 0o755); await assert.rejects(archivePilotEnvelope(root, 2, envelope))
+    }
+  } finally {
+    assert.equal(path.dirname(path.resolve(root)), path.resolve(os.tmpdir())); assert(path.basename(root).startsWith('yushu-pilot-code-test-'))
+    assert.equal((await fs.lstat(root)).isSymbolicLink(), false); await fs.rm(root, { recursive: true })
+  }
+})
 
 test('collector preserves exact micro amounts and derives ages from original view timestamps', () => {
   const one = pilotMetricsFromView(row(), 'first', now)
