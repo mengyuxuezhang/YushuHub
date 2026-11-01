@@ -27,7 +27,7 @@ export function officialAuthorization({ centerUrl, database, findSupplier, fetch
 export async function officialRequest({ client, config, pathname, body = {}, fetchImpl = fetch, binary = false }) {
   const policy = officialServicePolicy(pathname), grant = await client.claims(), token = await client.serviceToken(policy.audience), url = new URL(config.url)
   if (url.protocol !== 'https:' && !(process.env.NODE_ENV === 'test' && url.hostname === '127.0.0.1')) throw failure('OFFICIAL_HTTPS_REQUIRED', '官方业务服务须使用HTTPS')
-  const response = await fetchImpl(url.origin + pathname, { method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...body, supplierId: grant.id }), signal: AbortSignal.timeout(30_000) })
+  const response = await fetchImpl(url.origin + url.pathname.replace(/\/+$/, '') + pathname, { method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...body, supplierId: grant.id }), signal: AbortSignal.timeout(30_000) })
   if (!response.ok) { const error = await response.json().catch(() => ({})); throw failure(error.code || 'OFFICIAL_SERVICE_ERROR', error.error || '官方服务请求失败', response.status) }
   if (binary) {
     const encoded = response.headers.get('x-agent-skill-manifest')

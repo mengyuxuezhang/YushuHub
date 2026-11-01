@@ -18,3 +18,8 @@ test('outgoing official requests replace caller supplied subject and cannot foll
   assert.equal(result.id,'job')
   await assert.rejects(officialRequest({client,config:{url:'http://center.example.test'},pathname:'/api/center/builds'}),{code:'OFFICIAL_HTTPS_REQUIRED'})
 })
+
+test('official requests retain an explicitly configured reverse proxy path prefix', async () => {
+  const client={claims:async()=>({id:'trusted'}),serviceToken:async()=> 'purpose-token'}
+  await officialRequest({client,config:{url:'https://stage.example.test/official/'},pathname:'/api/center/builds',fetchImpl:async(url)=>{assert.equal(url,'https://stage.example.test/official/api/center/builds');return new Response('{"success":true,"data":{}}')}})
+})
