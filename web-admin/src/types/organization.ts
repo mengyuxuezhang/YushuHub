@@ -1,4 +1,4 @@
-export type DataScope = 'self' | 'children' | 'subtree' | 'platform'
+export type DataScope = 'self' | 'platform'
 export interface Capability { key: string; name?: string; description?: string; group?: string; category?: string; enabled: boolean; transferable: boolean; limitValue: number }
 export interface OrganizationExpiry { expiresAt?: string | null; configuredExpiresAt?: string | null; parentExpiresAt?: string | null; expired?: boolean; authorizationStatus?: 'enabled' | 'disabled' | 'expired' }
 export interface OrganizationContext extends OrganizationExpiry { organizationId: string; organizationName?: string; organizationLevel: number; rootOrganizationId: string; deploymentMode: string; dataScope: DataScope; capabilities: Capability[] }
@@ -43,6 +43,9 @@ export interface CenterSupplier {
 }
 
 export interface SupplierLicense {
+  source?: 'license-center'
+  version?: number
+  modelMode?: 'fixed' | 'custom'
   id: string
   name?: string
   expiresAt?: string | null

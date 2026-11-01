@@ -123,7 +123,7 @@ describe('admin v2 build contract', () => {
     const accounts = readFileSync(resolve(process.cwd(), 'src/views/organizations/AccountsView.vue'), 'utf8')
     const permissions = readFileSync(resolve(process.cwd(), 'src/views/organizations/PermissionsView.vue'), 'utf8')
     expect(router).toContain('item.path === "/organizations"')
-    expect(organizations).toContain('新建二级代理')
+    expect(organizations).toContain('本主体员工'); expect(organizations).not.toContain('新建二级代理')
     expect(accounts).toContain('新增内部成员')
     expect(permissions).toContain('岗位提供基础权限')
     expect(permissions).toContain('所属组织的能力授权')
@@ -133,17 +133,12 @@ describe('admin v2 build contract', () => {
     const navigation = readFileSync(resolve(process.cwd(), 'src/router/navigation.ts'), 'utf8')
     const router = readFileSync(resolve(process.cwd(), 'src/router/index.ts'), 'utf8')
     const view = readFileSync(resolve(process.cwd(), 'src/views/organizations/CenterSuppliersView.vue'), 'utf8')
-    const drawer = readFileSync(resolve(process.cwd(), 'src/components/organizations/CenterSupplierDrawer.vue'), 'utf8')
     const workflow = readFileSync(resolve(process.cwd(), 'src/composables/organizations/useCenterSuppliers.ts'), 'utf8')
     expect(navigation).toContain('path: "/center-suppliers"')
     expect(navigation).toContain('officialCenterOnly: true')
     expect(router).toContain('CenterSuppliersView')
-    expect(view).toContain('新增一级代理')
-    expect(view).toContain('重置 Token')
-    expect(drawer).toContain('创建并签发 Token')
-    expect(drawer).not.toContain('@click.self')
-    expect(workflow).toContain('resetCenterSupplierToken')
-    expect(workflow).toContain('新 Token 仅在本次显示')
+    expect(view).toContain('独立授权中心'); expect(view).not.toContain('重置 Token')
+    expect(workflow).not.toContain('resetCenterSupplierToken')
   })
 
   it('retires enterprise business from the application shell', () => {
@@ -252,10 +247,8 @@ describe('admin v2 build contract', () => {
   })
   it('keeps form drawers on the right without allowing backdrop dismissal', () => {
     const drawerFiles = [
-      'src/components/organizations/OrganizationDrawer.vue',
       'src/components/organizations/GroupDrawer.vue',
       'src/components/organizations/AccountDrawer.vue',
-      'src/components/organizations/CenterSupplierDrawer.vue',
       'src/components/models/ModelServiceDrawer.vue',
       'src/components/markets/CatalogEditorDrawer.vue',
       'src/components/markets/AgentEditorDrawer.vue',

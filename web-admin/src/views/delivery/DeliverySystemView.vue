@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatResourceQuota } from "@/utils/supplier-license";
 import { computed } from "vue";
 import { Plus, RefreshCw, ShieldCheck } from "@lucide/vue";
 import BuildLogDrawer from "@/components/delivery/BuildLogDrawer.vue";
@@ -58,15 +59,15 @@ const meta = {
         <select v-model="d.statusFilter.value" aria-label="项目状态"><option value="all">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
       </SearchToolbar>
       <div v-if="d.quotaUsage.value" class="quota-summary-grid">
-        <article class="panel-card" :class="{ 'is-full': quotaProjects.limit > 0 && quotaProjects.used >= quotaProjects.limit }">
+        <article class="panel-card" :class="{ 'is-full': quotaProjects.quota?.mode === 'none' || quotaProjects.limit > 0 && quotaProjects.used >= quotaProjects.limit }">
           <span>OEM 项目额度</span>
-          <strong>{{ quotaProjects.used }} <em>/ {{ quotaProjects.limit > 0 ? quotaProjects.limit : "不限" }}</em></strong>
-          <small>已创建项目 {{ quotaProjects.used }} 个{{ quotaProjects.limit > 0 ? `，总额度 ${quotaProjects.limit} 个` : "，未设置额度上限" }}</small>
+          <strong>{{ quotaProjects.used }} <em>/ {{ formatResourceQuota(quotaProjects) }}</em></strong>
+          <small>已占用项目 {{ quotaProjects.used }} 个，授权额度：{{ formatResourceQuota(quotaProjects) }}</small>
         </article>
-        <article class="panel-card" :class="{ 'is-full': quotaBuilds.limit > 0 && quotaBuilds.used >= quotaBuilds.limit }">
+        <article class="panel-card" :class="{ 'is-full': quotaBuilds.quota?.mode === 'none' || quotaBuilds.limit > 0 && quotaBuilds.used >= quotaBuilds.limit }">
           <span>构建次数上限</span>
-          <strong>{{ quotaBuilds.used }} <em>/ {{ quotaBuilds.limit > 0 ? quotaBuilds.limit : "不限" }}</em></strong>
-          <small>已构建 {{ quotaBuilds.used }} 次{{ quotaBuilds.limit > 0 ? `，共支持构建 ${quotaBuilds.limit} 次` : "，未设置次数上限" }}</small>
+          <strong>{{ quotaBuilds.used }} <em>/ {{ formatResourceQuota(quotaBuilds) }}</em></strong>
+          <small>已受理及预占 {{ quotaBuilds.used }} 次，授权额度：{{ formatResourceQuota(quotaBuilds) }}</small>
         </article>
       </div>
       <ProjectList :d="d" />

@@ -6,7 +6,6 @@ import { authenticateWorkerRequest } from '../services/worker-authentication.mjs
 import { safeCenterId } from '../utils/slug.mjs'
 import { hashSecretToken } from '../utils/crypto.mjs'
 import { supplierAuthorizationState } from '../services/supplier-license-contract.mjs'
-import { organizationAuthorizationExpired, expiredOrganizationRequestAllowed } from '../services/organization-expiry.mjs'
 
 const deps = {
   getUserBySession: null,
@@ -31,11 +30,6 @@ export async function requireAuth(req, res, next) {
     req.user = user
     req.actorUserId = user.id
     req.organizationContext = user.organizationContext || null
-    if (user.organizationContext?.organizationLevel === 2 && organizationAuthorizationExpired(user.organizationContext)
-      && !expiredOrganizationRequestAllowed(req.method, req.path)) {
-      res.status(403).json({ success: false, code: 'ORGANIZATION_LICENSE_EXPIRED', error: '二级代理授权已到期，请联系一级代理续期' })
-      return
-    }
     req.ownerUserId = user.organizationContext?.legacyOwnerUserId || user.id
     req.dataActor = {
       ...user,
@@ -65,12 +59,15 @@ export function requireModelServiceManager(req, res, next) {
   next()
 }
 
-export function requireModelProviderWriter(req, res, next) {
-  if (req.user?.role === 'agent') {
+export async function requireModelProviderWriter(req, res, next) {
+  try {
+  const license = await deps.getSupplierLicense?.()
+  if (license?.source !== 'license-center' && (req.user?.role === 'agent' || !license?.allowCustomApiProviders)) {
     res.status(403).json({ success: false, error: '代理商账号只能查看和同步服务商，不能新增、编辑、禁用或删除服务商' })
     return
   }
   next()
+  } catch (err) { next(err) }
 }
 
 export function requirePermission(permissionKey, label = '') {
@@ -146,6 +143,9 @@ export function requireSupplierAbility(field, label) {
         res.status(403).json({ success: false, error: `无法校验供应商授权：${license.message || '请检查官方构建中心配置'}` })
         return
       }
+      // Central packages are checked per route by requirePermission; legacy coarse
+      // flags must not couple independent employee/group capabilities.
+      if (license.source === 'license-center' && field !== 'allowSupplierManagement') { next(); return }
       if (!license[field]) {
         res.status(403).json({ success: false, error: `当前供应商授权未开通${label}` })
         return
@@ -158,6 +158,7 @@ export function requireSupplierAbility(field, label) {
 }
 
 export function requireCenterSupplierManagement(req, res, next) {
+  if (req.method !== 'GET') return res.status(403).json({ success: false, code: 'CENTRAL_ISSUANCE_REQUIRED', error: '代理资格只能由独立授权中心签发' })
   if (!CENTER_SUPPLIER_MANAGEMENT_ENABLED) {
     res.status(403).json({ success: false, error: '供应商接入管理只在官方构建中心启用' })
     return
@@ -181,6 +182,7 @@ export function requireWorkerAuth(req, res, next) {
 
 export async function requireCenterAuth(req, res, next) {
   try {
+    if (deps.authorizeOfficial) return await deps.authorizeOfficial(req, res, next)
     const supplierId = safeCenterId(req.body?.supplierId || req.query?.supplierId || req.headers['x-supplier-id'] || '', '供应商 ID')
     const header = String(req.headers.authorization || '')
     const token = header.startsWith('Bearer ') ? header.slice(7).trim() : ''

@@ -160,7 +160,7 @@ export async function syncLocalRootAuthorization(input, actor = {}) {
   const capabilities = (input.capabilities || []).map((item) => ({
     key: typeof item === 'string' ? item : item.key,
     enabled: typeof item === 'string' ? true : item.enabled !== false,
-    transferable: typeof item === 'string' ? true : item.transferable !== false,
+    transferable: false,
     limitValue: typeof item === 'string' ? 0 : Number(item.limitValue || 0),
     config: typeof item === 'string' ? {} : item.config || {},
   })).filter((item) => item.key)
@@ -174,112 +174,6 @@ export async function syncLocalRootAuthorization(input, actor = {}) {
   )
   if (currentSignature !== nextSignature) await replaceOrganizationCapabilities(organization.id, capabilities, actor)
   return findOrganizationById(organization.id)
-}
-
-export async function listChildOrganizations(parentOrganizationId, connection = db()) {
-  const [rows] = await connection.query(
-    `SELECT o.*, u.id AS owner_user_id, u.username AS owner_username, u.display_name AS owner_display_name
-     FROM ai_organizations o
-     LEFT JOIN ai_organization_members m ON m.organization_id=o.id AND m.is_owner=1
-     LEFT JOIN ai_users u ON u.id=m.user_id
-     WHERE o.parent_organization_id=? ORDER BY o.created_at DESC`,
-    [String(parentOrganizationId || '').trim()],
-  )
-  return rows.map((row) => ({
-    ...normalizeOrganization(row),
-    ownerUserId: row.owner_user_id || '',
-    ownerUsername: row.owner_username || '',
-    ownerDisplayName: row.owner_display_name || '',
-  }))
-}
-
-export async function resetChildOrganizationOwnerPassword(organizationId, password, actor = {}) {
-  const nextPassword = String(password || '')
-  if (nextPassword.length < 8) throw new Error('新密码至少 8 位')
-  const [result] = await db().query(
-    `UPDATE ai_users u
-     JOIN ai_organization_members m ON m.user_id=u.id AND m.organization_id=? AND m.is_owner=1
-     SET u.password_hash=?`,
-    [organizationId, hashPassword(nextPassword)],
-  )
-  if (!Number(result.affectedRows || 0)) throw Object.assign(new Error('下级主体管理员账号不存在'), { statusCode: 404 })
-  await db().query(
-    `INSERT INTO ai_organization_audit_logs
-      (id, organization_id, actor_user_id, event_type, target_type, target_id, detail_json)
-     VALUES (?, ?, ?, 'child_owner_password_reset', 'organization', ?, ?)` ,
-    [crypto.randomUUID(), actor.organizationId || '', actor.userId || '', organizationId, JSON.stringify({ organizationId })],
-  )
-  const [[owner]] = await db().query(
-    `SELECT u.id FROM ai_users u JOIN ai_organization_members m ON m.user_id=u.id
-     WHERE m.organization_id=? AND m.is_owner=1 LIMIT 1`,
-    [organizationId],
-  )
-  return { organizationId, ownerUserId: owner?.id || '', reset: true }
-}
-
-export async function deleteEmptyChildOrganization(organizationId, actor = {}) {
-  const connection = await db().getConnection()
-  try {
-    await connection.beginTransaction()
-    const [[organization]] = await connection.query('SELECT * FROM ai_organizations WHERE id=? FOR UPDATE', [organizationId])
-    if (!organization) throw Object.assign(new Error('直属下级主体不存在或已删除'), { statusCode: 404 })
-    const [[memberCount]] = await connection.query('SELECT COUNT(1) AS count FROM ai_organization_members WHERE organization_id=?', [organizationId])
-    if (Number(memberCount?.count || 0) > 1) throw Object.assign(new Error('该主体已有其他后台账号，不能删除；请改为停用'), { statusCode: 409 })
-
-    const protectedTables = [
-      'ai_projects', 'ai_builds', 'ai_end_users', 'ai_payment_configs', 'ai_payment_orders', 'ai_credit_ledger',
-      'ai_redeem_code_batches', 'ai_redeem_codes', 'ai_model_provider_keys', 'ai_curated_skills',
-      'ai_curated_mcps', 'ai_curated_agents', 'ai_user_groups', 'ai_role_templates',
-    ]
-    for (const table of protectedTables) {
-      const [[usage]] = await connection.query(`SELECT COUNT(1) AS count FROM ${table} WHERE organization_id=?`, [organizationId])
-      if (Number(usage?.count || 0) > 0) throw Object.assign(new Error('该主体已经产生业务数据，不能直接删除；请改为停用'), { statusCode: 409 })
-    }
-    const [[enterpriseUsage]] = await connection.query(
-      `SELECT
-        (SELECT COUNT(1) FROM ai_enterprise_members m JOIN ai_enterprise_tenants t ON t.id=m.enterprise_id WHERE t.owner_organization_id=?) +
-        (SELECT COUNT(1) FROM ai_enterprise_quota_policies q JOIN ai_enterprise_tenants t ON t.id=q.enterprise_id WHERE t.owner_organization_id=?) +
-        (SELECT COUNT(1) FROM ai_enterprise_experts WHERE owner_organization_id=?) +
-        (SELECT COUNT(1) FROM ai_enterprise_expert_events e JOIN ai_enterprise_tenants t ON t.id=e.enterprise_id WHERE t.owner_organization_id=?) AS count`,
-      [organizationId, organizationId, organizationId, organizationId],
-    )
-    if (Number(enterpriseUsage?.count || 0) > 0) throw Object.assign(new Error('该主体已经产生企业员工、额度或专家数据，不能直接删除；请改为停用'), { statusCode: 409 })
-
-    const [owners] = await connection.query(
-      `SELECT u.id FROM ai_users u JOIN ai_organization_members m ON m.user_id=u.id
-       WHERE m.organization_id=? AND m.is_owner=1`,
-      [organizationId],
-    )
-    const ownerIds = owners.map((item) => item.id)
-    const [tenants] = await connection.query('SELECT id FROM ai_enterprise_tenants WHERE owner_organization_id=?', [organizationId])
-    for (const tenant of tenants) {
-      await connection.query('DELETE FROM ai_enterprise_sessions WHERE enterprise_id=?', [tenant.id])
-      await connection.query('DELETE FROM ai_enterprise_member_devices WHERE enterprise_id=?', [tenant.id])
-      await connection.query('DELETE FROM ai_enterprise_expert_assignments WHERE enterprise_id=?', [tenant.id])
-      await connection.query('DELETE FROM ai_enterprise_departments WHERE enterprise_id=?', [tenant.id])
-      await connection.query('DELETE FROM ai_enterprise_audit_logs WHERE enterprise_id=?', [tenant.id])
-    }
-    await connection.query('DELETE FROM ai_enterprise_tenants WHERE owner_organization_id=?', [organizationId])
-    await connection.query('DELETE FROM ai_organization_audit_logs WHERE organization_id=? OR target_id=?', [organizationId, organizationId])
-    await connection.query('DELETE FROM ai_organizations WHERE id=?', [organizationId])
-    for (const ownerId of ownerIds) {
-      await connection.query('DELETE FROM ai_membership_cards WHERE created_by=? AND system_builtin=1', [ownerId])
-      await connection.query('DELETE FROM ai_users WHERE id=?', [ownerId])
-    }
-    await connection.query(
-      `INSERT INTO ai_organization_audit_logs
-        (id, organization_id, actor_user_id, event_type, target_type, target_id, detail_json)
-       VALUES (?, ?, ?, 'child_organization_deleted', 'organization', ?, ?)`,
-      [crypto.randomUUID(), actor.organizationId || '', actor.userId || '', organizationId, JSON.stringify({ organizationId })],
-    )
-    await connection.commit()
-    return { id: organizationId, ownerUserIds: ownerIds, deleted: true }
-  } catch (err) {
-    await connection.rollback()
-    throw err
-  } finally {
-    connection.release()
-  }
 }
 
 export async function listOrganizationMembers(organizationId, connection = db()) {
@@ -321,61 +215,6 @@ export async function replaceOrganizationCapabilities(organizationId, capabiliti
     connection.release()
   }
   return listOrganizationCapabilities(organizationId)
-}
-
-export async function createChildOrganizationWithOwner(input, actor = {}) {
-  const connection = await db().getConnection()
-  try {
-    await connection.beginTransaction()
-    const [duplicates] = await connection.query('SELECT id FROM ai_users WHERE username=? LIMIT 1', [input.username])
-    if (duplicates.length > 0) throw Object.assign(new Error('管理员登录账号已在当前管理后台中使用。后台账号在整套部署内全局唯一，请更换账号（例如 company-admin）'), { statusCode: 409 })
-    await connection.query(
-      `INSERT INTO ai_organizations
-        (id, external_id, name, organization_type, agent_level, parent_organization_id, root_organization_id,
-         business_mode, deployment_mode, runtime_owner_organization_id, legacy_owner_user_id, status,
-         created_by_organization_id, created_by_user_id, expires_at)
-       VALUES (?, ?, ?, 'agent', 2, ?, ?, ?, 'inherited', ?, ?, ?, ?, ?, ?)`,
-      [input.organizationId, input.externalId, input.name, input.parentOrganizationId, input.rootOrganizationId,
-        'personal', input.runtimeOwnerOrganizationId, input.userId, input.status,
-        actor.organizationId || '', actor.userId || '', input.expiresAt ? new Date(input.expiresAt) : null],
-    )
-    await connection.query(
-      `INSERT INTO ai_users
-        (id, username, display_name, role, role_template_id, primary_organization_id, status, max_projects, max_builds, password_hash)
-       VALUES (?, ?, ?, 'admin', 'supplier-admin', ?, ?, 0, 0, ?)`,
-      [input.userId, input.username, input.displayName, input.organizationId, input.status, input.passwordHash],
-    )
-    await connection.query(
-      `INSERT INTO ai_organization_members
-        (organization_id, user_id, role_template_id, data_scope, status, is_owner, created_by)
-       VALUES (?, ?, 'supplier-admin', 'self', ?, 1, ?)`,
-      [input.organizationId, input.userId, input.status, actor.userId || ''],
-    )
-    for (const item of input.capabilities) {
-      await connection.query(
-        `INSERT INTO ai_organization_capabilities
-          (organization_id, capability_key, enabled, transferable, limit_value, config_json,
-           granted_by_organization_id, granted_by_user_id)
-         VALUES (?, ?, 1, 0, ?, ?, ?, ?)`,
-        [input.organizationId, item.key, item.limitValue || 0, JSON.stringify(item.config || {}),
-          actor.organizationId || '', actor.userId || ''],
-      )
-    }
-    await connection.query(
-      `INSERT INTO ai_organization_audit_logs
-        (id, organization_id, actor_user_id, event_type, target_type, target_id, detail_json)
-       VALUES (?, ?, ?, 'child_organization_created', 'organization', ?, ?)`,
-      [crypto.randomUUID(), actor.organizationId || input.parentOrganizationId, actor.userId || '', input.organizationId,
-        JSON.stringify({ initialAdminUserId: input.userId, expiresAt: input.expiresAt || null })],
-    )
-    await connection.commit()
-  } catch (err) {
-    await connection.rollback()
-    throw err
-  } finally {
-    connection.release()
-  }
-  return findOrganizationById(input.organizationId)
 }
 
 export async function updateOrganizationRecord(organizationId, patch, actor = {}) {

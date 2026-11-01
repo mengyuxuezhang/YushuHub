@@ -51,6 +51,7 @@ export function registerBuildRoutes(app, deps) {
     getSourceVersionInfo,
     touchWorker,
     appendBuildLog,
+    officialResources,
   } = deps
 
   app.post('/api/builds', requireAuth, requirePermission('builds.create', '提交测试打包'), async (req, res, next) => {
@@ -71,7 +72,7 @@ export function registerBuildRoutes(app, deps) {
         return
       }
       await assertBuildQuota(project.ownerUserId)
-      let build = await createBuild(project, req.user.id, req.body?.version || '')
+      let build = await createBuild(project, req.user.id, req.body?.version || '', { idempotencyKey: req.headers['idempotency-key'] || req.body?.requestId })
       build = await submitBuildToCenter(build, project, req.user, resolvePublicUrlsForRequest(req, {
         adminBaseUrl: PUBLIC_ADMIN_BASE_URL,
         updateBaseUrl: PUBLIC_UPDATE_BASE_URL,
@@ -199,7 +200,16 @@ export function registerBuildRoutes(app, deps) {
 
   app.post('/api/center/builds', requireCenterAuth, async (req, res) => {
     try {
+      let reservation
+      const resourceId = String(req.body?.localBuildId || '')
+      if (req.centralAuthorization) {
+        if (!officialResources) throw Object.assign(new Error('官方额度服务未配置'), { statusCode: 503 })
+        await officialResources(req, { kind: 'projects', resourceId: safeProjectId(req.body?.brand?.aiProjectId || req.body?.brand?.id) })
+        reservation = await officialResources(req, { kind: 'builds', resourceId, provisional: true })
+      }
       const build = await createCenterBuild(req.body || {}, req.centerSupplier)
+      // Keep a durable reservation on ambiguous failures; replay uses the same local build ID.
+      if (reservation) await officialResources(req, { action: 'confirm', kind: 'builds', resourceId, reservationId: reservation.reservationId })
       res.json({ success: true, data: build })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
@@ -303,7 +313,7 @@ export function registerBuildRoutes(app, deps) {
     try {
       res.json({
         success: true,
-        data: await reserveCenterSupplierProject(req.centerSupplier, req.body?.projectId, req.body?.projectIds),
+        data: req.centralAuthorization ? await officialResources(req, { kind: 'projects', resourceId: safeProjectId(req.body?.projectId) }) : await reserveCenterSupplierProject(req.centerSupplier, req.body?.projectId, req.body?.projectIds),
       })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
@@ -314,7 +324,7 @@ export function registerBuildRoutes(app, deps) {
     try {
       res.json({
         success: true,
-        data: await releaseCenterSupplierProject(req.centerSupplier, req.body?.projectId, req.body?.projectIds),
+        data: req.centralAuthorization ? await officialResources(req, { action: 'release', kind: 'projects', resourceId: safeProjectId(req.body?.projectId), reservationId: req.body?.reservationId }) : await releaseCenterSupplierProject(req.centerSupplier, req.body?.projectId, req.body?.projectIds),
       })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })

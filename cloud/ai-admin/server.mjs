@@ -1,3 +1,7 @@
+import { officialAuthorization, officialRequest } from '../../src/services/authorization/official-services.mjs'
+import { createAuthorizationRuntime, licenseAllowsPermission, licenseBusinessGuard } from '../../src/services/authorization/runtime.mjs'
+import { resolveTextConnection, assertTextModelWrite, assertProviderWrite, isFixedText, filterFixedSyncPacket, OKPA_TEXT_PROVIDER_ID } from '../../src/services/authorization/fixed-provider.mjs'
+import { registerDeploymentAuthorizationRoutes } from '../../src/routes/deployment-authorization.mjs'
 import { normalizeModelProviderKey, listModelProviderKeys as listProviderKeys, saveModelProviderKey as saveProviderKey } from '../../src/services/model-provider-keys.mjs'
 import { selectEligibleModelKeys, findKeyScopeModelId, resolveTaskModelKeyContext } from '../../src/services/model-key-scope.mjs'
 import { createJsonRequestBodyParser } from '../../src/middleware/json-request-body.mjs'
@@ -115,6 +119,8 @@ import { createCenterSupplierAuthorizationService, normalizeCenterSupplier } fro
 import { downloadBuildArtifact } from '../../src/services/build-artifact-transfer.mjs'
 import { buildOrganizationContext, normalizeDataScope } from '../../src/services/organizations.mjs'
 import { filterOrganizationPermissions } from '../../src/services/organization-expiry.mjs'
+import { officialResourceClient } from '../../src/services/authorization/official-resources.mjs'
+import { resourceRuntime, buildResourceIdentity, lockBuildProject, assertProjectUserRetention } from '../../src/services/authorization/resource-runtime.mjs'
 import { assertOrganizationQuota } from '../../src/services/quota-guard.mjs'
 import * as organizationRepository from '../../src/repositories/organizations.mjs'
 import { applyClientUsageDebit, assertClientModelRequestAllowed, getClientCreditState } from '../../src/services/client-billing.mjs'
@@ -264,7 +270,7 @@ function normalizeBuildCenterConfig(input = {}) {
   const token = String(input.token || input.buildCenterToken || '').trim()
   const supplierIdRaw = String(input.supplierId || input.buildCenterSupplierId || '').trim()
   const supplierId = supplierIdRaw ? safeCenterId(supplierIdRaw, '供应商 ID') : ''
-  return { url, token, supplierId, enabled: Boolean(url && token && supplierId) }
+  return { url, token, supplierId, enabled: Boolean(url && ((process.env.AI_AUTHORIZATION_MODE || 'center') === 'center' || token && supplierId)) }
 }
 
 async function getBuildCenterConfig() {
@@ -292,6 +298,7 @@ async function buildCenterEnabled() {
 async function buildCenterApi(pathname, body = {}, config = null) {
   const resolved = config || await getBuildCenterConfig()
   if (!resolved.enabled) throw new Error('官方构建中心未配置')
+  if (authorizationRuntime) return officialRequest({ client: authorizationRuntime.client, config: resolved, pathname, body, binary: false })
   const response = await fetch(`${resolved.url}${pathname}`, {
     method: 'POST',
     headers: {
@@ -316,7 +323,7 @@ async function listLocalSupplierProjectIds(extraProjectId = '') {
 }
 
 async function reserveProjectQuotaAtCenter(projectId, existingProject = null) {
-  if (CENTER_SUPPLIER_MANAGEMENT_ENABLED || existingProject) return false
+  if (authorizationRuntime || CENTER_SUPPLIER_MANAGEMENT_ENABLED || existingProject) return false
   const config = await getBuildCenterConfig()
   if (!config.enabled) return false
   await buildCenterApi('/api/center/projects/reserve', {
@@ -328,7 +335,7 @@ async function reserveProjectQuotaAtCenter(projectId, existingProject = null) {
 }
 
 async function releaseProjectQuotaAtCenter(projectId) {
-  if (CENTER_SUPPLIER_MANAGEMENT_ENABLED) return false
+  if (authorizationRuntime || CENTER_SUPPLIER_MANAGEMENT_ENABLED) return false
   const config = await getBuildCenterConfig()
   if (!config.enabled) return false
   const projectIds = (await listLocalSupplierProjectIds()).filter((id) => id !== projectId)
@@ -340,6 +347,7 @@ async function releaseProjectQuotaAtCenter(projectId) {
 async function buildCenterBinary(pathname, body = {}, config = null) {
   const resolved = config || await getBuildCenterConfig()
   if (!resolved.enabled) throw new Error('官方构建中心未配置')
+  if (authorizationRuntime) return officialRequest({ client: authorizationRuntime.client, config: resolved, pathname, body, binary: true })
   const response = await fetch(`${resolved.url}${pathname}`, {
     method: 'POST',
     headers: {
@@ -360,7 +368,7 @@ async function buildCenterBinary(pathname, body = {}, config = null) {
   }
 }
 
-const { getSupplierLicense, resetSupplierLicenseCache } = createSupplierLicenseService({
+const { getSupplierLicense: getLegacySupplierLicense, resetSupplierLicenseCache } = createSupplierLicenseService({
   officialCenterEnabled: CENTER_SUPPLIER_MANAGEMENT_ENABLED,
   defaults: defaultSupplierLicense,
   getConfig: getBuildCenterConfig,
@@ -369,6 +377,12 @@ const { getSupplierLicense, resetSupplierLicenseCache } = createSupplierLicenseS
   centerApi: buildCenterApi,
   organizationRepository,
 })
+
+const authorizationRuntime = createAuthorizationRuntime({ root: repoRoot })
+const getSupplierLicense = options => CENTER_SUPPLIER_MANAGEMENT_ENABLED ? getLegacySupplierLicense(options) : authorizationRuntime ? authorizationRuntime.license(options) : getLegacySupplierLicense(options)
+authorizationRuntime?.start()
+app.use(licenseBusinessGuard({ license: getSupplierLicense, enabled: Boolean(authorizationRuntime) && !CENTER_SUPPLIER_MANAGEMENT_ENABLED }))
+registerDeploymentAuthorizationRoutes(app, { runtime: authorizationRuntime, database: db })
 
 async function getAdminVersion() {
   try {
@@ -1479,7 +1493,7 @@ function roleCanUsePermission(role, permission) {
 async function supplierCanUsePermission(permission) {
   if (!permission) return false
   if (permission.officialCenterOnly && !CENTER_SUPPLIER_MANAGEMENT_ENABLED) return false
-  return supplierLicenseAllowsPermission(permission, CENTER_SUPPLIER_MANAGEMENT_ENABLED ? null : await getSupplierLicense(), CENTER_SUPPLIER_MANAGEMENT_ENABLED)
+  return authorizationRuntime ? licenseAllowsPermission(permission, await getSupplierLicense(), CENTER_SUPPLIER_MANAGEMENT_ENABLED) : supplierLicenseAllowsPermission(permission, CENTER_SUPPLIER_MANAGEMENT_ENABLED ? null : await getSupplierLicense(), CENTER_SUPPLIER_MANAGEMENT_ENABLED)
 }
 
 async function listAssignedUserPermissionKeys(userId) {
@@ -1791,10 +1805,8 @@ async function upsertUser(input, existingUser = null, organizationContext = null
   if (!template || template.status === 'disabled') throw new Error('角色模板不存在或已停用')
   if (!template.systemBuiltin && template.organizationId !== organizationId) throw new Error('不能使用其他组织的角色模板')
   const role = 'admin'
-  const requestedDataScope = existingUser?.dataScope || 'self'
+  const requestedDataScope = existingUser?.dataScope === 'platform' && organizationContext?.organizationLevel === 0 ? 'platform' : 'self'
   if (requestedDataScope === 'platform' && organizationContext?.dataScope !== 'platform') throw new Error('只有官方平台主体可以授予全平台数据范围')
-  if (requestedDataScope === 'subtree' && !['platform', 'subtree'].includes(organizationContext?.dataScope)) throw new Error('当前岗位不能转授全部下级数据范围')
-  if (requestedDataScope === 'children' && Number(organizationContext?.organizationLevel || 0) >= 2) throw new Error('二级代理没有直属下级数据范围')
   let passwordHash = existingUser?.passwordHash || ''
   if (password) {
     if (password.length < 8) throw new Error('密码至少 8 位')
@@ -2037,7 +2049,7 @@ function centerSupplierOrganizationCapabilities(supplier) {
   }).map((permission) => ({
     key: permission.key,
     enabled: true,
-    transferable: !nonTransferable.has(permission.key),
+    transferable: false,
     limitValue: permission.key === 'projects.manage'
       ? Number(normalized?.maxProjects || 0)
       : (permission.key === 'builds.create' ? Number(normalized?.maxBuilds || 0) : 0),
@@ -3144,7 +3156,7 @@ function normalizeProviderUsageLog(row = {}) {
 }
 
 async function fetchProviderUsageLogs(settings, options = {}) {
-  const usageBaseUrl = normalizeHttpUrl(settings.modelUsageBaseUrl || defaultPlatformSettings.modelUsageBaseUrl)
+  const usageBaseUrl = isFixedText(await getSupplierLicense()) ? 'https://api.okpa.cn' : normalizeHttpUrl(settings.modelUsageBaseUrl || defaultPlatformSettings.modelUsageBaseUrl)
   const apiKey = String(options.apiKey || settings.modelGatewayKey || '').trim()
   if (!usageBaseUrl || !apiKey) return { total: 0, items: [] }
   const now = Math.floor(Date.now() / 1000)
@@ -3156,7 +3168,7 @@ async function fetchProviderUsageLogs(settings, options = {}) {
   url.searchParams.set('page_size', String(options.pageSize || 20))
   url.searchParams.set('start_timestamp', String(Math.floor(startTimestamp)))
   url.searchParams.set('end_timestamp', String(Math.floor(endTimestamp)))
-  const response = await fetch(url, { headers: { accept: 'application/json' } })
+  const response = await fetch(url, { redirect: 'error', headers: { accept: 'application/json' } })
   if (!response.ok) throw new Error(`查询模型用量失败：HTTP ${response.status}`)
   const payload = await response.json().catch(() => ({}))
   if (payload?.success === false) throw new Error(payload.message || payload.error || '查询模型用量失败')
@@ -3195,18 +3207,18 @@ function normalizeProviderTokenInfo(payload = {}, apiKey = '') {
 }
 
 async function fetchProviderTokenInfo(settings, apiKey = '') {
-  const usageBaseUrl = normalizeHttpUrl(settings.modelUsageBaseUrl || defaultPlatformSettings.modelUsageBaseUrl)
+  const usageBaseUrl = isFixedText(await getSupplierLicense()) ? 'https://api.okpa.cn' : normalizeHttpUrl(settings.modelUsageBaseUrl || defaultPlatformSettings.modelUsageBaseUrl)
   const key = String(apiKey || '').trim()
   if (!usageBaseUrl || !key) return null
   const base = usageBaseUrl.replace(/\/$/, '')
   try {
     const subscriptionUrl = `${base}/v1/dashboard/billing/subscription`
-    const subscriptionResponse = await fetch(subscriptionUrl, { headers: { accept: 'application/json', authorization: `Bearer ${key}` } })
+    const subscriptionResponse = await fetch(subscriptionUrl, { redirect: 'error', headers: { accept: 'application/json', authorization: `Bearer ${key}` } })
     if (subscriptionResponse.ok) {
       const subscription = await subscriptionResponse.json().catch(() => ({}))
       const today = localDateString()
       const usageUrl = `${base}/v1/dashboard/billing/usage?start_date=${encodeURIComponent(today)}&end_date=${encodeURIComponent(today)}`
-      const usageResponse = await fetch(usageUrl, { headers: { accept: 'application/json', authorization: `Bearer ${key}` } })
+      const usageResponse = await fetch(usageUrl, { redirect: 'error', headers: { accept: 'application/json', authorization: `Bearer ${key}` } })
       const usage = usageResponse.ok ? await usageResponse.json().catch(() => ({})) : {}
       const usedQuota = numberOrNull(usage.total_usage) != null ? Math.round((Number(usage.total_usage) / 100) * 1_000_000) / 1_000_000 : null
       return normalizeProviderTokenInfo({ ...subscription, used_quota: usedQuota }, key)
@@ -3221,7 +3233,7 @@ async function fetchProviderTokenInfo(settings, apiKey = '') {
       url.searchParams.set('key', key)
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 5000)
-      const response = await fetch(url, { headers: { accept: 'application/json' }, signal: controller.signal }).finally(() => clearTimeout(timer))
+      const response = await fetch(url, { redirect: 'error', headers: { accept: 'application/json' }, signal: controller.signal }).finally(() => clearTimeout(timer))
       if (!response.ok) continue
       const payload = await response.json().catch(() => ({}))
       if (payload?.success === false) continue
@@ -3395,7 +3407,7 @@ async function resolveModelProxyContext(requestedModel = '', userId = '', requir
     if (targetModel) throw new Error(`模型 ${targetModel} 未启用或未配置${targetModelType ? `为 ${targetModelType} 分类` : ''}`)
     throw new Error(targetModelType ? `暂无可用${targetModelType === 'search' ? '搜索' : targetModelType}模型，请先在后台配置服务商和模型` : '暂无可用模型，请先在后台配置服务商和模型')
   }
-  const provider = normalizeModelProvider({
+  let provider = normalizeModelProvider({
     id: row.provider_id,
     name: row.provider_name,
     protocol: row.protocol,
@@ -3406,7 +3418,9 @@ async function resolveModelProxyContext(requestedModel = '', userId = '', requir
     sort_order: row.provider_sort_order,
   })
   const model = normalizeProviderModel(row)
-  const keyRows = await selectEligibleModelKeys(db(), { ownerUserId: keyOwnerUserId, providerId: provider.id, providerModelId: model.id })
+  const textPolicy = resolveTextConnection(await getSupplierLicense(), provider, model, normalizeModelEndpointPath(model.endpointPath, model.modelType))
+  provider = textPolicy
+  const keyRows = await selectEligibleModelKeys(db(), { ownerUserId: keyOwnerUserId, providerId: provider.id, providerModelId: model.id, organizationId: endUserOrganizationId })
   const key = await materializeModelProviderKey(keyRows[0])
   if (!key?.api_key) throw new Error(`服务商 ${provider.name} 在当前账号下暂无适用于该模型的可用 Key，请检查 Key 池的适用模型配置`)
   const rules = await listModelPricingRules(provider.id)
@@ -3420,7 +3434,7 @@ async function resolveModelProxyContext(requestedModel = '', userId = '', requir
   const pricingRule = effectiveGatewayPricingRule(legacyPricingRule, pricingPlan)
   if (!pricingRule) throw new Error(`模型 ${model.modelId} 未配置启用中的计费方案`)
   await db().query('UPDATE ai_model_provider_keys SET last_used_at = CURRENT_TIMESTAMP(3) WHERE id = ?', [key.id])
-  const endpointPath = normalizeModelEndpointPath(model.endpointPath, model.modelType)
+  const endpointPath = textPolicy.endpointPath
   return {
     provider,
     model,
@@ -3770,36 +3784,38 @@ async function deleteEndUsersByProject(conn, projectId) {
   return ids.length
 }
 
-async function deleteProject(projectId, actor) {
+async function deleteProject(projectId, actor, connection = null) {
   const id = safeProjectId(projectId)
-  const project = await findProjectById(id)
+  const project = await findProjectById(id, PUBLIC_ADMIN_BASE_URL, connection)
   if (!project || !canAccessProject(actor, project)) throw new Error('AI 项目不存在或无权删除')
   if (!canOperateProject(actor, project)) throw new Error('只能删除自己名下的 AI 项目')
-  const [[active]] = await db().query('SELECT COUNT(*) AS count FROM ai_builds WHERE project_id = ? AND status IN ("queued","running")', [id])
+  const [[active]] = await (connection || db()).query('SELECT COUNT(*) AS count FROM ai_builds WHERE project_id = ? AND status IN ("queued","running")', [id])
   if (Number(active?.count || 0) > 0) throw new Error('该项目存在排队中或构建中的任务，请先结束任务后再删除')
-  const [[paymentOrders]] = await db().query(
+  const [[paymentOrders]] = await (connection || db()).query(
     `SELECT COUNT(*) AS count FROM ai_payment_orders
      WHERE user_id IN (SELECT id FROM ai_end_users WHERE source_project_id = ?)`,
     [id],
   )
   if (Number(paymentOrders?.count || 0) > 0) throw new Error('该项目下已有会员支付订单，为保留支付和财务记录，不能删除项目')
+  if (resourcesRuntime && !connection) return resourcesRuntime.removeProject(id, project.organizationId, conn => deleteProject(id, actor, conn))
+  if (resourcesRuntime) await assertProjectUserRetention(connection || db(), id)
   const quotaReleased = await releaseProjectQuotaAtCenter(id)
-  const conn = await db().getConnection()
+  const conn = connection || await db().getConnection()
   try {
-    await conn.beginTransaction()
+    if (!connection) await conn.beginTransaction()
     const deletedUsers = await deleteEndUsersByProject(conn, id)
     await conn.query('DELETE FROM ai_builds WHERE project_id = ?', [id])
     await conn.query('DELETE FROM ai_projects WHERE id = ?', [id])
-    await conn.commit()
+    if (!connection) await conn.commit()
     return { id, deleted: true, deletedEndUsers: deletedUsers }
   } catch (err) {
-    await conn.rollback()
+    if (!connection) await conn.rollback()
     if (quotaReleased) await reserveProjectQuotaAtCenter(id).catch((restoreErr) => {
       writeAppLog('supplier-quota', `恢复项目额度失败 ${id}: ${restoreErr instanceof Error ? restoreErr.message : String(restoreErr)}`)
     })
     throw err
   } finally {
-    conn.release()
+    if (!connection) conn.release()
   }
 }
 
@@ -3863,6 +3879,7 @@ async function enrichUserContext(user) {
 }
 
 setAuthDependencies({
+  authorizeOfficial: CENTER_SUPPLIER_MANAGEMENT_ENABLED && process.env.AI_OFFICIAL_AUTHORIZATION_MODE !== 'legacy' ? officialAuthorization({ centerUrl: process.env.AI_LICENSE_CENTER_URL || 'https://license.okpa.cn', database: db, findSupplier: findCenterSupplierById }) : null,
   getUserBySession,
   getEffectivePermissionKeys,
   permissionByKey,
@@ -3998,8 +4015,8 @@ async function validateProject(input, currentUser, existingProject = null, publi
   }
 }
 
-async function findProjectById(id, publicAdminBaseUrl = PUBLIC_ADMIN_BASE_URL) {
-  const [rows] = await db().query('SELECT * FROM ai_projects WHERE id = ? LIMIT 1', [id])
+async function findProjectById(id, publicAdminBaseUrl = PUBLIC_ADMIN_BASE_URL, connection = null) {
+  const [rows] = await (connection || db()).query('SELECT * FROM ai_projects WHERE id = ? LIMIT 1', [id])
   return normalizeProject(rows[0], publicAdminBaseUrl)
 }
 
@@ -4024,13 +4041,14 @@ async function listProjectsForUser(user, publicAdminBaseUrl = PUBLIC_ADMIN_BASE_
   return rows.map(row => normalizeProject(row, publicAdminBaseUrl))
 }
 
-async function upsertProject(input, user, existingProject = null, publicAdminBaseUrl = PUBLIC_ADMIN_BASE_URL) {
+async function upsertProject(input, user, existingProject = null, publicAdminBaseUrl = PUBLIC_ADMIN_BASE_URL, connection = null) {
   const project = await validateProject(input, user, existingProject, publicAdminBaseUrl)
   const policy = normalizeClientPolicy(input.clientPolicy === undefined ? existingProject?.clientPolicy : input.clientPolicy)
   await assertProjectQuota(project.ownerUserId, existingProject)
+  if (resourcesRuntime && !connection) return resourcesRuntime.project(project.id, project.organizationId, conn => upsertProject(input, user, existingProject, publicAdminBaseUrl, conn))
   const quotaReserved = await reserveProjectQuotaAtCenter(project.id, existingProject)
   try {
-    await db().query(
+    await (connection || db()).query(
       `INSERT INTO ai_projects (
         id, owner_user_id, organization_id, client_mode, app_name, brand_name, short_name, description, app_id, config_dir_name,
         logo_url, icon_url, contact_qr_url, login_logo_url, login_design, login_title, login_subtitle,
@@ -4103,7 +4121,7 @@ async function upsertProject(input, user, existingProject = null, publicAdminBas
     if (err?.code === 'ER_DUP_ENTRY') throw new Error('项目 ID、App ID 或本地数据目录已被占用')
     throw err
   }
-  return findProjectById(project.id, publicAdminBaseUrl)
+  return findProjectById(project.id, publicAdminBaseUrl, connection)
 }
 
 async function upsertCenterProject(supplierId, brand) {
@@ -4175,7 +4193,7 @@ async function createCenterBuild(input, supplier) {
   )
   if (existingRows[0]) return normalizeBuild(existingRows[0])
   const originalProjectId = safeProjectId(brand.aiProjectId || brand.id)
-  await reserveCenterSupplierProject(supplier, originalProjectId, input?.projectIds || [originalProjectId])
+  if (!supplier.centralAuthorization) await reserveCenterSupplierProject(supplier, originalProjectId, input?.projectIds || [originalProjectId])
   const project = await upsertCenterProject(supplierId, brand)
   const centerBrand = preserveSubmittedLoginBrandFields(projectToBrand(project), brand)
   centerBrand.updateUrl = brand.updateUrl || centerBrand.updateUrl
@@ -4210,7 +4228,7 @@ async function createCenterBuild(input, supplier) {
       [supplierId],
     )
     const actualBuildCount = Number(buildUsage?.count || 0)
-    assertSupplierBuildQuota(actualBuildCount, supplierRows[0].max_builds)
+    if (!supplier.centralAuthorization) assertSupplierBuildQuota(actualBuildCount, supplierRows[0].max_builds)
     await connection.query(
       `INSERT INTO ai_builds (
         id, project_id, owner_user_id, organization_id, requested_by, version, status, log, brand_json, center_supplier_id, center_local_build_id
@@ -4241,15 +4259,23 @@ async function createCenterBuild(input, supplier) {
   return findBuildById(id)
 }
 
-async function createBuild(project, requestedBy, version = '') {
-  const id = crypto.randomUUID()
+async function createBuild(project, requestedBy, version = '', options = {}) {
   const buildVersion = String(version || await getSourceVersion() || '')
-  await db().query(
+  const { id, fingerprint } = buildResourceIdentity(project, requestedBy, buildVersion, resourcesRuntime ? options.idempotencyKey : undefined)
+  const write = async connection => {
+    if (resourcesRuntime) {
+      const active = await lockBuildProject(connection, project)
+      if (active) return { ...normalizeBuild(active), alreadyActive: true }
+    }
+    await connection.query(
     `INSERT INTO ai_builds (id, project_id, owner_user_id, organization_id, requested_by, version, status, log)
      VALUES (?, ?, ?, ?, ?, ?, 'queued', '')`,
     [id, project.id, project.ownerUserId || '', project.organizationId || '', requestedBy || null, buildVersion],
   )
-  return findBuildById(id)
+    return findBuildById(id, connection)
+  }
+  if (resourcesRuntime) return resourcesRuntime.build(id, project.organizationId, fingerprint, write)
+  return write(db())
 }
 
 async function prepareBuildCenterBrand(build, project, user, publicUrls = {}) {
@@ -4317,8 +4343,8 @@ async function resetBuildForRetry(buildId, extraPatch = {}) {
   })
 }
 
-async function findBuildById(id) {
-  const [rows] = await db().query('SELECT * FROM ai_builds WHERE id = ? LIMIT 1', [id])
+async function findBuildById(id, connection = null) {
+  const [rows] = await (connection || db()).query('SELECT * FROM ai_builds WHERE id = ? LIMIT 1', [id])
   return normalizeBuild(rows[0])
 }
 
@@ -5142,6 +5168,7 @@ async function enableModelProvider(id, scope = null) {
 }
 
 async function saveModelProvider(input = {}, scope = null) {
+  await assertProviderWrite(db(), await getSupplierLicense(), input, scope?.organizationId || '')
   const existingId = normalizeProviderId(input.id)
   const id = existingId || crypto.randomUUID()
   const name = String(input.name || '').trim()
@@ -5226,6 +5253,7 @@ async function listProviderModels(providerId = '', scope = null) {
 }
 
 async function saveProviderModel(input = {}, scope = null) {
+  assertTextModelWrite(await getSupplierLicense(), input)
   const provider = await findModelProviderById(input.providerId || input.provider_id)
   if (!provider) throw new Error('服务商不存在')
   assertModelServiceRecordInScope(provider, scope, '服务商')
@@ -5286,21 +5314,23 @@ async function enableProviderModel(id, scope = null) {
 }
 
 async function testProviderModelConnectivity(input = {}, actor = null, scope = null) {
-  const provider = await findModelProviderById(input.providerId || input.provider_id)
+  let provider = await findModelProviderById(input.providerId || input.provider_id)
   if (!provider) throw new Error('服务商不存在')
   assertModelServiceRecordInScope(provider, scope, '服务商')
   const modelId = String(input.modelId || input.model_id || '').trim()
   if (!modelId) throw new Error('请输入上游模型 ID')
   const modelType = normalizeProviderModelType(input.modelType || input.model_type)
-  const endpointPath = normalizeModelEndpointPath(input.endpointPath || input.endpoint_path, modelType)
+  let endpointPath = normalizeModelEndpointPath(input.endpointPath || input.endpoint_path, modelType)
   if (!['text', 'search'].includes(modelType)) {
     return {
       skipped: true,
       message: '当前仅对文本模型执行自动连通性测试，图片/视频/音频模型先保存分类和端点，调用方式确定后再补充测试。',
     }
   }
+  const policy = resolveTextConnection(await getSupplierLicense(), provider, { modelType }, endpointPath)
+  provider = policy; endpointPath = policy.endpointPath
   const scopeModelId = await findKeyScopeModelId(db(), provider.id, modelId, provider.organizationId || '')
-  const keyRows = await selectEligibleModelKeys(db(), { ownerUserId: actor?.id || 'admin', providerId: provider.id, providerModelId: scopeModelId })
+  const keyRows = await selectEligibleModelKeys(db(), { ownerUserId: actor?.id || 'admin', providerId: provider.id, providerModelId: scopeModelId, organizationId: scope?.organizationId })
   const key = await materializeModelProviderKey(keyRows[0])
   if (!key?.api_key) throw new Error(`服务商 ${provider.name} 在当前账号下暂无适用于该模型的可用 Key，请检查 Key 池的适用模型配置`)
   const url = `${String(provider.baseUrl || '').replace(/\/$/, '')}${endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`}`
@@ -5323,6 +5353,7 @@ async function testProviderModelConnectivity(input = {}, actor = null, scope = n
         }
     const response = await fetch(url, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         authorization: `Bearer ${String(key.api_key || '')}`,
         'content-type': 'application/json',
@@ -5488,6 +5519,7 @@ async function syncProvidersFromCenter(remoteProviders = []) {
       result[local ? 'updated' : 'added'] += 1
     }
     for (const row of rows) {
+      if (isFixedText(await getSupplierLicense())) { result.skipped += 1; continue }
       if (remoteById.has(row.id)) continue
       const localPayload = providerSyncPayload(row)
       if (!row.center_sync_hash || syncHash(localPayload) !== row.center_sync_hash) {
@@ -5562,6 +5594,7 @@ async function syncModelsFromCenter(remoteModels = []) {
       result[local ? 'updated' : 'added'] += 1
     }
     for (const row of rows) {
+      if (isFixedText(await getSupplierLicense())) { result.skipped += 1; continue }
       if (shouldRetainMatchedSyncRow(row.id, remoteById, matchedLocalIds)) continue
       const localPayload = modelSyncPayload(row)
       if (!row.center_sync_hash || syncHash(localPayload) !== row.center_sync_hash) {
@@ -5635,6 +5668,7 @@ async function syncPricingRulesFromCenter(remoteRules = []) {
       result[local ? 'updated' : 'added'] += 1
     }
     for (const row of rows) {
+      if (isFixedText(await getSupplierLicense())) { result.skipped += 1; continue }
       if (shouldRetainMatchedSyncRow(row.id, remoteById, matchedLocalIds)) continue
       const localPayload = pricingSyncPayload(row)
       if (!row.center_sync_hash || syncHash(localPayload) !== row.center_sync_hash) {
@@ -5657,21 +5691,21 @@ async function syncPricingRulesFromCenter(remoteRules = []) {
 async function syncModelServiceFromCenter(scope = 'all') {
   const allowedScopes = ['all', 'providers', 'models', 'pricingRules', 'v2']
   const targetScope = allowedScopes.includes(scope) ? scope : 'all'
-  const remote = CENTER_SUPPLIER_MANAGEMENT_ENABLED
+  const remote = filterFixedSyncPacket(await getSupplierLicense(), CENTER_SUPPLIER_MANAGEMENT_ENABLED
     ? await exportModelServiceConfigForCenter()
-    : await buildCenterApi('/api/center/model-service-config')
+    : await buildCenterApi('/api/center/model-service-config'))
   const result = {}
   if (targetScope === 'all' || targetScope === 'providers') result.providers = await syncProvidersFromCenter(remote.providers || [])
   if (targetScope === 'all' || targetScope === 'models') result.models = await syncModelsFromCenter(remote.models || [])
   if (targetScope === 'all' || targetScope === 'pricingRules') result.pricingRules = await syncPricingRulesFromCenter(remote.pricingRules || [])
-  if ((targetScope === 'all' || targetScope === 'v2') && remote.v2) result.v2 = await modelServiceV2Sync.apply(remote.v2)
+  if ((targetScope === 'all' || targetScope === 'v2') && remote.v2) result.v2 = await modelServiceV2Sync.apply(remote.v2, isFixedText(await getSupplierLicense()) ? { cleanupModelIds: (remote.models || []).map(m => m.id) } : {})
   return result
 }
 
 async function getModelServiceUpdateStatus() {
-  const remote = CENTER_SUPPLIER_MANAGEMENT_ENABLED
+  const remote = filterFixedSyncPacket(await getSupplierLicense(), CENTER_SUPPLIER_MANAGEMENT_ENABLED
     ? await exportModelServiceConfigForCenter()
-    : await buildCenterApi('/api/center/model-service-config')
+    : await buildCenterApi('/api/center/model-service-config'))
   const remoteProviders = (remote.providers || []).map(providerSyncPayload).filter((item) => item.id)
   const remoteModels = (remote.models || []).map(modelSyncPayload).filter((item) => item.id)
   const remotePricingRules = (remote.pricingRules || []).map(pricingSyncPayload).filter((item) => item.id)
@@ -6648,6 +6682,7 @@ registerAuthRoutes(app, {
 })
 
 registerOrganizationRoutes(app, {
+  resourceUsage: authorizationRuntime ? () => authorizationRuntime.client.resourceUsage() : null,
   repository: organizationRepository,
   getSupplierLicense,
   ensureAccountFreeMembership,
@@ -6754,6 +6789,7 @@ if (!CENTER_SUPPLIER_MANAGEMENT_ENABLED) {
   })
 }
 registerModelServiceRoutes(app, {
+  getSupplierLicense,
   listModelProviders,
   saveModelProvider,
   findModelProviderById,
@@ -6817,7 +6853,10 @@ const modelTasks = new ModelTaskService({
   pricing: pricingPlanService,
   invocation: modelInvocation,
   operations: modelOperations,
-  contextResolver: (user, capability) => resolveTaskModelKeyContext(voicePool, materializeModelProviderKey, user, capability),
+  contextResolver: async (user, capability) => {
+    const policy = resolveTextConnection(await getSupplierLicense(), { id: capability.providerId, baseUrl: capability.baseUrl }, { modelType: capability.taskType === 'chat' ? 'text' : '' }, '/chat/completions')
+    return resolveTaskModelKeyContext(voicePool, materializeModelProviderKey, user, { ...capability, baseUrl: policy.baseUrl })
+  },
 })
 registerModelTaskRoutes(app, modelTasks)
 
@@ -6874,7 +6913,9 @@ registerAdminBusinessRoutes(app, {
   previewSecret,
 })
 
+const resourcesRuntime = resourceRuntime({ client: CENTER_SUPPLIER_MANAGEMENT_ENABLED ? null : authorizationRuntime?.client, database: db, resolveOrganization: organizationRepository.findOrganizationById, readBuild: findBuildById })
 registerBuildRoutes(app, {
+  officialResources: CENTER_SUPPLIER_MANAGEMENT_ENABLED && process.env.AI_OFFICIAL_AUTHORIZATION_MODE !== 'legacy' ? officialResourceClient({ centerUrl: process.env.AI_LICENSE_CENTER_URL || 'https://license.okpa.cn' }) : null,
   findProjectById,
   findActiveBuildForProject,
   assertBuildQuota,
@@ -6938,6 +6979,7 @@ pool = await initDatabase({
   supplierId: BUILD_CENTER_SUPPLIER_ID,
   permissionKeys: permissionCatalogItems().map((item) => item.key),
 })
+await resourcesRuntime?.start()
 const updateDatabaseMigration = await migrateOfficialUpdateDatabaseSettings(pool)
 if (updateDatabaseMigration.changedRows > 0) console.log(`[ai-admin] migrated ${updateDatabaseMigration.changedRows} saved official update source setting(s)`)
 await reconcileCenterSupplierOrganizations()

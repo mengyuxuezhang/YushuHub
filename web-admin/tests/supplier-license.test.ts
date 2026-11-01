@@ -1,4 +1,4 @@
-import { createApp, h, nextTick, ref, reactive } from 'vue'
+import { createApp, h, nextTick, ref } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import * as organizationApi from '@/api/organization'
 import { useCenterSuppliers } from '@/composables/organizations/useCenterSuppliers'
@@ -7,7 +7,6 @@ import SupplierLicenseNotice from '@/components/organizations/SupplierLicenseNot
 import { formatLicenseExpiry, localExpiryInput } from '@/utils/supplier-license'
 import type { CenterSupplier, SupplierLicense } from '@/types/organization'
 import { useAuthStore } from '@/stores/auth'
-import CenterSupplierDrawer from '@/components/organizations/CenterSupplierDrawer.vue'
 
 const record = (patch: Partial<CenterSupplier> = {}): CenterSupplier => ({ id: 'supplier-a', name: 'A', notes: '', status: 'enabled', licenseType: 'partner', maxProjects: 0, maxBuilds: 0, allowAgentManagement: true, allowSupplierManagement: false, allowPlatformSettings: true, allowCustomBrand: true, allowCustomApiProviders: false, ...patch })
 function mountWorkflow<T>(setup: () => T) {
@@ -19,64 +18,21 @@ function mountWorkflow<T>(setup: () => T) {
   return { value, unmount: () => app.unmount() }
 }
 
-describe('supplier expiry editing', () => {
-  it('renders the permanent option and reveals the date picker when it is turned off', async () => {
-    const form = reactive({ ...record(), neverExpires: true, expiresAt: '' })
-    const host = document.createElement('div')
-    const app = createApp({ setup: () => () => h(CenterSupplierDrawer, { open: true, form, saving: false, errorMessage: '', revealNotice: '' }) })
-    app.mount(host)
+describe('official business records are read only', () => {
+  it('loads and filters records without exposing issuance methods', async () => {
+    vi.spyOn(organizationApi, 'listCenterSuppliers').mockResolvedValue([record(), record({ id: 'supplier-b', name: 'B' })])
+    const mounted = mountWorkflow(useCenterSuppliers), state = mounted.value
     try {
-      expect(host.querySelector('input[type="datetime-local"]')).toBeNull()
-      const label = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('永不过期'))!
-      const checkbox = label.querySelector('input')!
-      checkbox.checked = false; checkbox.dispatchEvent(new Event('change', { bubbles: true })); await nextTick()
-      expect(form.neverExpires).toBe(false)
-      expect(host.querySelector('input[type="datetime-local"]')).not.toBeNull()
-    } finally { app.unmount() }
+      await nextTick(); await nextTick()
+      expect(state.rows.value).toHaveLength(2)
+      state.search.value = 'supplier-b'; expect(state.rows.value.map(row => row.id)).toEqual(['supplier-b'])
+      expect(state).not.toHaveProperty('save'); expect(state).not.toHaveProperty('resetToken')
+    } finally { mounted.unmount() }
   })
-  it('keeps timezone-correct expiry round trips and labels legacy values as permanent', () => {
+  it('keeps timezone-correct expiry round trips', () => {
     const iso = '2030-01-01T00:00:01.123Z'
     expect(new Date(localExpiryInput(iso)).toISOString()).toBe(iso)
     expect(formatLicenseExpiry(null)).toBe('永不过期')
-    expect(localExpiryInput(undefined)).toBe('')
-  })
-
-  it('defaults new suppliers to permanent, validates selected dates and explicitly clears expiry', async () => {
-    vi.spyOn(organizationApi, 'listCenterSuppliers').mockResolvedValue([])
-    const save = vi.spyOn(organizationApi, 'saveCenterSupplier').mockImplementation(async input => record({ expiresAt: input.expiresAt }))
-    const mounted = mountWorkflow(useCenterSuppliers), s = mounted.value
-    try {
-      s.openCreate(); s.form.name = 'A'
-      expect(s.form.neverExpires).toBe(true)
-      await s.save()
-      expect(save.mock.calls[0][0].expiresAt).toBeNull()
-      s.form.neverExpires = false; s.form.expiresAt = ''
-      await s.save()
-      expect(save).toHaveBeenCalledTimes(1)
-      expect(s.errorMessage.value).toContain('到期时间')
-      s.openEdit(record({ expiresAt: '2030-01-01T00:00:00.000Z' }))
-      expect(s.form.neverExpires).toBe(false)
-      await s.save()
-      expect(save.mock.calls[1][0].expiresAt).toBe('2030-01-01T00:00:00.000Z')
-      s.form.neverExpires = true
-      await s.save()
-      expect(save.mock.calls[2][0].expiresAt).toBeNull()
-    } finally { mounted.unmount() }
-  })
-
-  it('filters expired grants without changing their editable enabled status', async () => {
-    vi.spyOn(organizationApi, 'listCenterSuppliers').mockResolvedValue([])
-    const mounted = mountWorkflow(useCenterSuppliers), s = mounted.value
-    try {
-      await Promise.resolve()
-      const expired = record({ expiresAt: '2020-01-01T00:00:00Z', authorizationStatus: 'expired' })
-      s.suppliers.value = [expired, record({ id: 'supplier-b' })]
-      s.status.value = 'expired'
-      expect(s.rows.value.map(row => row.id)).toEqual(['supplier-a'])
-      s.openEdit(expired)
-      expect(s.form.status).toBe('enabled')
-      expect(s.form.neverExpires).toBe(false)
-    } finally { mounted.unmount() }
   })
 })
 

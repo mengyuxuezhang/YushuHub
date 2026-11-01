@@ -5,7 +5,7 @@ import { useFeedbackStore } from '@/stores/feedback'
 import type { AdminAccount, PermissionItem, PermissionPreview, RoleTemplate } from '@/types/organization'
 
 const sourceModeNames: Record<string, string> = { role_template: '岗位模板', group_override: '账号组覆盖', fallback_role: '默认岗位' }
-const dataScopeNames: Record<string, string> = { self: '仅当前组织', children: '直属下级', subtree: '全部下级', platform: '全平台' }
+const dataScopeNames: Record<string, string> = { self: '仅当前组织', platform: '全平台' }
 
 export function useAccounts() {
   const feedback = useFeedbackStore()

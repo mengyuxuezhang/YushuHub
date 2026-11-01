@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { RouterLink } from 'vue-router'
 import { computed, ref, toRef } from 'vue'
+import { useSupplierLicense } from '@/composables/organizations/useSupplierLicense'
 import { CloudCog, Database, KeyRound, Plus, RefreshCw, Trash2 } from '@lucide/vue'
 import ModelServiceDrawer from '@/components/models/ModelServiceDrawer.vue'
 import KeyUsageDrawer from '@/components/models/KeyUsageDrawer.vue'
@@ -12,8 +14,13 @@ import StatusBadge from '@/components/common/StatusBadge.vue'
 import { useModelServicePage, type ModelSection } from '@/composables/models/useModelServicePage'
 const props = defineProps<{ section: ModelSection }>()
 const section = toRef(props, 'section')
+const { license } = useSupplierLicense()
+const fixedText = computed(() => license.value?.source === 'license-center' && license.value.modelMode === 'fixed')
+const formProviders = computed(() => fixedText.value && props.section === 'catalog' && (form.modelType || 'text') === 'text' ? store.providers.filter(p => p.id === 'system-text-okpa') : store.providers)
 const model = useModelServicePage(section)
 const { store, saving, testing, drawerOpen, errorMessage, form, meta, rows, keyProviderNav, keyGroups, modelProviderNav, modelGroups, canWrite, openCreate, openEdit, close, save, testConnection, disable, enable, remove, usageOpen, usageKey, usageLoading, usageError, usageRows, usagePagination, openUsage, closeUsage, setUsagePage, setUsagePageSize } = model
+const canCreate = computed(() => canWrite.value && !(props.section === 'providers' && fixedText.value))
+const canEditRow = (item: any) => canWrite.value && !(props.section === 'providers' && fixedText.value && (item.id === 'system-text-okpa' || store.models.some(m => m.providerId === item.id && m.modelType === 'text')))
 const voiceKey = ref<ModelProviderKey | null>(null)
 const icon = computed(() => props.section === 'providers' ? CloudCog : props.section === 'keys' ? KeyRound : Database)
 const selectedKeyProvider = computed(() => store.providers.find((item) => item.id === model.provider.value))
@@ -21,7 +28,7 @@ const selectedKeyProviderCount = computed(() => store.keys.filter((item) => item
 const selectedModelProvider = computed(() => store.providers.find((item) => item.id === model.provider.value))
 const selectedModelProviderCount = computed(() => store.models.filter((item) => item.providerId === model.provider.value).length)
 function title(item: any) { return item.name || item.displayName || item.keyPreview || store.modelName(item.providerModelId) }
-function subtitle(item: any) { return props.section === 'providers' ? item.baseUrl : props.section === 'keys' ? store.providerName(item.providerId) : props.section === 'catalog' ? `${store.providerName(item.providerId)} · ${item.modelId}` : `${item.providerName} · ${item.modelId}` }
+function subtitle(item: any) { return props.section === 'providers' ? fixedText.value && item.id === 'system-text-okpa' ? 'https://api.okpa.cn/v1' : item.baseUrl : props.section === 'keys' ? store.providerName(item.providerId) : props.section === 'catalog' ? `${store.providerName(item.providerId)} · ${item.modelId}` : `${item.providerName} · ${item.modelId}` }
 function resolutionSummary(item: any) {
   const tiers = item.resolutionPoints || {}
   const parts = ['1K', '1.5K', '2K'].filter((tier) => Number(tiers[tier]) > 0).map((tier) => `${tier} ${tiers[tier]}`)
@@ -40,7 +47,7 @@ function pricingSummary(item: any) {
 </script>
 
 <template><section class="management-page">
-  <header class="page-heading management-heading"><div><span class="eyebrow">{{ meta.eyebrow }}</span><h1>{{ meta.title }}</h1><p>{{ meta.description }}</p></div><div class="heading-actions"><button class="secondary-button" :disabled="store.loading" @click="model.load"><RefreshCw :size="16" :class="{ spinning: store.loading }" />刷新</button><button v-if="canWrite" class="primary-button" :disabled="section === 'keys' && !store.providers.length" :title="section === 'keys' && !store.providers.length ? '请先创建服务商' : undefined" @click="openCreate"><Plus :size="17" />新建{{ meta.item }}</button></div></header>
+  <header class="page-heading management-heading"><div><span class="eyebrow">{{ meta.eyebrow }}</span><h1>{{ meta.title }}</h1><p>{{ meta.description }}</p></div><div class="heading-actions"><button class="secondary-button" :disabled="store.loading" @click="model.load"><RefreshCw :size="16" :class="{ spinning: store.loading }" />刷新</button><button v-if="canCreate" class="primary-button" :disabled="section === 'keys' && !store.providers.length" :title="section === 'keys' && !store.providers.length ? '请先创建服务商' : undefined" @click="openCreate"><Plus :size="17" />新建{{ meta.item }}</button></div></header>
   <ModelSearchToolbar :section="section" :model="model" />
   <div v-if="section === 'keys' || section === 'catalog'" class="key-pool-workspace">
     <nav class="key-provider-nav panel-card" :aria-label="section === 'keys' ? '按服务商筛选 Key' : '按服务商筛选模型'">
@@ -77,8 +84,8 @@ function pricingSummary(item: any) {
       </section>
     </div>
   </div>
-  <div v-else class="table-panel panel-card"><div v-if="store.loading && !rows.length" class="table-loading">正在加载…</div><div v-else-if="!rows.length" class="empty-state"><component :is="icon" :size="36" /><h2>暂无{{ meta.item }}</h2><p>使用右上角按钮创建第一条清晰、可追踪的配置。</p><button v-if="canWrite" class="primary-button" @click="openCreate"><Plus :size="17" />新建{{ meta.item }}</button></div><div v-else class="data-table-scroll"><table class="data-table model-table"><thead><tr><th>{{ meta.item }}</th><th>状态</th><th>配置摘要</th><th>更新时间</th><th class="action-column">操作</th></tr></thead><tbody><tr v-for="item in rows" :key="item.id"><td><div class="entity-cell"><span class="entity-avatar"><component :is="icon" :size="18" /></span><div><strong>{{ title(item) }}</strong><span>{{ subtitle(item) }}</span><small>{{ item.id }}</small><span v-if="item.isSystem" class="soft-tag system-tag">系统内置</span></div></div></td><td><StatusBadge :status="item.status" /></td><td><template v-if="section === 'providers'">{{ item.keyCount || 0 }} 个 Key · {{ item.modelCount || 0 }} 个模型</template><template v-else>{{ pricingSummary(item) }}</template></td><td><span class="date-cell">{{ item.updatedAt ? new Date(item.updatedAt).toLocaleString('zh-CN') : '—' }}</span></td><td class="action-column"><div class="row-actions"><button v-if="canWrite" class="text-button" @click="openEdit(item)">编辑</button><button v-if="canWrite && item.status !== 'disabled'" class="text-button" @click="disable(item)">停用</button><button v-if="canWrite && item.status === 'disabled'" class="text-button" @click="enable(item)">启用</button><button v-if="canWrite" class="icon-danger" title="永久删除" @click="remove(item)"><Trash2 :size="16" /></button></div></td></tr></tbody></table></div></div>
-  <ModelServiceDrawer :open="drawerOpen" :section="section" :form="form" :providers="store.providers" :models="store.models" :saving="saving" :testing="testing" :error-message="errorMessage" @close="close" @save="save" @test="testConnection" />
+  <div v-else class="table-panel panel-card"><div v-if="store.loading && !rows.length" class="table-loading">正在加载…</div><div v-else-if="!rows.length" class="empty-state"><component :is="icon" :size="36" /><h2>暂无{{ meta.item }}</h2><p>使用右上角按钮创建第一条清晰、可追踪的配置。</p><button v-if="canCreate" class="primary-button" @click="openCreate"><Plus :size="17" />新建{{ meta.item }}</button></div><div v-else class="data-table-scroll"><table class="data-table model-table"><thead><tr><th>{{ meta.item }}</th><th>状态</th><th>配置摘要</th><th>更新时间</th><th class="action-column">操作</th></tr></thead><tbody><tr v-for="item in rows" :key="item.id"><td><div class="entity-cell"><span class="entity-avatar"><component :is="icon" :size="18" /></span><div><strong>{{ title(item) }}</strong><span>{{ subtitle(item) }}</span><small>{{ item.id }}</small><span v-if="item.isSystem" class="soft-tag system-tag">系统内置</span></div></div></td><td><StatusBadge :status="item.status" /></td><td><template v-if="section === 'providers'">{{ item.keyCount || 0 }} 个 Key · {{ item.modelCount || 0 }} 个模型</template><template v-else>{{ pricingSummary(item) }}</template></td><td><span class="date-cell">{{ item.updatedAt ? new Date(item.updatedAt).toLocaleString('zh-CN') : '—' }}</span></td><td class="action-column"><div class="row-actions"><button v-if="canEditRow(item)" class="text-button" @click="openEdit(item)">编辑</button><button v-if="canEditRow(item) && item.status !== 'disabled'" class="text-button" @click="disable(item)">停用</button><button v-if="canEditRow(item) && item.status === 'disabled'" class="text-button" @click="enable(item)">启用</button><button v-if="canEditRow(item)" class="icon-danger" title="永久删除" @click="remove(item)"><Trash2 :size="16" /></button></div></td></tr></tbody></table></div></div>
+  <ModelServiceDrawer :open="drawerOpen" :section="section" :form="form" :providers="formProviders" :models="store.models" :saving="saving" :testing="testing" :error-message="errorMessage" @close="close" @save="save" @test="testConnection" />
   <KeyVoicesDrawer :open="Boolean(voiceKey)" :model-key="voiceKey" @close="voiceKey = null" />
   <KeyUsageDrawer :open="usageOpen" :usage="usageKey" :loading="usageLoading" :error-message="usageError" :rows="usageRows" :pagination="usagePagination" @close="closeUsage" @update:page="setUsagePage" @update:page-size="setUsagePageSize" />
 </section></template>

@@ -1,38 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-
-import { resolveEffectiveCapabilities, validateChildCapabilities } from './organizations.mjs'
-
-test('child capabilities can only shrink transferable parent authorization', () => {
-  const parent = [
-    { key: 'projects.manage', enabled: true, transferable: true, limitValue: 10 },
-    { key: 'deployment.local', enabled: true, transferable: false, limitValue: 0 },
-  ]
-  assert.deepEqual(validateChildCapabilities(parent, [{ key: 'projects.manage', limitValue: 4 }]), [
-    { key: 'projects.manage', limitValue: 4, config: {} },
-  ])
-  assert.throws(() => validateChildCapabilities(parent, ['deployment.local']), /不可转授/)
-  assert.throws(() => validateChildCapabilities(parent, [{ key: 'projects.manage', limitValue: 11 }]), /不能超过/)
+import { resolveEffectiveCapabilities, buildOrganizationContext, assertCanManageOrganization } from './organizations.mjs'
+test('effective staff capabilities intersect local grants and center package, excluding retired delegation', () => {
+  const own = ['projects.manage','payments.manage','organizations.children.manage'].map(key => ({ key, enabled: true }))
+  assert.deepEqual(resolveEffectiveCapabilities(own, [{ key:'projects.manage',enabled:true }]).map(c => c.key), ['projects.manage'])
+  assert.deepEqual(resolveEffectiveCapabilities([{ key:'*',enabled:true }], own).map(c => c.key), ['projects.manage','payments.manage'])
 })
-
-test('effective child capabilities are intersected with current parent capabilities', () => {
-  const result = resolveEffectiveCapabilities(
-    [
-      { key: 'projects.manage', enabled: true, transferable: false, limitValue: 8 },
-      { key: 'payments.manage', enabled: true, transferable: false, limitValue: 0 },
-    ],
-    [{ key: 'projects.manage', enabled: true, transferable: true, limitValue: 5 }],
-  )
-  assert.deepEqual(result.map((item) => [item.key, item.limitValue]), [['projects.manage', 5]])
+test('staff stay in their own deployment scope and cannot inherit platform scope', async () => {
+  const repository = { findOrganizationContextForUser: async () => ({ organization: { id:'own',agentLevel:1,status:'enabled',legacyOwnerUserId:'owner' }, member: { status:'enabled',dataScope:'subtree',isOwner:false,roleTemplateId:'finance' } }), listOrganizationCapabilities: async () => [{ key:'payments.manage', enabled:true }] }
+  const context = await buildOrganizationContext({ id:'staff' }, repository)
+  assert.equal(context.dataScope,'self'); assert.equal(context.legacyOwnerUserId,'owner'); assert.deepEqual(context.accessibleOrganizationIds,['own'])
+  assert.throws(() => assertCanManageOrganization(context,{ id:'other' }), /无权/)
+  assert.doesNotThrow(() => assertCanManageOrganization(context,{ id:'own' }))
 })
-
-test('explicit child grants cannot be widened without an explicit wildcard', () => {
-  const result = resolveEffectiveCapabilities(
-    [{ key: 'projects.manage', enabled: true, transferable: false, limitValue: 0 }],
-    [
-      { key: 'projects.manage', enabled: true, transferable: true, limitValue: 0 },
-      { key: 'payments.manage', enabled: true, transferable: true, limitValue: 0 },
-    ],
-  )
-  assert.deepEqual(result.map((item) => item.key), ['projects.manage'])
+test('unexpected second-level records block activation of an organization context', async () => {
+  const repository = { findOrganizationContextForUser: async () => ({ organization: { agentLevel:2 }, member:{} }) }
+  await assert.rejects(buildOrganizationContext({ id:'u' }, repository), { code:'SECOND_LEVEL_DATA_FOUND' })
 })

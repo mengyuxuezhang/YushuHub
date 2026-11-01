@@ -1,3 +1,4 @@
+import AuthorizationView from '@/views/organizations/AuthorizationView.vue';
 import { createRouter, createWebHistory } from "vue-router";
 
 import { useAuthStore } from "@/stores/auth";
@@ -52,7 +53,7 @@ export const router = createRouter({
           path: item.path.slice(1),
           name: item.path.slice(1).replaceAll("/", "-"),
           component:
-            item.path === "/user-usage" ? UserUsageView : item.path === "/markets/agents"
+            item.path === "/authorization" ? AuthorizationView : item.path === "/user-usage" ? UserUsageView : item.path === "/markets/agents"
               ? AgentMarketView
               : ["/markets/skills", "/markets/mcps"].includes(item.path)
                 ? CatalogMarketView

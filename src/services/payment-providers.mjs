@@ -193,6 +193,7 @@ async function wechatRequest(config, method, requestPath, body = null) {
   let response
   try {
     response = await fetch(`${WECHAT_API_BASE}${requestPath}`, {
+      redirect: 'error',
       method,
       headers: {
         Accept: 'application/json',
@@ -371,6 +372,7 @@ async function alipayRequest(config, method, bizContent, extra = {}) {
   try {
     response = await fetch(alipayGateway(config), {
       method: 'POST',
+      redirect: 'error',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8', Accept: 'application/json' },
       body: new URLSearchParams(params).toString(),
       signal: timeout.signal,
@@ -395,6 +397,7 @@ async function alipayRequest(config, method, bizContent, extra = {}) {
   if (!signatureValid) {
     throw new PaymentProviderError('支付宝响应验签失败', { provider: 'alipay', code: 'SIGNATURE_INVALID', status: response.status })
   }
+  if (!response.ok) throw new PaymentProviderError('支付宝HTTP请求未成功，须按原编号核对结果', { provider: 'alipay', code: `HTTP_${response.status}`, status: response.status })
   return { data, payload, raw }
 }
 

@@ -14,9 +14,9 @@ export function useSupplierLicense() {
     if (loading.value) return
     loading.value = true
     try {
-      const previous = license.value?.status
+      const previous = license.value && JSON.stringify([license.value.status, license.value.version, license.value.modelMode])
       license.value = await getSupplierLicense(force); error.value = ''
-      if (previous && previous !== license.value.status) await auth.initialize(true).catch(() => {})
+      if (previous && previous !== JSON.stringify([license.value.status, license.value.version, license.value.modelMode])) await auth.initialize(true).catch(() => {})
     }
     catch (failure) { error.value = toUserMessage(failure) }
     finally { loading.value = false; now.value = Date.now() }

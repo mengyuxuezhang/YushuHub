@@ -310,6 +310,7 @@ export function registerClientApiRoutes(app, deps) {
       }))
       const upstream = await fetch(upstreamUrl, {
         method: 'POST',
+        redirect: 'error',
         headers: {
           authorization: `Bearer ${context.key.apiKey}`,
           'content-type': 'application/json',
@@ -526,6 +527,7 @@ export function registerClientApiRoutes(app, deps) {
       const timer = setTimeout(() => controller.abort(), Math.max(10000, Number(context.provider.timeoutMs || 30000)))
       const upstream = await fetch(upstreamUrl, {
         method: 'POST',
+        redirect: 'error',
         headers: {
           authorization: `Bearer ${context.key.apiKey}`,
           'content-type': 'application/json',

@@ -1,3 +1,4 @@
+import { assertProviderWrite, OKPA_TEXT_PROVIDER_ID, isFixedText } from '../services/authorization/fixed-provider.mjs'
 import { deleteProviderModel } from '../services/provider-model-deletion.mjs'
 import {
   requireAuth,
@@ -39,6 +40,7 @@ export function registerModelServiceRoutes(app, deps) {
     enableModelPricingRule,
     findModelPricingRuleById,
     normalizeModelPricingRule,
+    getSupplierLicense,
     getPlatformSettings,
     previewSecret,
   } = deps
@@ -53,7 +55,7 @@ export function registerModelServiceRoutes(app, deps) {
     }
   })
 
-  app.post('/api/model-providers', requireAuth, requireModelServiceManager, requirePermission('model_providers.manage', '服务商管理'), requireModelProviderWriter, requireSupplierAbility('allowCustomApiProviders', '自定义 API 服务商'), async (req, res) => {
+  app.post('/api/model-providers', requireAuth, requireModelServiceManager, requirePermission('model_providers.manage', '服务商管理'), requireModelProviderWriter, async (req, res) => {
     try {
       res.json({ success: true, data: await saveModelProvider(req.body || {}, scopeOf(req)) })
     } catch (err) {
@@ -61,8 +63,11 @@ export function registerModelServiceRoutes(app, deps) {
     }
   })
 
-  app.delete('/api/model-providers/:id', requireAuth, requireModelServiceManager, requirePermission('model_providers.manage', '服务商管理'), requireModelProviderWriter, requireSupplierAbility('allowCustomApiProviders', '自定义 API 服务商'), async (req, res) => {
+  app.delete('/api/model-providers/:id', requireAuth, requireModelServiceManager, requirePermission('model_providers.manage', '服务商管理'), requireModelProviderWriter, async (req, res) => {
     try {
+      const license = await getSupplierLicense()
+      if (isFixedText(license) && req.params.id === OKPA_TEXT_PROVIDER_ID) throw Object.assign(new Error('官方文本连接不可删除或禁用，请启停模型'), { statusCode: 403 })
+      await assertProviderWrite(db(), license, { id: req.params.id }, scopeOf(req).organizationId)
       const provider = await findModelProviderById(req.params.id)
       if (!provider) throw new Error('服务商不存在')
       assertNotSystemImageRecord(provider.id, '该服务商')
@@ -74,8 +79,9 @@ export function registerModelServiceRoutes(app, deps) {
     }
   })
 
-  app.post('/api/model-providers/:id/enable', requireAuth, requireModelServiceManager, requirePermission('model_providers.manage', '服务商管理'), requireModelProviderWriter, requireSupplierAbility('allowCustomApiProviders', '自定义 API 服务商'), async (req, res) => {
+  app.post('/api/model-providers/:id/enable', requireAuth, requireModelServiceManager, requirePermission('model_providers.manage', '服务商管理'), requireModelProviderWriter, async (req, res) => {
     try {
+      await assertProviderWrite(db(), await getSupplierLicense(), { id: req.params.id }, scopeOf(req).organizationId)
       res.json({ success: true, data: await enableModelProvider(req.params.id, scopeOf(req)) })
     } catch (err) {
       res.status(err?.statusCode || 400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
@@ -99,10 +105,13 @@ export function registerModelServiceRoutes(app, deps) {
     }
   })
 
-  app.delete('/api/model-providers/:id/delete', requireAuth, requireModelServiceManager, requirePermission('model_providers.manage', '服务商管理'), requireModelProviderWriter, requireSupplierAbility('allowCustomApiProviders', '自定义 API 服务商'), async (req, res) => {
+  app.delete('/api/model-providers/:id/delete', requireAuth, requireModelServiceManager, requirePermission('model_providers.manage', '服务商管理'), requireModelProviderWriter, async (req, res) => {
     const providerId = String(req.params.id || '').trim()
     const conn = await db().getConnection()
     try {
+      const license = await getSupplierLicense()
+      if (isFixedText(license) && providerId === OKPA_TEXT_PROVIDER_ID) throw Object.assign(new Error('官方文本连接不可删除'), { statusCode: 403 })
+      await assertProviderWrite(db(), license, { id: providerId }, scopeOf(req).organizationId)
       const provider = await findModelProviderById(providerId)
       if (!provider) throw new Error('服务商不存在')
       assertNotSystemImageRecord(provider.id, '该服务商')

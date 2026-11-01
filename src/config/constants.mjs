@@ -66,17 +66,15 @@ export const LOCAL_PERMISSION_CATALOG = [
   {
     group: '账号中心',
     permissions: [
-      { key: 'organizations.view', name: '组织主体', description: '查看当前主体、上下级代理关系和部署归属。', role: 'admin_or_agent' },
-      { key: 'organizations.children.manage', name: '下级代理管理', description: '创建、编辑、停用直属下级代理主体及其初始管理员。', role: 'admin', supplierAbility: 'allowAgentManagement' },
+      { key: 'organizations.view', name: '组织主体', description: '查看当前独立主体、员工和部署归属。', role: 'admin_or_agent' },
       { key: 'organizations.members.manage', name: '组织成员管理', description: '维护当前组织内部成员、岗位角色和数据范围。', role: 'admin' },
-      { key: 'organizations.capabilities.manage', name: '主体能力授权', description: '在上级可转授能力范围内配置直属下级代理能力。', role: 'admin' },
       { key: 'organizations.audit.view', name: '组织审计', description: '查看组织、成员和能力授权变更记录。', role: 'admin' },
       { key: 'personal_features.use', name: '个人能力预设', description: '兼容个人主体授权预设；具体功能仍由拆分后的个人能力决定。', role: 'admin_or_agent' },
       { key: 'users.manage', name: '后台账号', description: '创建、编辑、停用当前组织的管理员、运营、财务、技术和只读账号。', role: 'admin', supplierAbility: 'allowAgentManagement' },
       { key: 'user_groups.manage', name: '账号分组', description: '按组织、渠道或岗位维护后台账号分组。', role: 'admin', planned: true },
       { key: 'permissions.manage', name: '权限管理', description: '维护角色、账号分组和权限点的授权关系。', role: 'admin', planned: true },
-      { key: 'authorization.view', name: '授权状态', description: '查看官方构建中心授予当前供应商的能力边界。', role: 'admin' },
-      { key: 'center_suppliers.manage', name: '供应商接入', description: '在官方总后台签发和管理供应商接入凭据。', role: 'admin', supplierAbility: 'allowSupplierManagement', officialCenterOnly: true },
+      { key: 'authorization.view', name: '授权状态', description: '查看独立授权中心授予当前经营主体的能力边界。', role: 'admin' },
+      { key: 'center_suppliers.manage', name: '供应商接入', description: '只读查看官方构建及资源业务接入记录；授权由独立中心签发。', role: 'admin', supplierAbility: 'allowSupplierManagement', officialCenterOnly: true },
     ],
   },
   {
@@ -130,9 +128,7 @@ export const DEFAULT_ROLE_TEMPLATES = [
     sortOrder: 10,
     permissionKeys: [
       'organizations.view',
-      'organizations.children.manage',
       'organizations.members.manage',
-      'organizations.capabilities.manage',
       'organizations.audit.view',
       'personal_features.use',
       'users.manage',

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { setPool } from '../db/pool.mjs'
 import { registerModelServiceRoutes } from './model-service.mjs'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -27,7 +28,9 @@ function responseRecorder() {
 test('model service enable endpoints update a single record by id', async () => {
   const { app, routes } = captureRoutes()
   const called = { provider: null, model: null, pricing: null }
+  setPool({})
   registerModelServiceRoutes(app, {
+    getSupplierLicense: async () => ({ source: 'license-center', modelMode: 'custom' }),
     enableModelProvider: async (id) => { called.provider = id; return { id, status: 'enabled' } },
     enableProviderModel: async (id) => { called.model = id; return { id, status: 'enabled' } },
     enableModelPricingRule: async (id) => { called.pricing = id; return { id, status: 'enabled' } },

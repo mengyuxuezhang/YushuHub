@@ -15,7 +15,7 @@ test('enterprise product routes, permissions and modules remain retired', () => 
 })
 
 test('organization creation and project editing do not expose business modes', () => {
-  const organizationDrawer = source('web-admin/src/components/organizations/OrganizationDrawer.vue')
+  const organizationDrawer = source('web-admin/src/views/organizations/OrganizationsView.vue')
   const projectDrawer = source('web-admin/src/components/delivery/ProjectDrawer.vue')
   assert.doesNotMatch(organizationDrawer, /businessMode|业务模式|企业主体/)
   assert.doesNotMatch(projectDrawer, /企业客户端|clientMode/)

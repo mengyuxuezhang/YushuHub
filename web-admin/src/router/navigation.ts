@@ -153,7 +153,7 @@ export const navigationSections: NavigationSection[] = [
       {
         path: "/center-suppliers",
         title: "供应商接入",
-        subtitle: "一级代理授权与 Token",
+        subtitle: "官方业务接入记录",
         icon: Network,
         permissions: ["center_suppliers.manage"],
         officialCenterOnly: true,

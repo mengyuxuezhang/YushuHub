@@ -1,3 +1,4 @@
+import { useSupplierLicense } from '@/composables/organizations/useSupplierLicense'
 import { computed, onMounted, reactive, ref, watch, type Ref } from 'vue'
 import * as api from '@/api/model-service'
 import { toUserMessage } from '@/api/client'
@@ -32,6 +33,7 @@ export function modelSearchValues(section: ModelSection, item: any, field: strin
 
 export function useModelServicePage(section: Ref<ModelSection>) {
   const store = useModelServiceStore(), feedback = useFeedbackStore(), auth = useAuthStore()
+  const { license } = useSupplierLicense()
   const search = ref(''), searchField = ref('all'), appliedSearch = ref(''), appliedSearchField = ref('all'), status = ref('all'), provider = ref('all'), typeFilter = ref('all'), saving = ref(false), testing = ref(false), drawerOpen = ref(false), errorMessage = ref('')
   const keyProviderInitialized = ref(false)
   const modelProviderInitialized = ref(false)
@@ -71,7 +73,7 @@ export function useModelServicePage(section: Ref<ModelSection>) {
       modelProviderInitialized.value = true
     }
   }
-  const canWrite = computed(() => section.value !== 'providers' || auth.user?.role !== 'agent')
+  const canWrite = computed(() => auth.can({ providers: 'model_providers.manage', keys: 'model_keys.manage', catalog: 'provider_models.manage', pricing: 'pricing_rules.manage' }[section.value]) && (section.value !== 'providers' || license.value?.source === 'license-center' || auth.user?.role !== 'agent'))
   const rows = computed<any[]>(() => {
     const keyword = appliedSearch.value.toLowerCase()
     const candidates = section.value === 'keys'

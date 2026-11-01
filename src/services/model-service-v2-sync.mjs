@@ -42,7 +42,7 @@ export class ModelServiceV2Sync {
     return { ...packet, revision: digest(packet) }
   }
 
-  async apply(packet) {
+  async apply(packet, { cleanupModelIds } = {}) {
     if (!packet || Number(packet.schemaVersion) !== 2 || !Array.isArray(packet.capabilities) || !Array.isArray(packet.pricingPlans)) throw new Error('模型服务 V2 数据包无效')
     const expectedRevision = digest({ schemaVersion: 2, capabilities: packet.capabilities, pricingPlans: packet.pricingPlans })
     if (packet.revision && packet.revision !== expectedRevision) throw new Error('模型服务 V2 数据包校验失败')
@@ -94,7 +94,9 @@ export class ModelServiceV2Sync {
           component.minimumUnits, component.rounding, JSON.stringify(component.dimensions), component.costAmount, component.costCurrency, component.salePoints,
           JSON.stringify(source.components?.[index]?.metadata || {}), component.status, Number(source.components?.[index]?.sortOrder ?? index * 10)])
       }
-      if (incomingPlanIds.length) await connection.query("UPDATE ai_model_pricing_plans SET status='disabled' WHERE sync_source='center' AND id NOT IN (?)", [incomingPlanIds])
+      if (cleanupModelIds !== undefined) {
+        if (cleanupModelIds.length) await connection.query("UPDATE ai_model_pricing_plans SET status='disabled' WHERE sync_source='center' AND provider_model_id IN (?)" + (incomingPlanIds.length ? ' AND id NOT IN (?)' : ''), incomingPlanIds.length ? [cleanupModelIds, incomingPlanIds] : [cleanupModelIds])
+      } else if (incomingPlanIds.length) await connection.query("UPDATE ai_model_pricing_plans SET status='disabled' WHERE sync_source='center' AND id NOT IN (?)", [incomingPlanIds])
       else await connection.query("UPDATE ai_model_pricing_plans SET status='disabled' WHERE sync_source='center'")
       await connection.commit()
       return { schemaVersion: 2, revision: String(packet.revision || expectedRevision), capabilities: capabilities.length, pricingPlans: plans.length }

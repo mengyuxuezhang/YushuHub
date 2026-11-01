@@ -139,24 +139,8 @@ async function seedOrganizationCompatibility({ centerMode = false, supplierId = 
       if (existingMember) continue
     }
     let organizationId = rootId
-    let dataScope = centerMode ? 'platform' : 'subtree'
+    let dataScope = centerMode ? 'platform' : 'self'
     let isOwner = userId === 'admin' ? 1 : 0
-    if (user.role === 'agent') {
-      organizationId = `agent-${crypto.createHash('sha256').update(userId).digest('hex').slice(0, 24)}`
-      dataScope = 'self'
-      isOwner = 1
-      await pool.query(
-        `INSERT INTO ai_organizations
-          (id, external_id, name, organization_type, agent_level, parent_organization_id, root_organization_id,
-           business_mode, deployment_mode, runtime_owner_organization_id, legacy_owner_user_id, status, created_by_user_id)
-          SELECT ?, ?, display_name, 'agent', 2, ?, ?, 'personal', 'inherited', ?, id, status, 'admin'
-         FROM ai_users WHERE id=?
-         ON DUPLICATE KEY UPDATE name=VALUES(name), parent_organization_id=VALUES(parent_organization_id),
-           root_organization_id=VALUES(root_organization_id), runtime_owner_organization_id=VALUES(runtime_owner_organization_id),
-           legacy_owner_user_id=VALUES(legacy_owner_user_id), status=VALUES(status)`,
-        [organizationId, organizationId, rootId, rootId, rootId, userId],
-      )
-    }
     await pool.query(
       `INSERT INTO ai_organization_members
         (organization_id, user_id, role_template_id, data_scope, status, is_owner, created_by)
@@ -173,33 +157,9 @@ async function seedOrganizationCompatibility({ centerMode = false, supplierId = 
       `INSERT IGNORE INTO ai_organization_capabilities
         (organization_id, capability_key, enabled, transferable, limit_value, granted_by_organization_id, granted_by_user_id)
        VALUES (?, ?, 1, ?, 0, ?, 'system-migration')`,
-      [rootId, key, key === '*' ? 0 : 1, rootId],
+      [rootId, key, 0, rootId],
     )
   }
-  const [childOrganizations] = await pool.query(
-    `SELECT id FROM ai_organizations
-     WHERE parent_organization_id=? AND (id LIKE 'agent-%' OR created_by_user_id='system-migration')`,
-    [rootId],
-  )
-  for (const child of childOrganizations) {
-    await pool.query(
-      `INSERT IGNORE INTO ai_organization_capabilities
-        (organization_id, capability_key, enabled, transferable, limit_value, granted_by_organization_id, granted_by_user_id)
-       VALUES (?, '*', 1, 0, 0, ?, 'system-migration')`,
-      [child.id, rootId],
-    )
-  }
-  await pool.query(
-    `DELETE c FROM ai_organization_capabilities c
-     JOIN ai_organizations o ON o.id=c.organization_id
-     WHERE o.agent_level=2 AND o.id NOT LIKE 'agent-%' AND o.created_by_user_id<>'system-migration'
-       AND c.capability_key='*'`,
-  )
-  await pool.query(
-    `UPDATE ai_organization_members m JOIN ai_organizations o ON o.id=m.organization_id
-     SET m.data_scope='self'
-     WHERE o.agent_level=2 AND m.is_owner=1 AND m.data_scope<>'self'`,
-  )
   if (centerMode) {
     const [suppliers] = await pool.query('SELECT id, name, status, business_mode, authorization_version, expires_at FROM ai_center_suppliers')
     for (const supplier of suppliers) {
@@ -361,6 +321,11 @@ export async function initDatabase(options = {}) {
     namedPlaceholders: true,
     enableKeepAlive: true,
   })
+  const [[existingOrganizations]] = await pool.query('SELECT COUNT(*) n FROM information_schema.TABLES WHERE TABLE_SCHEMA=? AND TABLE_NAME=?', [DB_NAME, 'ai_organizations'])
+  if (Number(existingOrganizations.n)) {
+    const [[secondLevel]] = await pool.query('SELECT COUNT(*) n FROM ai_organizations WHERE agent_level=2')
+    if (Number(secondLevel.n)) { await pool.end(); throw Object.assign(new Error('检测到二级代理数据，升级已停止；请核对数据，不会自动转换或删除'), { code: 'SECOND_LEVEL_DATA_FOUND' }) }
+  }
   if (typeof setPool === 'function') setPool(pool)
 
   await pool.query(`
@@ -384,7 +349,7 @@ export async function initDatabase(options = {}) {
       external_id VARCHAR(80) NOT NULL DEFAULT '',
       name VARCHAR(120) NOT NULL,
       organization_type ENUM('platform','agent') NOT NULL DEFAULT 'agent',
-      agent_level TINYINT UNSIGNED NOT NULL DEFAULT 2,
+      agent_level TINYINT UNSIGNED NOT NULL DEFAULT 1,
       parent_organization_id VARCHAR(64) NULL,
       root_organization_id VARCHAR(64) NOT NULL,
       business_mode ENUM('enterprise','personal','hybrid') NOT NULL DEFAULT 'personal',
