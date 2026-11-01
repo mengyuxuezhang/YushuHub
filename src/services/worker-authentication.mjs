@@ -5,6 +5,20 @@ export function validWorkerId(value) {
   return typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{1,119}$/.test(value)
 }
 
+// Scheduling and authentication must consume the same operator-owned registry.
+// Callers decide how to fail closed; no request field selects this file.
+export function readWorkerIdentities(identitiesFile, filesystem = fs) {
+  const bytes = filesystem.readFileSync(identitiesFile)
+  if (bytes.length > 64 * 1024) throw new Error('INVALID_WORKER_IDENTITIES')
+  const config = JSON.parse(bytes.toString('utf8'))
+  if (config?.version !== 1 || !config.workers || Array.isArray(config.workers)
+    || typeof config.workers !== 'object') throw new Error('INVALID_WORKER_IDENTITIES')
+  const entries = Object.entries(config.workers)
+  if (entries.length > 100 || entries.some(([id, hash]) => !validWorkerId(id)
+    || typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash))) throw new Error('INVALID_WORKER_IDENTITIES')
+  return config.workers
+}
+
 export function authenticateWorkerRequest(req, { identitiesFile = '', legacyToken = '', legacyWorkerIds = [], filesystem = fs } = {}) {
   const header = String(req.headers?.authorization || '')
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
@@ -20,14 +34,7 @@ export function authenticateWorkerRequest(req, { identitiesFile = '', legacyToke
     // Re-read on every request: revocation takes effect without restarting a busy
     // build center. Invalid/missing files fail closed, never fall back to legacy.
     try {
-      const bytes = filesystem.readFileSync(identitiesFile)
-      if (bytes.length > 64 * 1024) return null
-      const config = JSON.parse(bytes.toString('utf8'))
-      if (config?.version !== 1 || !config.workers || Array.isArray(config.workers)
-        || typeof config.workers !== 'object') return null
-      const entries = Object.entries(config.workers)
-      if (entries.length > 100 || entries.some(([id, hash]) => !validWorkerId(id)
-        || typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash))) return null
+      const entries = Object.entries(readWorkerIdentities(identitiesFile, filesystem))
       const id = entries.find(([, hash]) => matches(hash))?.[0]
       // One credential must never represent two identities.
       if (id && entries.filter(([, hash]) => matches(hash)).length === 1 && id === submitted[0]) return id

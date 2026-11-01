@@ -1,21 +1,49 @@
+import { readWorkerIdentities, validWorkerId } from './worker-authentication.mjs'
+
 const MANAGED_WORKER_IDS = ['zj-xx001-windows-v1', 'local-windows-v3']
 const DEFAULT_WORKER_PRIORITY = [...MANAGED_WORKER_IDS]
 
-export function isManagedWorkerId(workerId) {
-  return MANAGED_WORKER_IDS.includes(String(workerId || '').trim())
+export function configuredManagedWorkerIds({ identitiesFile = process.env.AI_WORKER_IDENTITIES_FILE || '',
+  legacyWorkerIds = String(process.env.AI_WORKER_LEGACY_IDS || '').split(','), filesystem } = {}) {
+  if (identitiesFile) {
+    try {
+      const entries = Object.entries(readWorkerIdentities(identitiesFile, filesystem))
+      return entries.filter(([, hash]) => entries.filter(([, other]) => other === hash).length === 1).map(([id]) => id)
+    } catch { return [] }
+  }
+  const legacy = [...new Set(legacyWorkerIds.map(id => String(id).trim()).filter(validWorkerId))]
+  return legacy.length ? legacy : [...MANAGED_WORKER_IDS]
 }
 
-export function filterManagedWorkers(workers) {
-  return (Array.isArray(workers) ? workers : []).filter((worker) => isManagedWorkerId(worker?.id))
+export function isManagedWorkerId(workerId, options) {
+  return configuredManagedWorkerIds(options).includes(String(workerId || '').trim())
 }
 
-export function parseWorkerPriority(value = '') {
+export function filterManagedWorkers(workers, options) {
+  const allowed = new Set(configuredManagedWorkerIds(options))
+  return (Array.isArray(workers) ? workers : []).filter(worker => allowed.has(worker?.id))
+}
+
+// The authenticated center owns its worker registry. Downstream deployments
+// must not apply their unrelated local registry to that center's response.
+export function filterRemoteWorkers(workers) {
+  const seen = new Set()
+  return (Array.isArray(workers) ? workers : []).filter(worker => {
+    if (!validWorkerId(worker?.id) || seen.has(worker.id)) return false
+    seen.add(worker.id)
+    return true
+  }).slice(0, 100)
+}
+
+export function parseWorkerPriority(value = '', options) {
+  const registered = configuredManagedWorkerIds(options)
   const configured = String(value || '')
     .split(',')
     .map((item) => item.trim())
-    .filter((item) => isManagedWorkerId(item))
+    .filter((item) => registered.includes(item))
 
-  const priority = configured.length > 0 ? configured : DEFAULT_WORKER_PRIORITY
+  const priority = configured.length > 0 ? configured
+    : [...DEFAULT_WORKER_PRIORITY.filter(id => registered.includes(id)), ...registered]
   return [...new Set(priority)]
 }
 
