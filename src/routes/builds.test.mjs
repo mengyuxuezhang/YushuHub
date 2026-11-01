@@ -200,6 +200,42 @@ test('supplier retry refreshes the center brand before requeuing an existing rem
   assert.equal(centerPayload.brand.clientApiUrl, 'https://ai.example.com')
 })
 
+test('failed artifact transfer retries localization without requeuing a successful remote build', async () => {
+  const current = { id: 'local-build', projectId: 'demo', status: 'failed', remoteBuildId: 'remote-build', transferProgress: { phase: 'staging', status: 'failed' } }
+  const requests = []
+  let patch
+  const handler = postHandler('/api/builds/:id/retry', {
+    findBuildById: async () => current,
+    findProjectById: async () => ({ id: 'demo', ownerUserId: 'owner' }),
+    getBuildCenterConfig: async () => ({ enabled: true }),
+    resetBuildForRetry: async () => assert.fail('must not reset or requeue an already completed build'),
+    buildCenterApi: async (route, body) => { requests.push({ route, body }); return [{ id: 'remote-build', status: 'succeeded' }] },
+    updateBuild: async (_id, value) => { patch = value; return { ...current, ...value } },
+  })
+  const res = responseRecorder()
+  await handler({ params: { id: current.id }, user: { id: 'owner', role: 'admin' } }, res, error => { throw error })
+  assert.equal(res.body.success, true)
+  assert.equal(patch.status, 'running')
+  assert.equal(patch.transferProgress.status, 'retrying')
+  assert.deepEqual(requests, [{ route: '/api/center/builds/status', body: { buildIds: ['remote-build'] } }])
+})
+
+test('artifact retry preserves the failed record when the remote status cannot be established', async () => {
+  let writes = 0
+  const handler = postHandler('/api/builds/:id/retry', {
+    findBuildById: async () => ({ id: 'local-build', projectId: 'demo', status: 'failed', remoteBuildId: 'remote-build', transferProgress: { phase: 'staging', status: 'failed' } }),
+    findProjectById: async () => ({ id: 'demo', ownerUserId: 'owner' }),
+    getBuildCenterConfig: async () => ({ enabled: true }),
+    buildCenterApi: async () => [],
+    resetBuildForRetry: async () => { writes++ },
+    updateBuild: async () => { writes++ },
+  })
+  let error
+  await handler({ params: { id: 'local-build' }, user: { id: 'owner', role: 'admin' } }, responseRecorder(), value => { error = value })
+  assert.match(error.message, /无法确认原官方构建状态/)
+  assert.equal(writes, 0)
+})
+
 test('center retry stores a refreshed submitted brand while preserving center identity', async () => {
   let retryPatch = null
   const current = {

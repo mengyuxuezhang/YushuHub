@@ -104,6 +104,22 @@ export function registerBuildRoutes(app, deps) {
         return
       }
       const config = await getBuildCenterConfig()
+      if (config.enabled && current.remoteBuildId && current.transferProgress?.phase === 'staging' && current.transferProgress?.status === 'failed') {
+        const remotes = await buildCenterApi('/api/center/builds/status', { buildIds: [current.remoteBuildId] }, config)
+        const remote = Array.isArray(remotes) ? remotes.find(item => item.id === current.remoteBuildId) : null
+        if (!remote || !['queued', 'running', 'succeeded', 'failed'].includes(remote.status)) throw new Error('无法确认原官方构建状态，请稍后重试')
+        if (remote.status !== 'failed') {
+          const build = await updateBuild(current.id, {
+            status: remote.status === 'succeeded' ? 'running' : remote.status,
+            error: '',
+            finishedAt: null,
+            transferProgress: { phase: 'staging', status: 'retrying', updatedAt: nowIso() },
+            log: `${current.log || ''}[admin] Retrying artifact transfer from the existing remote build\n`,
+          })
+          res.json({ success: true, data: build })
+          return
+        }
+      }
       let build = await resetBuildForRetry(req.params.id)
       if (config.enabled && current.remoteBuildId) {
         try {
