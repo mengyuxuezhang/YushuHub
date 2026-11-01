@@ -10,7 +10,7 @@
 
 ## 当前开发方案
 
-本分支实施[独立授权中心与代理直连 New API](docs/DIRECT_NEWAPI_PLAN.md)，永久取消二级代理。接手请读[实现与验收进度](docs/DIRECT_NEWAPI_STATUS.md)、[协议](docs/DIRECT_NEWAPI_PROTOCOL.md)及[配置、升级与回退手册](docs/DIRECT_NEWAPI_OPERATIONS.md)。旧供货方案保留在原开发分支，不覆盖其测试部署。当前不是正式发布版本。
+本分支实施[独立授权中心与代理直连 New API](docs/DIRECT_NEWAPI_PLAN.md)，永久取消二级代理。接手请读[实现与验收进度](docs/DIRECT_NEWAPI_STATUS.md)、[协议](docs/DIRECT_NEWAPI_PROTOCOL.md)及[配置、升级与回退手册](docs/DIRECT_NEWAPI_OPERATIONS.md)。旧供货方案源码、数据和证据归档保留，旧TEST运行服务已按负责人决定停用。当前不是正式发布版本。
 
 ## 界面预览
 
