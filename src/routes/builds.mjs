@@ -108,6 +108,7 @@ export function registerBuildRoutes(app, deps) {
         const remotes = await buildCenterApi('/api/center/builds/status', { buildIds: [current.remoteBuildId] }, config)
         const remote = Array.isArray(remotes) ? remotes.find(item => item.id === current.remoteBuildId) : null
         if (!remote || !['queued', 'running', 'succeeded', 'failed'].includes(remote.status)) throw new Error('无法确认原官方构建状态，请稍后重试')
+        if (remote.status === 'succeeded' && (!remote.publicUrl || !Array.isArray(remote.files) || remote.files.length === 0)) throw new Error('原官方构建产物已不可用，请重新提交构建任务')
         if (remote.status !== 'failed') {
           const build = await updateBuild(current.id, {
             status: remote.status === 'succeeded' ? 'running' : remote.status,

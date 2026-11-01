@@ -209,7 +209,7 @@ test('failed artifact transfer retries localization without requeuing a successf
     findProjectById: async () => ({ id: 'demo', ownerUserId: 'owner' }),
     getBuildCenterConfig: async () => ({ enabled: true }),
     resetBuildForRetry: async () => assert.fail('must not reset or requeue an already completed build'),
-    buildCenterApi: async (route, body) => { requests.push({ route, body }); return [{ id: 'remote-build', status: 'succeeded' }] },
+    buildCenterApi: async (route, body) => { requests.push({ route, body }); return [{ id: 'remote-build', status: 'succeeded', publicUrl: 'https://build.example.test/staging/', files: ['desktop.exe', 'latest.yml'] }] },
     updateBuild: async (_id, value) => { patch = value; return { ...current, ...value } },
   })
   const res = responseRecorder()
@@ -233,6 +233,22 @@ test('artifact retry preserves the failed record when the remote status cannot b
   let error
   await handler({ params: { id: 'local-build' }, user: { id: 'owner', role: 'admin' } }, responseRecorder(), value => { error = value })
   assert.match(error.message, /无法确认原官方构建状态/)
+  assert.equal(writes, 0)
+})
+
+test('artifact retry does not report success after the official artifacts were already removed', async () => {
+  let writes = 0
+  const handler = postHandler('/api/builds/:id/retry', {
+    findBuildById: async () => ({ id: 'local-build', projectId: 'demo', status: 'failed', remoteBuildId: 'remote-build', transferProgress: { phase: 'staging', status: 'failed' } }),
+    findProjectById: async () => ({ id: 'demo', ownerUserId: 'owner' }),
+    getBuildCenterConfig: async () => ({ enabled: true }),
+    buildCenterApi: async () => [{ id: 'remote-build', status: 'succeeded', publicUrl: '', files: ['desktop.exe'] }],
+    resetBuildForRetry: async () => { writes++ },
+    updateBuild: async () => { writes++ },
+  })
+  let error
+  await handler({ params: { id: 'local-build' }, user: { id: 'owner', role: 'admin' } }, responseRecorder(), value => { error = value })
+  assert.match(error.message, /构建产物已不可用/)
   assert.equal(writes, 0)
 })
 
