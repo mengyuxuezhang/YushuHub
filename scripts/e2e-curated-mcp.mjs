@@ -29,6 +29,7 @@ try {
   await db.execute(`INSERT INTO ai_curated_mcp_versions (id,mcp_id,version,release_notes,min_desktop_version,config_json,config_sha256,status,published_at,created_by) VALUES (?,?,'1.0.0','P42 E2E','3.0.0-beta.13',?,?,'published',CURRENT_TIMESTAMP(3),'admin')`, [versionId, mcpId, JSON.stringify(config), configSha256])
   await db.execute(`INSERT INTO ai_curated_mcp_distributions (id,mcp_id,owner_user_id,enabled,selected_version_id,delivery_policy,version_policy,status,configured_by) VALUES (?,?,'admin',1,?,'auto_install','follow_latest','available','admin')`, [distributionId, mcpId, versionId])
   await db.execute(`INSERT INTO ai_curated_mcp_audiences (id,distribution_id,audience_type,audience_id) VALUES (?,?,'all','')`, [crypto.randomUUID(), distributionId])
+  await db.execute(`INSERT INTO ai_curated_mcp_market_placements (id,curated_mcp_id,market_type,status,created_by,updated_by) VALUES (?,?,'personal','published','admin','admin')`, [crypto.randomUUID(), mcpId])
 
   const catalog = await client(`api/client/mcp-market`)
   const item = catalog.items.find((entry) => entry.id === mcpId)
@@ -46,6 +47,7 @@ try {
   for (const row of distributions) await db.execute('DELETE FROM ai_curated_mcp_audiences WHERE distribution_id=?', [row.id]).catch(() => undefined)
   await db.execute('DELETE FROM ai_curated_mcp_installations WHERE mcp_id=? OR end_user_id=?', [mcpId, userId]).catch(() => undefined)
   await db.execute('DELETE FROM ai_curated_mcp_distributions WHERE mcp_id=?', [mcpId]).catch(() => undefined)
+  await db.execute('DELETE FROM ai_curated_mcp_market_placements WHERE curated_mcp_id=?', [mcpId]).catch(() => undefined)
   await db.execute('DELETE FROM ai_curated_mcp_versions WHERE mcp_id=?', [mcpId]).catch(() => undefined)
   await db.execute('DELETE FROM ai_curated_mcps WHERE id=?', [mcpId]).catch(() => undefined)
   await db.execute('DELETE FROM ai_end_user_sessions WHERE user_id=?', [userId]).catch(() => undefined)
