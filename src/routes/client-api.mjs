@@ -1,3 +1,4 @@
+import { desktopProofHeaders } from '../services/authorization/desktop-proof.mjs'
 import { randomUUID } from 'node:crypto'
 import { requireClientAuth, getClientAuthUser } from '../middleware/auth.mjs'
 import { db } from '../db/pool.mjs'
@@ -263,6 +264,7 @@ export function registerClientApiRoutes(app, deps) {
     let proxyRequestId = ''
     let proxyStartedAt = 0
     try {
+      const proofHeaders = desktopProofHeaders(req.headers)
       const user = await findEndUserById(req.clientUser.id)
       let upstreamBody = { ...(req.body || {}) }
       const resolvedContext = await resolveModelProxyContext(upstreamBody.model, req.clientUser.id, 'text')
@@ -315,6 +317,7 @@ export function registerClientApiRoutes(app, deps) {
           authorization: `Bearer ${context.key.apiKey}`,
           'content-type': 'application/json',
           accept: req.headers.accept || 'application/json',
+          ...proofHeaders,
         },
         signal: proxyLifecycle.signal,
         body: JSON.stringify(upstreamBody),

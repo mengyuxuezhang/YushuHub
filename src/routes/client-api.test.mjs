@@ -282,3 +282,18 @@ test('image generation route maps provider failures to 502 with provider message
   assert.equal(res.payload.success, false)
   assert.equal(res.payload.error, 'upstream exploded')
 })
+
+
+test('desktop proof challenges pass through unchanged and malformed input never damages a provider Key', async (t) => {
+ const nonce = 'a'.repeat(43), hash = 'b'.repeat(64)
+ let fetched = 0, resolved = 0
+ t.mock.method(globalThis, 'fetch', async (_url, options) => {
+  fetched++; assert.equal(options.headers['x-okpa-proof-nonce'], nonce); assert.equal(options.headers['x-okpa-request-hash'], hash)
+  return Response.json({ id: 'test', choices: [], usage: { prompt_tokens: 1 }, okpa_proof: 'signed-fixture' })
+ })
+ const { chatHandler, calls } = createRouteHarness({ resolveModelProxyContext: async () => { resolved++; return { provider: { id:'provider',name:'Test',baseUrl:'https://api.example/v1' }, model:{ modelType:'text',modelId:'text' }, key:{ id:'key',apiKey:'fixture-key' }, pricingRule:{} } } })
+ const valid = createResponse(); await chatHandler({ headers:{'x-okpa-proof-nonce':nonce,'x-okpa-request-hash':hash},body:{model:'text'},clientUser:{id:'user-1'},once(){},removeListener(){} },valid)
+ assert.equal(valid.statusCode,200); assert.equal(JSON.parse(valid.payload).okpa_proof,'signed-fixture');assert.equal(calls.deduct,1)
+ const invalid = createResponse();await chatHandler({headers:{'x-okpa-proof-nonce':'invalid'},body:{model:'text'},clientUser:{id:'user-1'}},invalid)
+ assert.equal(invalid.statusCode,400);assert.equal(fetched,1);assert.equal(resolved,1);assert.equal(calls.failure,0)
+})
