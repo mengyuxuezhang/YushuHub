@@ -10,6 +10,7 @@ import mysql from 'mysql2/promise'
 import AdmZip from 'adm-zip'
 import { ModelServiceV2Sync } from '../src/services/model-service-v2-sync.mjs'
 import { ModelCredentialVault } from '../src/services/model-credentials.mjs'
+import { migrateLegacyIndependentAgents } from '../src/services/authorization/legacy-independent-agents.mjs'
 
 // Integration tests load the independently maintained center, never a bundled signing server.
 const centerRoot = path.resolve(process.env.AI_LICENSE_CENTER_SOURCE || fileURLToPath(new URL('../../YushuLicenseCenter/', import.meta.url)))
@@ -183,6 +184,18 @@ try {
   const [[retainedSecond]]=await business.query("SELECT agent_level FROM ai_organizations WHERE id='unexpected-second'");assert.equal(Number(retainedSecond.agent_level),2)
   const rejectedReport=spawnSync(process.execPath,['scripts/authorization-upgrade-inspect.mjs',inspectConfig,path.join(temporary,'rejected-report.json')],{cwd:root,encoding:'utf8',windowsHide:true});assert.notEqual(rejectedReport.status,0)
   console.log('PASS: unexpected second-level data blocks preflight and startup without conversion or deletion')
+  await business.query("INSERT INTO ai_organizations (id,external_id,name,agent_level,root_organization_id,runtime_owner_organization_id) VALUES ('test-platform','test-platform','TEST PLATFORM',0,'test-platform','test-platform')")
+  await business.query("UPDATE ai_organizations SET parent_organization_id='test-platform',root_organization_id='test-platform',deployment_mode='inherited' WHERE id='unexpected-second'")
+  const confirmedMapping = [{ id:'unexpected-second',expectedName:'TEST SECOND' }]
+  await assert.rejects(migrateLegacyIndependentAgents(business,[{id:'unexpected-second',expectedName:'wrong'}]),{code:'MAPPING_CHANGED'})
+  const identityPreview = await migrateLegacyIndependentAgents(business,confirmedMapping)
+  await assert.rejects(migrateLegacyIndependentAgents(business,confirmedMapping,{apply:true,expectedDigest:'wrong'}),{code:'PREVIEW_CHANGED'})
+  assert.equal((await migrateLegacyIndependentAgents(business,confirmedMapping,{apply:true,expectedDigest:identityPreview.previewDigest})).changed,1)
+  const repeatIdentityPreview = await migrateLegacyIndependentAgents(business,confirmedMapping)
+  assert.equal((await migrateLegacyIndependentAgents(business,confirmedMapping,{apply:true,expectedDigest:repeatIdentityPreview.previewDigest})).changed,0)
+  const [[confirmedIdentity]] = await business.query("SELECT agent_level,runtime_owner_organization_id FROM ai_organizations WHERE id='unexpected-second'")
+  assert.equal(Number(confirmedIdentity.agent_level),1);assert.equal(confirmedIdentity.runtime_owner_organization_id,'unexpected-second')
+  console.log('PASS: operator-confirmed legacy first-level mapping requires exact identity and preview, preserves IDs and is idempotent')
   console.log('PASS: real mainline upgrade, explicit legacy bridge, single-agent activation, fixed preview, encrypted key retention and independent non-text providers')
   console.log('PASS: real MySQL center MFA and isolated license/agent databases')
   console.log(`TEST artifacts: ${temporary}; mock calls=${providerCalls}, escaped=${escapedCalls}`)

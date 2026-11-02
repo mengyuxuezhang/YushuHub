@@ -47,7 +47,7 @@
     "admin:test:e2e": "npm run test:e2e --prefix web-admin",
     "pack:zip": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-zip.ps1",
     "test:user-usage": "node --test src/services/user-usage-report.test.mjs src/routes/user-usage-report.test.mjs src/repositories/user-usage-report.integration.test.mjs",
-    "test:authorization": "node --test src/services/authorization/fixed-provider.test.mjs src/services/authorization/resource-runtime.test.mjs src/services/authorization/official-services.test.mjs",
+    "test:authorization": "node --test src/services/authorization/fixed-provider.test.mjs src/services/authorization/resource-runtime.test.mjs src/services/authorization/official-services.test.mjs src/middleware/official-legacy-auth.test.mjs",
     "test:direct-newapi:e2e": "node scripts/e2e-direct-newapi.mjs"
   },
   "dependencies": {

@@ -182,12 +182,16 @@ export function requireWorkerAuth(req, res, next) {
 
 export async function requireCenterAuth(req, res, next) {
   try {
-    if (deps.authorizeOfficial) return await deps.authorizeOfficial(req, res, next)
-    const supplierId = safeCenterId(req.body?.supplierId || req.query?.supplierId || req.headers['x-supplier-id'] || '', '供应商 ID')
     const header = String(req.headers.authorization || '')
     const token = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
+    const submittedId = String(req.body?.supplierId || req.query?.supplierId || req.headers['x-supplier-id'] || '')
+    // Explicit, frozen migration allowlist only. Never retry a rejected signed
+    // credential using legacy authentication or allow a central identity to downgrade.
+    const legacy = deps.authorizeOfficial && deps.legacyOfficialSupplierIds?.has(submittedId) && /^[a-f0-9]{64}$/.test(token)
+    if (deps.authorizeOfficial && !legacy) return await deps.authorizeOfficial(req, res, next)
+    const supplierId = safeCenterId(submittedId, '供应商 ID')
     const supplier = await deps.findCenterSupplierById(supplierId)
-    if (!supplier || supplier.status !== 'enabled' || !token) {
+    if (!supplier || supplier.status !== 'enabled' || !token || legacy && supplier.license_type === 'central') {
       res.status(401).json({ success: false, error: '供应商构建权限无效或已停用' })
       return
     }
