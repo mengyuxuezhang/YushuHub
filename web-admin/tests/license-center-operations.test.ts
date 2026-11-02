@@ -66,6 +66,15 @@ describe('license center operational forms', () => {
       for(const [selector,value]of [['input[autocomplete="username"]','operator'],['input[type="password"]','test-password']]){const input=host.querySelector(selector!) as HTMLInputElement;input.value=value!;input.dispatchEvent(new Event('input'))}
       host.querySelector('form')!.dispatchEvent(new Event('submit',{cancelable:true}))
       await vi.waitFor(()=>expect(host.textContent).toContain('测试代理'))
+      expect(host.querySelector('nav[aria-label="授权中心主导航"]')).not.toBeNull()
+      const search=host.querySelector('input[aria-label="搜索代理"]') as HTMLInputElement
+      search.value='不存在的代理';search.dispatchEvent(new Event('input'));await nextTick()
+      expect(host.textContent).toContain('没有符合条件的授权')
+      search.value='';search.dispatchEvent(new Event('input'));await nextTick()
+      ;[...host.querySelectorAll('button')].find(b=>b.textContent==='签发授权')!.click()
+      await vi.waitFor(()=>expect(host.querySelector<HTMLDialogElement>('dialog[aria-labelledby="issue-title"]')?.open).toBe(true))
+      ;[...host.querySelectorAll<HTMLButtonElement>('dialog button')].find(b=>b.textContent==='关闭')!.click();await nextTick()
+      expect(host.querySelector('dialog')).toBeNull()
       ;[...host.querySelectorAll('button')].find(b=>b.textContent==='管理')!.click()
       await vi.waitFor(()=>expect(host.querySelector('dialog')?.open).toBe(true))
       const dialog=host.querySelector('dialog')!,mode=dialog.querySelectorAll('select')[1]!
