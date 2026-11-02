@@ -21,6 +21,8 @@
 
 使用独立 MySQL 数据库，不能复用经营库。中心只处理授权、低频资源额度和通知，不接收模型内容、不代扣上游费用。
 
+“独立中心”当前指独立进程、入口与数据库，源码仍位于本仓库，尚未拆成私有仓库；下游完整源码不能承诺本地校验不可改写。交付脚本尚需拆分中心与代理包，具体核对及待办见[源码与信任边界](DIRECT_NEWAPI_SECURITY_BOUNDARY.md)。
+
 1. 创建独立库和最小权限数据库账号。生产签名材料、数据库密码、运营账号资料及 Webhook 放在仓库外受控目录。
 2. 在受控会话设置至少16位的 `AI_LICENSE_BOOTSTRAP_PASSWORD`，运行 `node scripts/authorization-init.mjs <受控空目录> <运营账号>`。脚本生成 Ed25519 密钥、实例凭据派生密钥和带密码哈希/TOTP 的运营文件，拒绝覆盖已有材料。把 TOTP 秘密导入可信验证器，随后清除引导密码环境变量。
 3. 在受控环境文件配置下表，执行 `node --env-file=<受控环境文件> cloud/license-center/server.mjs --migrate`，再用相同环境启动 `cloud/license-center/server.mjs`。环境文件不提交 Git。
