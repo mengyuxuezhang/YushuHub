@@ -9,6 +9,11 @@ button:focus-visible, summary:focus-visible { outline: 3px solid #a5b4fc; outlin
 .license-workspace .page-container { max-width: 1800px; margin: auto; }
 .license-workspace .page-heading { align-items: center; }
 .license-workspace .page-heading > button { flex: none; white-space: nowrap; }
+.license-workspace button.text-button.danger { color: #dc2626; }
+.grant-dialog button.danger-button { color: #fff; background: #dc2626; border-color: #dc2626; }
+.package-delete-dialog { width: min(520px,calc(100vw - 40px)); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.package-editor.list-card .table-scroll { margin: 0; }
 .license-workspace .page-heading h1 { font-size: 28px; }
 .license-workspace p { color: var(--muted); line-height: 1.7; }
 .license-workspace .page-container h2 { margin: 0 0 9px; font-size: 18px; }

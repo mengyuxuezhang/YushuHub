@@ -1,8 +1,5 @@
 import type { CapabilityGroup, LicensePackage, Quota } from './types'
 
-export function nextPackageVersion(packages: LicensePackage[], id: string) {
-  return Math.max(0, ...packages.filter(p => p.id === id).map(p => p.version)) + 1
-}
 export function packageDraft(source: LicensePackage) {
   return { name: source.name, projects: { ...source.quotas.projects }, builds: { ...source.quotas.builds }, enabled: source.capabilities.filter(c => c.enabled).map(c => c.key) }
 }

@@ -1,6 +1,8 @@
 import crypto from 'node:crypto'
+import { createPackage, updatePackage, deletePackage, latestPackage, currentPackages } from './package-management.mjs'
+import { presentAudit } from './audit-presentation.mjs'
 import { parseSupplierExpiresAt } from '../supplier-license-contract.mjs'
-import { CAPABILITY_GROUPS, DEFAULT_PACKAGES, validatePackage } from './packages.mjs'
+import { CAPABILITY_GROUPS, DEFAULT_PACKAGES } from './packages.mjs'
 import { HOUR, digest, domain, equal, failure, identifier, secret, signClaims, verifyClaims } from './protocol.mjs'
 
 export const emptyCenterState = () => ({ packages: Object.fromEntries(DEFAULT_PACKAGES.map(p => [`${p.id}:${p.version}`, p])), grants: {}, codes: {}, credentials: {}, audit: [], resources: {}, notices: {}, sessions: {}, otpCounters: {} })
@@ -47,8 +49,9 @@ export function createLicenseCenter({ store, privateKey, publicKeys, keyId, cred
     if (patch.expiresAt !== undefined) grant.expiresAt = expiry(patch.expiresAt)
     if (patch.modelMode !== undefined) grant.modelMode = mode(patch.modelMode)
     if (patch.packageId !== undefined) {
-      const pkg = state.packages[`${identifier(patch.packageId)}:${patch.packageVersion}`]
-      if (!pkg) throw failure('INVALID_PACKAGE', '套餐版本不存在')
+      const pkg = latestPackage(state, identifier(patch.packageId))
+      if (!pkg) throw failure('INVALID_PACKAGE', '套餐不存在或已删除')
+      if (patch.packageVersion !== undefined && patch.packageVersion !== pkg.version) throw failure('PACKAGE_CHANGED', '套餐已变化，请刷新后重试', 409)
       Object.assign(grant, { packageId: pkg.id, packageVersion: pkg.version, capabilities: structuredClone(pkg.capabilities), quotas: structuredClone(pkg.quotas) })
     }
     grant.version++
@@ -62,10 +65,13 @@ export function createLicenseCenter({ store, privateKey, publicKeys, keyId, cred
     return { ...claims, grant: publicGrant(grant), root: publicGrant(grant) }
   }
   return {
-    async list() { const state = await store.read(); return { capabilityGroups: CAPABILITY_GROUPS, grants: Object.values(state.grants).map(g => ({ ...publicGrant(g), usage: Object.fromEntries(['projects', 'builds'].map(k => [k, usage(state, g, k)])) })), packages: Object.values(state.packages), audit: state.audit.slice(-200).reverse(), notices: Object.values(state.notices).slice(-200).reverse() } },
-    async publishPackage(input, actor) { const pkg = validatePackage(input); return store.transaction(state => { const key = `${pkg.id}:${pkg.version}`; if (state.packages[key]) throw failure('IMMUTABLE_PACKAGE', '套餐版本不可覆盖', 409); state.packages[key] = pkg; audit(state, actor, 'package_published', key, now()); return pkg }) },
+    async list() { const state = await store.read(); return { capabilityGroups: CAPABILITY_GROUPS, grants: Object.values(state.grants).filter(g => !g.deletedAt).map(g => ({ ...publicGrant(g), usage: Object.fromEntries(['projects', 'builds'].map(k => [k, usage(state, g, k)])) })), packages: currentPackages(state), audit: state.audit.slice(-200).reverse().map(row => presentAudit(row, state)), notices: Object.values(state.notices).slice(-200).reverse().map(n => ({ ...n, grantName: state.grants[n.grantId]?.name || '历史代理' })) } },
+    publishPackage(input, actor) { return store.transaction(state => createPackage(state, input, actor, now, audit)) },
+    updatePackage(id, input, actor) { return store.transaction(state => updatePackage(state, id, input, actor, now, audit)) },
+    deletePackage(id, input, actor) { return store.transaction(state => deletePackage(state, id, input, actor, now, audit)) },
     async issue(input, actor) { single(input); return store.transaction(state => {
-      const pkg = state.packages[`${identifier(input.packageId)}:${input.packageVersion || 1}`], id = identifier(input.id || crypto.randomUUID())
+      const pkg = latestPackage(state, identifier(input.packageId)), id = identifier(input.id || crypto.randomUUID())
+      if (pkg && input.packageVersion !== undefined && input.packageVersion !== pkg.version) throw failure('PACKAGE_CHANGED', '套餐已变化，请刷新后重试', 409)
       if (!pkg || id.length > 64 || Object.keys(state.grants).some(key => key.toLowerCase() === id.toLowerCase())) throw failure('INVALID_GRANT', '套餐不存在或授权ID重复', 409)
       const expiresAt = expiry(input.expiresAt), name = String(input.name || '').trim()
       if (!name || name.length > 120 || expiresAt && Date.parse(expiresAt) <= now()) throw failure('INVALID_GRANT', '名称或期限无效')
@@ -85,7 +91,17 @@ export function createLicenseCenter({ store, privateKey, publicKeys, keyId, cred
       audit(state, actor, 'grant_issued', id, now(), { initialUsage }); return { grant: publicGrant(grant), code }
     }) },
     preview: async (id, patch) => change(await store.read(), id, patch).impact,
-    update(id, patch, actor) { return store.transaction(state => { const { grant, impact } = change(state, id, patch); if (patch.previewDigest !== impact.previewDigest) throw failure('PREVIEW_CHANGED', '需先预览当前变更影响', 409); state.grants[id] = grant; audit(state, actor, 'grant_updated', id, now(), { version: grant.version }); return publicGrant(grant) }) },
+    update(id, patch, actor) { return store.transaction(state => { const { grant, impact } = change(state, id, patch); if (patch.previewDigest !== impact.previewDigest) throw failure('PREVIEW_CHANGED', '需先预览当前变更影响', 409); state.grants[id] = grant; audit(state, actor, 'grant_updated', id, now(), { version: grant.version, beforeStatus: impact.before.status, afterStatus: grant.status }); return publicGrant(grant) }) },
+    deleteGrant(id, input, actor) { return store.transaction(state => {
+      const grant = state.grants[identifier(id)]
+      if (!grant || grant.deletedAt) throw failure('GRANT_NOT_FOUND', '授权不存在或已删除', 404)
+      if (grant.version !== input.expectedVersion) throw failure('VERSION_CONFLICT', '授权已变化，请刷新后重试', 409)
+      Object.assign(grant, { status: 'revoked', deletedAt: now(), version: grant.version + 1 })
+      for (const code of Object.values(state.codes)) if (code.grantId === id && code.status === 'unused') code.status = 'revoked'
+      for (const notice of Object.values(state.notices)) if (notice.grantId === id && !notice.deliveredAt) notice.cancelledAt = now()
+      for (const [hash, grantId] of Object.entries(state.credentials)) if (grantId === id) delete state.credentials[hash]
+      audit(state, actor, 'grant_deleted', id, now(), { name: grant.name }); return { deleted: true }
+    }) },
     reissueCode(id, actor) { return store.transaction(state => { const grant = current(state, id, now()); if (Number.isFinite(grant.activatedAt)) throw failure('ALREADY_ACTIVATED', '已激活实例通过换机或续期处理', 409); for (const c of Object.values(state.codes)) if (c.grantId === id && c.status === 'unused') c.status = 'revoked'; const code = secret(); state.codes[digest(code)] = { grantId: id, status: 'unused', expiresAt: now() + 7 * 24 * HOUR }; audit(state, actor, 'code_reissued', id, now()); return { code } }) },
     activate(input) { single(input); const instanceId = identifier(input.instanceId), origin = domain(input.domain), requestId = identifier(input.requestId); return store.transaction(state => {
       const hash = digest(input.code || ''), code = state.codes[hash]

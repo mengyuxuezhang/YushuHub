@@ -12,16 +12,21 @@
 | POST `/operator/login` | username/password；默认totp模式加code，测试captcha模式加challengeId/captchaAnswer；成功返回30分钟会话，验证信息不可复用 |
 | POST `/operator/logout` | 撤销本次会话 |
 | GET `/operator/state` | 脱敏授权、套餐、中文能力目录capabilityGroups、使用数量、审计及通知状态；不返回实例凭据或激活码 |
-| POST `/operator/packages` | 不可变 id/version/name、capabilities、quotas |
+| POST `/operator/packages` | 创建套餐：id/name、capabilities、quotas；内部修订由服务端初始化 |
+| PATCH `/operator/packages/:id` | expectedVersion/name/capabilities/quotas，原子更新套餐及全部未撤销关联授权，保留用量 |
+| DELETE `/operator/packages/:id` | expectedVersion；仍被未撤销授权使用时409，否则从可选套餐移除，保留历史 |
 | POST `/operator/grants` | 签发独立代理；返回 grant 和一次性 code |
 | POST `/operator/grants/:id/code` | 未激活授权作废旧码重发；已激活须续期或迁移 |
 | POST `/operator/grants/:id/preview` | expectedVersion 与拟变更字段，返回影响及 previewDigest |
-| PATCH `/operator/grants/:id` | 同一变更和 previewDigest；版本冲突必须重新预览 |
+| PATCH `/operator/grants/:id` | 同一变更和 previewDigest；版本冲突必须重新预览；状态enabled/suspended用于启用/停用 |
+| DELETE `/operator/grants/:id` | expectedVersion；撤销授权及激活/实例访问，从运营列表移除，保留经营数据及审计 |
 | POST `/operator/grants/:id/rotate` | expectedVersion/instanceId/domain/overlapHours，0–24小时，返回新凭据 |
 | POST `/operator/grants/:id/migration/complete` | expectedVersion，提前撤销旧绑定 |
 | POST `/operator/reminders` | 幂等扫描提醒；后台调度负责实际发送 |
 
-签发最小字段：`name/domain/modelMode/packageId/packageVersion/expiresAt`。`modelMode` 仅 fixed/custom；功能包和模式独立。可指定稳定 id。`expiresAt` 为带时区有效 ISO 时间或 null，不能省略；状态 enabled/suspended/revoked，撤销不可恢复。不得提交二级 level 或 parentId/parentOrganizationId。
+签发最小字段：`name/domain/modelMode/packageId/expiresAt`。`modelMode` 仅 fixed/custom；功能包和模式独立。可指定稳定 id。`expiresAt` 为带时区有效 ISO 时间或 null，不能省略；状态 enabled/suspended/revoked，撤销不可恢复。不得提交二级 level 或 parentId/parentOrganizationId。
+
+state套餐列表按id仅返回当前配置及grantCount；删除的套餐和授权不在运营列表展示。version/packageVersion仅作内部签名、并发和历史字段，不向运营展示版本选择。若提交过时packageVersion或expectedVersion，返回409要求刷新。审计附eventLabel、actorLabel、targetLabel和description中文展示字段，原始事件保留。
 
 套餐能力为已知业务权限的布尔集合，不允许转授；项目和构建额度分别为 `{mode:'none'}`、`{mode:'limited',value:正整数}` 或 `{mode:'unlimited'}`。测试模板不代表正式经营套餐。
 

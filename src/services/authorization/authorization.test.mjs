@@ -51,15 +51,51 @@ test('activation is bound and idempotent, expired/reissued codes cannot create a
   await assert.rejects(expired.activate(unused.code), { code: 'INVALID_CODE' })
 })
 
-test('package versions are immutable and changes require a current preview without resetting usage', async () => {
+test('package edits atomically update subscribers, invalidate stale tokens and preserve usage and identity', async () => {
   const f = fixture(), issued = await f.issue({ initialUsage: { builds: 4 } }), active = await f.activate(issued.code), before = (await f.center.list()).packages[0]
-  await assert.rejects(f.center.publishPackage(before, 'op'), { code: 'IMMUTABLE_PACKAGE' })
-  await f.center.publishPackage({ ...before, version: 2, quotas: { ...before.quotas, builds: { mode: 'limited', value: 20 } } }, 'op')
-  await assert.rejects(f.center.update('agent-a', { expectedVersion: 1, modelMode: 'custom' }, 'op'), { code: 'PREVIEW_CHANGED' })
-  const grant = await f.update('agent-a', { expectedVersion: 1, packageId: before.id, packageVersion: 2, modelMode: 'custom', expiresAt: new Date(f.now + 30 * 24 * HOUR).toISOString() })
-  assert.equal(grant.initialUsage.builds, 4); assert.equal(grant.modelMode, 'custom')
+  const token = (await f.center.serviceToken(active.credential, 'official-build')).token
+  await assert.rejects(f.center.publishPackage(before, 'op'), { code: 'PACKAGE_EXISTS' })
+  const patch = { ...before, expectedVersion: before.version, name: '运营专业套餐', quotas: { ...before.quotas, builds: { mode: 'limited', value: 2 } } }
+  const results = await Promise.allSettled([f.center.updatePackage(before.id, patch, 'op'), f.center.updatePackage(before.id, patch, 'op')])
+  assert.equal(results.filter(r => r.status === 'fulfilled').length, 1)
+  assert.equal(results.find(r => r.status === 'rejected').reason.code, 'PACKAGE_CHANGED')
+  const state = await f.center.list(), grant = state.grants[0]
+  assert.equal(state.packages.length, 1); assert.equal(state.packages[0].grantCount, 1)
+  assert.equal(grant.usage.builds, 4); assert.equal(grant.quotas.builds.value, 2); assert.equal(grant.instanceId, 'instance-a'); assert.equal(grant.modelMode, 'fixed')
   assert.equal((await f.center.refresh(active.credential)).grants[0].version, 2)
+  await assert.rejects(f.center.introspect(token, 'official-build'), { code: 'STALE_LICENSE' })
+  await assert.rejects(f.center.resource((await f.center.serviceToken(active.credential, 'official-build')).token, {kind:'builds',resourceId:'over-limit'}), {code:'QUOTA_EXHAUSTED'})
   await assert.rejects(f.update('agent-a', { expectedVersion: 1, status: 'suspended' }), { code: 'VERSION_CONFLICT' })
+  assert.equal(state.audit.find(a=>a.event==='package_updated').description, '保存套餐配置，已同步更新1个授权；已有用量保留')
+})
+
+test('unused packages can be deleted, referenced packages require reassignment and legacy history stays readable', async () => {
+  const f=fixture(),issued=await f.issue(), source=(await f.center.list()).packages[0]
+  await assert.rejects(f.center.deletePackage(source.id,{expectedVersion:source.version},'op'),{code:'PACKAGE_IN_USE'})
+  const other=await f.center.publishPackage({...source,id:'other',version:99,name:'备用套餐'},'op');assert.equal(other.version,1)
+  await f.update(issued.grant.id,{expectedVersion:1,packageId:other.id})
+  await f.center.deletePackage(source.id,{expectedVersion:1},'op')
+  assert.deepEqual((await f.center.list()).packages.map(p=>p.id),['other'])
+  await assert.rejects(f.issue({id:'agent-c',packageId:'standard'}),{code:'INVALID_GRANT'})
+  assert.equal((await f.store.read()).packages['standard:1'].name,source.name)
+  assert.equal((await f.center.list()).audit.find(a=>a.event==='package_deleted').targetLabel,source.name)
+})
+
+test('grant pause/resume preserves credentials and deletion invalidates activation, access and package references', async () => {
+  const f=fixture(),issued=await f.issue(),active=await f.activate(issued.code)
+  await f.update('agent-a',{expectedVersion:1,status:'suspended'})
+  await assert.rejects(f.center.refresh(active.credential),{code:'LICENSE_INACTIVE'})
+  await f.update('agent-a',{expectedVersion:2,status:'enabled'})
+  assert.equal((await f.center.refresh(active.credential)).grants[0].version,3)
+  const audit=(await f.center.list()).audit;assert(audit.some(a=>a.eventLabel==='停用代理授权'));assert(audit.some(a=>a.eventLabel==='启用代理授权'))
+  await assert.rejects(f.center.deleteGrant('agent-a',{expectedVersion:2},'op'),{code:'VERSION_CONFLICT'})
+  await f.store.transaction(state=>{state.notices.pending={id:'pending',grantId:'agent-a',days:1}})
+  await f.center.deleteGrant('agent-a',{expectedVersion:3},'op')
+  assert.equal((await f.center.list()).grants.length,0);assert.equal((await f.center.list()).packages[0].grantCount,0)
+  await assert.rejects(f.center.refresh(active.credential));await assert.rejects(f.activate(issued.code));await assert.rejects(f.update('agent-a',{expectedVersion:4,status:'enabled'}),{code:'LICENSE_REVOKED'})
+  assert.equal((await f.store.read()).grants['agent-a'].instanceId,'instance-a')
+  assert.equal((await f.center.list()).notices[0].cancelledAt,f.now)
+  const unused=await f.issue({id:'unused'});await f.center.deleteGrant('unused',{expectedVersion:1},'op');await assert.rejects(f.activate(unused.code),{code:'INVALID_CODE'})
 })
 
 test('service tokens are purpose/version/instance bound and cannot authorize after revocation', async () => {
