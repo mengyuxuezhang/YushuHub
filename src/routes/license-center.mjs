@@ -2,6 +2,7 @@ export const bearer = req => String(req.headers.authorization || '').replace(/^B
 export const endpoint = operation => async (req, res, next) => { try { res.json({ success: true, data: await operation(req) }) } catch (e) { next(e) } }
 export function registerLicenseCenterRoutes(app, { center, operators }) {
   const base = '/api/license-center/v1'
+  app.get(`${base}/operator/login-challenge`, endpoint(req => operators.challenge(req.ip)))
   app.post(`${base}/operator/login`, endpoint(req => operators.login(req.body, req.ip)))
   app.use(`${base}/operator`, async (req, _res, next) => { try { req.operator = await operators.authenticate(bearer(req)); next() } catch (e) { next(e) } })
   app.post(`${base}/operator/logout`, endpoint(req => operators.logout(bearer(req))))

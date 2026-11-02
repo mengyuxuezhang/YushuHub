@@ -24,7 +24,7 @@
 1. 创建独立库和最小权限数据库账号。生产签名材料、数据库密码、运营账号资料及 Webhook 放在仓库外受控目录。
 2. 在受控会话设置至少16位的 `AI_LICENSE_BOOTSTRAP_PASSWORD`，运行 `node scripts/authorization-init.mjs <受控空目录> <运营账号>`。脚本生成 Ed25519 密钥、实例凭据派生密钥和带密码哈希/TOTP 的运营文件，拒绝覆盖已有材料。把 TOTP 秘密导入可信验证器，随后清除引导密码环境变量。
 3. 在受控环境文件配置下表，执行 `node --env-file=<受控环境文件> cloud/license-center/server.mjs --migrate`，再用相同环境启动 `cloud/license-center/server.mjs`。环境文件不提交 Git。
-4. `npm run license-center:build` 生成 `web/license-center/index.html` 及指纹资源；中心入口为 `/license-center/`。默认监听回环地址17881，通过 HTTPS 反向代理公开。运营端登录要求密码及动态验证码，会话30分钟；令牌不存入浏览器持久存储。
+4. `npm run license-center:build` 生成 `web/license-center/index.html` 及指纹资源；中心入口为 `/license-center/`。默认监听回环地址17881，通过 HTTPS 反向代理公开。运营端默认使用密码及动态验证码；隔离体验可配置图片验证码模式，会话30分钟；令牌不存入浏览器持久存储。
 
 | 环境项 | 含义 |
 | --- | --- |
@@ -33,9 +33,12 @@
 | `AI_LICENSE_PUBLIC_KEYS_FILE` | `{密钥编号: PEM公钥}` 文件 |
 | `AI_LICENSE_KEY_ID` | 本次签名密钥编号，见初始化生成文件 |
 | `AI_LICENSE_CREDENTIAL_KEY_FILE` | 实例凭据派生密钥文件，须稳定备份 |
-| `AI_LICENSE_OPERATORS_FILE` | 密码哈希和 TOTP 文件 |
+| `AI_LICENSE_OPERATORS_FILE` | 密码哈希和 TOTP 文件，切换体验模式也保留原 TOTP 材料 |
+| `AI_LICENSE_OPERATOR_LOGIN_MODE` | 默认 `totp`；测试体验设为 `captcha`，密码加一次性图片验证码；正式恢复 `totp` 后重启 |
 | `AI_LICENSE_HOST/PORT` | 默认127.0.0.1:17881 |
 | `AI_LICENSE_WEBHOOK_FILE` | 可选通知配置文件，运行时重新读取 |
+
+2026-11-02按负责人要求，当前测试中心临时使用 `captcha`。图片验证码5分钟有效，绑定请求来源，错误或成功提交后均不可复用，并保留登录/验证码获取限流。恢复动态验证只需把该环境项改为 `totp`（或删除该项）并重启中心，原运营账号和TOTP秘密保持；不同模式的旧会话会失效。前端自动读取服务端登录方式，浏览器不能自行关闭动态验证。
 
 Webhook 文件格式为 `{"enabled":true,"url":"https://example.test/webhook"}`，支持飞书文本消息协议。每分钟扫描30/7/1天提醒，错过创建窗口的不补发；失败持久重试，已确认事件不再发送。换地址只需替换受控配置文件。通知为至少一次投递，接收器可按 `Idempotency-Key` 去重；网络结果不确定时可能重复通知。管理界面可查看发送状态，不展示地址中的秘密。
 

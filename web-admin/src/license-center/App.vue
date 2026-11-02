@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 type Quota = { mode: 'none' | 'limited' | 'unlimited'; value?: number }
 type Package = { id: string; version: number; name: string; capabilities: { key: string; enabled: boolean; transferable: false; limitValue: number }[]; quotas: { projects: Quota; builds: Quota } }
 type Grant = { id: string; name: string; version: number; status: string; packageId: string; packageVersion: number; modelMode: 'custom' | 'fixed'; domain: string; instanceId: string | null; expiresAt: string | null }
 type State = { grants: Grant[]; packages: Package[]; notices: { id: string; grantId: string; days: number; expiresAt: string; deliveredAt?: number; lastError?: string }[]; audit: { id: string; event: string; actor: string; target: string; at: number }[] }
 const token = ref(''), busy = ref(false), error = ref(''), secretResult = ref(''), page = ref('grants')
-const state = ref<State>({ grants: [], packages: [], audit: [], notices: [] }), login = reactive({ username: '', password: '', code: '' })
+const state = ref<State>({ grants: [], packages: [], audit: [], notices: [] }), login = reactive({ username: '', password: '', code: '', challengeId: '', captchaAnswer: '' })
+const loginMode = ref<'' | 'totp' | 'captcha'>(''), captchaImage = ref('')
 const issue = reactive({ name: '', domain: '', modelMode: 'fixed', packageKey: 'standard:1', expiresAt: '' })
 const packageJson = ref(''), selected = ref<Grant | null>(null), change = reactive({ status: 'enabled', expiresAt: '', modelMode: 'fixed', packageKey: '', neverExpires: false })
 const impact = ref<{ previewDigest: string; before: Grant; after: Grant; usage: Record<string, number>; preservesUsage: boolean } | null>(null), pendingPatch = ref<Record<string, unknown>>({})
@@ -17,8 +18,10 @@ async function request<T>(path: string, body?: unknown, method = body === undefi
 }
 async function run(work: () => Promise<void>) { busy.value = true; error.value = ''; try { await work() } catch (e) { error.value = e instanceof Error ? e.message : '操作失败' } finally { busy.value = false } }
 async function load() { state.value = await request<State>('/state'); if (!packageJson.value && state.value.packages[0]) packageJson.value = JSON.stringify({ ...state.value.packages[0], version: state.value.packages[0].version + 1 }, null, 2) }
-async function signIn() { await run(async () => { const result = await request<{ token: string }>('/login', login); token.value = result.token; login.password = ''; login.code = ''; await load() }) }
-async function signOut() { await run(async () => { try { await request('/logout', {}) } finally { token.value = ''; secretResult.value = ''; selected.value = null } }) }
+async function refreshLoginChallenge() { const challenge = await request<{ mode: 'totp' | 'captcha'; challengeId?: string; imageDataUrl?: string }>('/login-challenge'); loginMode.value = challenge.mode; login.challengeId = challenge.challengeId || ''; login.captchaAnswer = ''; captchaImage.value = challenge.imageDataUrl || '' }
+async function signIn() { await run(async () => { try { const result = await request<{ token: string }>('/login', login); token.value = result.token; login.password = ''; login.code = ''; login.captchaAnswer = ''; await load() } finally { if (!token.value) await refreshLoginChallenge().catch(() => {}) } }) }
+async function signOut() { await run(async () => { try { await request('/logout', {}) } finally { token.value = ''; secretResult.value = ''; selected.value = null; await refreshLoginChallenge() } }) }
+onMounted(() => { void run(refreshLoginChallenge) })
 function packageInput(key: string) { const at = key.lastIndexOf(':'); return { packageId: key.slice(0, at), packageVersion: Number(key.slice(at + 1)) } }
 async function createGrant() { await run(async () => { const result = await request<{ code: string }>('/grants', { name: issue.name, domain: issue.domain, modelMode: issue.modelMode, ...packageInput(issue.packageKey), expiresAt: issue.expiresAt ? new Date(issue.expiresAt).toISOString() : null }); secretResult.value = result.code; await load() }) }
 function edit(g: Grant) { selected.value = g; impact.value = null; change.status = g.status; change.expiresAt = ''; change.neverExpires = false; change.modelMode = g.modelMode; change.packageKey = `${g.packageId}:${g.packageVersion}`; migration.domain = g.domain; migration.instanceId = ''; migration.overlapHours = 0 }
@@ -34,7 +37,7 @@ async function publishPackage() { await run(async () => { await request('/packag
   <main class="center-shell">
     <header><div><span class="eyebrow">YUSHU · LICENSE CENTER</span><h1>独立授权中心</h1><p>统一管理独立代理的资格、能力与部署。模型调用和充值由代理自己的上游账户承接。</p></div><button v-if="token" :disabled="busy" @click="signOut">退出登录</button></header>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <form v-if="!token" class="card login" @submit.prevent="signIn"><h2>运营登录</h2><label>账号<input v-model="login.username" autocomplete="username" required /></label><label>密码<input v-model="login.password" type="password" autocomplete="current-password" required /></label><label>动态验证码<input v-model="login.code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required /></label><button class="primary" :disabled="busy">登录</button><small>登录凭据只用于本次会话，不存入浏览器持久存储。</small></form>
+    <form v-if="!token" class="card login" @submit.prevent="signIn"><h2>运营登录</h2><label>账号<input v-model="login.username" autocomplete="username" required /></label><label>密码<input v-model="login.password" type="password" autocomplete="current-password" required /></label><label v-if="loginMode === 'totp'">动态验证码<input v-model="login.code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required /></label><template v-else><label>图片验证码<input v-model="login.captchaAnswer" maxlength="5" autocomplete="off" required /></label><button class="captcha-refresh" type="button" :disabled="busy" aria-label="刷新验证码" @click="run(refreshLoginChallenge)"><img v-if="captchaImage" :src="captchaImage" alt="登录图片验证码" /><span v-else>加载验证码</span></button><small>看不清？点击图片刷新</small></template><button class="primary" :disabled="busy || !loginMode">登录</button><small>登录凭据只用于本次会话，不存入浏览器持久存储。</small></form>
     <template v-else>
       <div class="stats"><article class="card"><span>代理授权</span><strong>{{ counts.total }}</strong></article><article class="card"><span>正常状态</span><strong>{{ counts.enabled }}</strong></article><article class="card"><span>固定文本模式</span><strong>{{ counts.fixed }}</strong></article></div>
       <nav><button v-for="tab in [{id:'grants',name:'代理授权'},{id:'packages',name:'套餐版本'},{id:'audit',name:'操作审计'}]" :key="tab.id" :class="{active:page===tab.id}" @click="page=tab.id">{{ tab.name }}</button><button :disabled="busy" @click="run(load)">刷新</button></nav>

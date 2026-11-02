@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import { digest, equal, failure, secret } from './protocol.mjs'
+import { createLoginProtectionService } from '../login-protection.mjs'
 
 export function passwordHash(password, salt = secret()) {
   return `${salt}:${crypto.scryptSync(password, salt, 64).toString('hex')}`
@@ -18,34 +19,45 @@ export function totp(secretValue, counter) {
   const hash = crypto.createHmac('sha1', base32(secretValue)).update(buffer).digest(), offset = hash[19] & 15
   return String((hash.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, '0')
 }
-export function createOperatorAuth({ store, operators, now = Date.now }) {
+export function createOperatorAuth({ store, operators, now = Date.now, loginMode = 'totp' }) {
+  if (!['totp', 'captcha'].includes(loginMode)) throw new Error('Operator login mode must be totp or captcha')
   if (!Array.isArray(operators) || !operators.length || operators.some(op => !op.id || !op.passwordHash || base32(op.totpSecret).length < 20)) throw new Error('Operators with password hash and MFA are required')
   const attempts = new Map()
+  const protection = createLoginProtectionService({ now })
+  const request = address => ({ ip: String(address || 'unknown') })
   return {
-    async login({ username, password, code }, address) {
+    challenge(address) { return { mode: loginMode, ...(loginMode === 'captcha' ? protection.createChallenge('license-operator', request(address)) : {}) } },
+    async login(input, address) {
+      const { username, password, code } = input || {}
       const key = String(address || 'unknown'), prior = attempts.get(key), window = prior && prior.until > now() ? prior : { count: 0, until: now() + 300_000 }
       attempts.set(key, window)
       if (++window.count > 5) throw failure('RATE_LIMITED', '登录失败过多，请5分钟后重试', 429)
+      if (loginMode === 'captcha') protection.verifyCaptcha('license-operator', input, request(address))
       const operator = operators.find(op => op.id === username)
       const [salt, hash] = String(operator?.passwordHash || passwordHash('unused')).split(':')
       const validPassword = equal(crypto.scryptSync(String(password || '').slice(0, 1024), salt, 64).toString('hex'), hash)
-      if (!operator || !validPassword || !/^\d{6}$/.test(String(code))) throw failure('LOGIN_FAILED', '账号、密码或动态口令无效', 401)
-      const counter = Math.floor(now() / 30_000), matched = [counter - 1, counter, counter + 1].find(c => equal(totp(operator.totpSecret, c), code))
-      if (matched === undefined) throw failure('LOGIN_FAILED', '账号、密码或动态口令无效', 401)
-      return store.transaction(state => {
+      const message = loginMode === 'totp' ? '账号、密码或动态口令无效' : '账号或密码无效'
+      if (!operator || !validPassword) throw failure('LOGIN_FAILED', message, 401)
+      const counter = Math.floor(now() / 30_000), matched = loginMode === 'totp' && /^\d{6}$/.test(String(code)) ? [counter - 1, counter, counter + 1].find(c => equal(totp(operator.totpSecret, c), code)) : undefined
+      if (loginMode === 'totp' && matched === undefined) throw failure('LOGIN_FAILED', message, 401)
+      const result = await store.transaction(state => {
         state.sessions ||= {}; state.otpCounters ||= {}
-        if (matched <= (state.otpCounters[operator.id] ?? -1)) throw failure('OTP_REPLAY', '动态口令已使用', 401)
-        state.otpCounters[operator.id] = matched
+        if (loginMode === 'totp') {
+          if (matched <= (state.otpCounters[operator.id] ?? -1)) throw failure('OTP_REPLAY', '动态口令已使用', 401)
+          state.otpCounters[operator.id] = matched
+        }
         for (const [hash, session] of Object.entries(state.sessions)) if (session.expiresAt <= now()) delete state.sessions[hash]
         const token = secret()
-        state.sessions[digest(token)] = { actor: operator.id, expiresAt: now() + 30 * 60_000 }
-        state.audit?.push({ id: crypto.randomUUID(), actor: operator.id, event: 'operator_login', at: now() })
+        state.sessions[digest(token)] = { actor: operator.id, loginMode, expiresAt: now() + 30 * 60_000 }
+        state.audit?.push({ id: crypto.randomUUID(), actor: operator.id, event: 'operator_login', loginMode, at: now() })
         return { token, expiresAt: now() + 30 * 60_000 }
       })
+      attempts.delete(key)
+      return result
     },
     async authenticate(token) {
       const session = (await store.read()).sessions?.[digest(token || '')]
-      if (!session || session.expiresAt <= now()) throw failure('OPERATOR_UNAUTHORIZED', '运营会话已过期', 401)
+      if (!session || session.expiresAt <= now() || (session.loginMode || 'totp') !== loginMode) throw failure('OPERATOR_UNAUTHORIZED', '运营会话已过期', 401)
       return session.actor
     },
     logout(token) { return store.transaction(state => { delete state.sessions?.[digest(token || '')]; return { loggedOut: true } }) },
