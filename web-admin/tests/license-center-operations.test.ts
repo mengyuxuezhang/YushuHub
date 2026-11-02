@@ -1,0 +1,90 @@
+import { createApp, h, nextTick } from 'vue'
+import { describe, expect, it, vi } from 'vitest'
+import PackageEditor from '../src/license-center/PackageEditor.vue'
+import GrantChangePreview from '../src/license-center/GrantChangePreview.vue'
+import LicenseCenterApp from '../src/license-center/App.vue'
+import { nextPackageVersion, packageDraft, packagePayload } from '../src/license-center/package-form'
+import type { CapabilityGroup, Grant, LicensePackage } from '../src/license-center/types'
+
+const groups: CapabilityGroup[] = [{ name: '模型服务', permissions: [{ key: 'model_providers.manage', name: '服务商管理', description: '维护自己的服务商', planned: false }] }, { name: '交付', permissions: [{ key: 'builds.create', name: '提交构建', description: '提交客户端构建', planned: false }] }]
+const source: LicensePackage = { id: 'standard', version: 1, name: '基础套餐', capabilities: [{ key: 'model_providers.manage', enabled: true, transferable: false, limitValue: 0 },{ key: 'builds.create', enabled: false, transferable: false, limitValue: 0 }], quotas: { projects: { mode: 'limited', value: 3 }, builds: { mode: 'limited', value: 10 } } }
+
+describe('license center operational forms', () => {
+  it('generates the next version and preserves the selected capabilities without mutating published history', () => {
+    const draft = packageDraft(source)
+    draft.projects = { mode: 'unlimited' }; draft.builds = { mode: 'none' }; draft.enabled = ['builds.create']
+    const version = nextPackageVersion([source,{...source,version:4}], source.id)
+    const result = packagePayload(draft,source.id,version,groups)
+    expect(version).toBe(5)
+    expect(result.quotas).toEqual({projects:{mode:'unlimited'},builds:{mode:'none'}})
+    expect(result.capabilities.map(p=>[p.key,p.enabled])).toEqual([['model_providers.manage',false],['builds.create',true]])
+    expect(source.quotas.projects).toEqual({mode:'limited',value:3})
+    expect(source.capabilities[0]!.enabled).toBe(true)
+    for (const value of [0,-1,1.5,NaN]) expect(()=>packagePayload({...draft,projects:{mode:'limited',value}},source.id,2,groups)).toThrow('大于0的整数')
+  })
+
+  it('publishes a named configuration through checkboxes and numeric controls with an automatic version', async () => {
+    const publish = vi.fn(), host = document.createElement('div')
+    const app = createApp({render:()=>h(PackageEditor,{packages:[source],groups,busy:false,onPublish:publish})});app.mount(host);await nextTick()
+    expect(host.querySelector('textarea')).toBeNull()
+    const name = host.querySelector('input[maxlength="120"]') as HTMLInputElement
+    name.value='新版基础套餐';name.dispatchEvent(new Event('input'))
+    const builds = host.querySelector('input[aria-label="累计构建次数上限"]') as HTMLInputElement
+    builds.value='20';builds.dispatchEvent(new Event('input'));await nextTick()
+    host.querySelector('form')!.dispatchEvent(new Event('submit',{cancelable:true}));await nextTick()
+    expect(publish).toHaveBeenCalledOnce()
+    expect(publish.mock.calls[0]![0]).toMatchObject({id:'standard',version:2,name:'新版基础套餐',quotas:{builds:{mode:'limited',value:20}}})
+    expect(host.textContent).toContain('已有代理继续使用原配置')
+    app.unmount()
+  })
+
+  it('shows a human-readable model mode change and warns when the package lacks provider management', () => {
+    const before: Grant = { id:'agent',name:'测试代理',version:1,status:'enabled',packageId:'standard',packageVersion:1,modelMode:'fixed',domain:'https://agent.example.test',instanceId:'instance',expiresAt:null,capabilities:source.capabilities,quotas:source.quotas }
+    const after: Grant = {...before,version:2,modelMode:'custom',capabilities:[]}
+    const host = document.createElement('div'),app=createApp({render:()=>h(GrantChangePreview,{preview:{previewDigest:'test',before,after,usage:{projects:2,builds:7},preservesUsage:true},packages:[source],groups})});app.mount(host)
+    expect(host.textContent).toContain('固定 OKPA API')
+    expect(host.textContent).toContain('允许自定义服务商')
+    expect(host.textContent).toContain('当前套餐未开启“服务商管理”')
+    expect(host.textContent).toContain('累计构建 7')
+    expect(host.querySelector('pre')).toBeNull()
+    app.unmount()
+  })
+
+  it('opens management as a dialog and invalidates a preview when the operator edits it again', async () => {
+    const before: Grant = { id:'agent',name:'测试代理',version:1,status:'enabled',packageId:'standard',packageVersion:1,modelMode:'fixed',domain:'https://agent.example.test',instanceId:'instance',expiresAt:null,capabilities:source.capabilities,quotas:source.quotas }
+    let current = before
+    const fetchMock=vi.fn(async(input: RequestInfo | URL, options?: RequestInit) => {
+      const route=String(input)
+      if (options?.method === 'PATCH') current = {...before,version:2,modelMode:JSON.parse(String(options.body)).modelMode}
+      const data=route.endsWith('/login-challenge')?{mode:'captcha',challengeId:'test',imageDataUrl:'data:image/svg+xml;base64,PHN2Zy8+'}:route.endsWith('/login')?{token:'test-session'}:route.endsWith('/preview')?{previewDigest:'preview-one',before,after:{...before,version:2,modelMode:'custom'},usage:{projects:0,builds:0},preservesUsage:true}:{grants:[current],packages:[source],capabilityGroups:groups,notices:[],audit:[]}
+      return new Response(JSON.stringify({success:true,data}),{status:200})
+    })
+    vi.stubGlobal('fetch',fetchMock)
+    const host=document.createElement('div');document.body.append(host);const app=createApp(LicenseCenterApp);app.mount(host)
+    try {
+      await vi.waitFor(()=>expect(host.querySelector('button.primary')?.hasAttribute('disabled')).toBe(false))
+      for(const [selector,value]of [['input[autocomplete="username"]','operator'],['input[type="password"]','test-password']]){const input=host.querySelector(selector!) as HTMLInputElement;input.value=value!;input.dispatchEvent(new Event('input'))}
+      host.querySelector('form')!.dispatchEvent(new Event('submit',{cancelable:true}))
+      await vi.waitFor(()=>expect(host.textContent).toContain('测试代理'))
+      ;[...host.querySelectorAll('button')].find(b=>b.textContent==='管理')!.click()
+      await vi.waitFor(()=>expect(host.querySelector('dialog')?.open).toBe(true))
+      const dialog=host.querySelector('dialog')!,mode=dialog.querySelectorAll('select')[1]!
+      mode.value='custom';mode.dispatchEvent(new Event('change'));await nextTick()
+      dialog.querySelector('form')!.dispatchEvent(new Event('submit',{cancelable:true}))
+      const save=()=>[...dialog.querySelectorAll('button')].find(b=>b.textContent==='确认保存授权变更')!
+      await vi.waitFor(()=>expect(save().disabled).toBe(false))
+      mode.value='fixed';mode.dispatchEvent(new Event('change'));await nextTick()
+      expect(save().disabled).toBe(true)
+      expect(dialog.textContent).not.toContain('请核对本次变更')
+      expect(fetchMock.mock.calls.some(([,options])=>options?.method==='PATCH')).toBe(false)
+      mode.value='custom';mode.dispatchEvent(new Event('change'));await nextTick()
+      dialog.querySelector('form')!.dispatchEvent(new Event('submit',{cancelable:true}))
+      await vi.waitFor(()=>expect(save().disabled).toBe(false));save().click()
+      await vi.waitFor(()=>expect(host.querySelector('dialog')).toBeNull())
+      const patch=fetchMock.mock.calls.find(([,options])=>options?.method==='PATCH')!
+      expect(JSON.parse(String(patch[1]!.body))).toMatchObject({modelMode:'custom',expectedVersion:1,previewDigest:'preview-one'})
+      expect(host.textContent).toContain('授权变更已保存')
+      expect(host.querySelector('tbody')!.textContent).toContain('允许自定义服务商')
+    }finally{app.unmount();host.remove();vi.unstubAllGlobals()}
+  })
+})

@@ -4,6 +4,8 @@ import { failure, identifier } from './protocol.mjs'
 export const RETIRED_CAPABILITIES = new Set(['organizations.children.manage', 'organizations.capabilities.manage'])
 const permissions = LOCAL_PERMISSION_CATALOG.flatMap(group => group.permissions).filter(p => !p.deprecated && !p.officialCenterOnly && !RETIRED_CAPABILITIES.has(p.key))
 export const CAPABILITY_KEYS = permissions.map(p => p.key)
+export const CAPABILITY_GROUPS = LOCAL_PERMISSION_CATALOG.map(group => ({ name: group.group,
+  permissions: group.permissions.filter(p => CAPABILITY_KEYS.includes(p.key)).map(p => ({ key: p.key, name: p.name, description: p.description || '', planned: Boolean(p.planned) })) })).filter(group => group.permissions.length)
 export const DEFAULT_PACKAGES = [{ id: 'standard', version: 1, name: '测试基础套餐（非正式经营配置）',
   capabilities: CAPABILITY_KEYS.map(key => ({ key, enabled: true, transferable: false, limitValue: 0 })),
   quotas: { projects: { mode: 'limited', value: 3 }, builds: { mode: 'limited', value: 10 } } }]

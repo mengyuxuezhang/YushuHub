@@ -11,7 +11,7 @@
 | GET `/operator/login-challenge` | 无需登录，返回服务端 mode；captcha模式附 challengeId/imageDataUrl/expiresInSeconds |
 | POST `/operator/login` | username/password；默认totp模式加code，测试captcha模式加challengeId/captchaAnswer；成功返回30分钟会话，验证信息不可复用 |
 | POST `/operator/logout` | 撤销本次会话 |
-| GET `/operator/state` | 脱敏授权、套餐、使用数量、审计及通知状态；不返回实例凭据或激活码 |
+| GET `/operator/state` | 脱敏授权、套餐、中文能力目录capabilityGroups、使用数量、审计及通知状态；不返回实例凭据或激活码 |
 | POST `/operator/packages` | 不可变 id/version/name、capabilities、quotas |
 | POST `/operator/grants` | 签发独立代理；返回 grant 和一次性 code |
 | POST `/operator/grants/:id/code` | 未激活授权作废旧码重发；已激活须续期或迁移 |

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 import { parseSupplierExpiresAt } from '../supplier-license-contract.mjs'
-import { DEFAULT_PACKAGES, validatePackage } from './packages.mjs'
+import { CAPABILITY_GROUPS, DEFAULT_PACKAGES, validatePackage } from './packages.mjs'
 import { HOUR, digest, domain, equal, failure, identifier, secret, signClaims, verifyClaims } from './protocol.mjs'
 
 export const emptyCenterState = () => ({ packages: Object.fromEntries(DEFAULT_PACKAGES.map(p => [`${p.id}:${p.version}`, p])), grants: {}, codes: {}, credentials: {}, audit: [], resources: {}, notices: {}, sessions: {}, otpCounters: {} })
@@ -62,7 +62,7 @@ export function createLicenseCenter({ store, privateKey, publicKeys, keyId, cred
     return { ...claims, grant: publicGrant(grant), root: publicGrant(grant) }
   }
   return {
-    async list() { const state = await store.read(); return { grants: Object.values(state.grants).map(g => ({ ...publicGrant(g), usage: Object.fromEntries(['projects', 'builds'].map(k => [k, usage(state, g, k)])) })), packages: Object.values(state.packages), audit: state.audit.slice(-200).reverse(), notices: Object.values(state.notices).slice(-200).reverse() } },
+    async list() { const state = await store.read(); return { capabilityGroups: CAPABILITY_GROUPS, grants: Object.values(state.grants).map(g => ({ ...publicGrant(g), usage: Object.fromEntries(['projects', 'builds'].map(k => [k, usage(state, g, k)])) })), packages: Object.values(state.packages), audit: state.audit.slice(-200).reverse(), notices: Object.values(state.notices).slice(-200).reverse() } },
     async publishPackage(input, actor) { const pkg = validatePackage(input); return store.transaction(state => { const key = `${pkg.id}:${pkg.version}`; if (state.packages[key]) throw failure('IMMUTABLE_PACKAGE', '套餐版本不可覆盖', 409); state.packages[key] = pkg; audit(state, actor, 'package_published', key, now()); return pkg }) },
     async issue(input, actor) { single(input); return store.transaction(state => {
       const pkg = state.packages[`${identifier(input.packageId)}:${input.packageVersion || 1}`], id = identifier(input.id || crypto.randomUUID())
