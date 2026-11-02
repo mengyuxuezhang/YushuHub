@@ -33,4 +33,3 @@ requestHash用于关联客户端挑战，由后台转发；它不是New API对�
 5. 当前只完成开发与隔离模拟验收；未替换生产New API、未发布客户端或正式更新源，现有运行客户端和经营数据保持。
 
 安全核对参考[OWASP Authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)及[Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)：保留原token鉴权、TLS和秘密隔离；随机挑战、用途区分、有效期及失效后不可恢复。未改登录/支付协议，不宣称整站ASVS认证。
-
