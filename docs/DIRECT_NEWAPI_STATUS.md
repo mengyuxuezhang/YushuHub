@@ -2,7 +2,7 @@
 
 2026-11-01。基线：`origin/master 2aab87d`。分支：`feat/license-center-direct-newapi`。旧方案源码、数据和证据保留，不整体合并。
 
-本分支已完成开发实现、本地隔离验证，以及本轮独立部署、Windows真实交付和升级验收。**尚未切换生产或发布正式更新源。** 新授权中心测试入口为 https://license.okpa.cn/license-center/ ，新管理端测试入口为 https://license.okpa.cn/admin/v2/ 。两者仅使用虚构测试主体和独立数据库。`supply.okpa.cn` 不再作为新方案入口。
+简化方案的开发、隔离部署、Windows交付与升级验收已完成。2026-11-02后续客户端校验分支 `feat/client-license-verification` 已完成独立正式中心、New API响应签名与单实例后台1.9.60试点切换；正式更新源及客户端安装包未发布。旧测试后台仍保留；官方构建/资源服务已完成历史一级身份核对、数据保留升级和新旧凭据过渡，试点历史构建、资源目录与源码版本访问通过。客户端正式安装包及全量发布仍未执行。最新范围见[切换状态](CLIENT_LICENSE_ROLLOUT.md)。`supply.okpa.cn` 不再作为新方案入口。
 
 接手顺序：[确认规划](DIRECT_NEWAPI_PLAN.md) → [接口协议](DIRECT_NEWAPI_PROTOCOL.md) → [配置、授权矩阵、升级与回退](DIRECT_NEWAPI_OPERATIONS.md)。项目总入口 `project-hub` 已同步以此简化方案为当前目标。
 
