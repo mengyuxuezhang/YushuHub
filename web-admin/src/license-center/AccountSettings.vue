@@ -11,6 +11,7 @@ const account = reactive({ username: '', displayName: '', password: '', confirma
 async function run(work: () => Promise<void>) { busy.value = true; error.value = ''; success.value = ''; try { await work() } catch (e) { error.value = e instanceof Error ? e.message : '操作失败' } finally { busy.value = false } }
 async function load() { if (props.mode === 'accounts' && props.profile.canManageAccounts) accounts.value = await props.request<OperatorProfile[]>('/accounts') }
 onMounted(() => void run(load))
+watch(() => props.profile, () => void run(load))
 watch(editing, async item => { if (item) { Object.assign(account, { username: '', displayName: '', password: '', confirmation: '' }); error.value = ''; await nextTick(); dialog.value?.showModal() } })
 function validate(value: string, confirmation: string) { if (value !== confirmation) throw new Error('两次输入的密码不一致'); if (value.length < 12 || value.length > 128 || !/[a-zA-Z]/.test(value) || !/[0-9]/.test(value)) throw new Error('密码须为12至128位，且包含字母和数字') }
 async function saveAccount() { await run(async () => {

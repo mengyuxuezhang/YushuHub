@@ -25,7 +25,7 @@ const migration = reactive({ instanceId: '', domain: '', overlapHours: 0 })
 const counts = computed(() => ({ total: state.value.grants.length, enabled: state.value.grants.filter(g => g.status === 'enabled' && (!g.expiresAt || Date.parse(g.expiresAt) > Date.now())).length, fixed: state.value.grants.filter(g => g.modelMode === 'fixed').length }))
 async function request<T>(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
   const response = await fetch('/api/license-center/v1/operator' + path, { method, redirect: 'error', headers: { 'Content-Type': 'application/json', ...(token.value ? { Authorization: `Bearer ${token.value}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(15000) })
-  const payload = await response.json(); if (!response.ok || payload.success === false) { if (response.status === 401 && path !== '/login') token.value = ''; throw new Error(payload.error || payload.code || '请求失败') } return payload.data as T
+  const payload = await response.json(); if (!response.ok || payload.success === false) { if (response.status === 401 && path !== '/login' && token.value) { token.value = ''; profile.value = null; await refreshLoginChallenge().catch(() => {}) }; throw new Error(payload.error || payload.code || '请求失败') } return payload.data as T
 }
 async function run(work: () => Promise<void>) { busy.value = true; error.value = ''; success.value = ''; try { await work() } catch (e) { error.value = e instanceof Error ? e.message : '操作失败' } finally { busy.value = false } }
 async function load() { const [data, me] = await Promise.all([request<State>('/state'), request<OperatorProfile>('/me')]); state.value = data; profile.value = me }
