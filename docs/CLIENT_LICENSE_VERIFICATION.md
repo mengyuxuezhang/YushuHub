@@ -30,6 +30,6 @@ requestHash用于关联客户端挑战，由后台转发；它不是New API对�
 2. 授权中心用 AI_LICENSE_RESPONSE_PROOF_KEYS_FILE 指向 kid→SPKI PEM 的JSON公钥字典，重启加载。客户端从中心签名策略获得响应公钥；中心信任根另由官方源码构建固定。
 3. 先部署中心与New API兼容能力，再部署管理端挑战头透传，最后发布官方客户端。当前代码内固定的中心公钥属于隔离验收中心，正式发布前必须独立核对生产信任根及域名授权，不能把测试信任根冒充生产配置。
 4. 新客户端启用后，不可回退为没有来源签名的New API版本，否则固定模式将按规则拒绝。无数据库迁移或余额转换；旧客户端不发送挑战，兼容请求保持原样。
-5. 当前只完成开发与隔离模拟验收；未替换生产New API、未发布客户端或正式更新源，现有运行客户端和经营数据保持。
+5. 当前只完成开发与隔离模拟验收；未替换生产New API、未发布客户端或正式更新源，现有运行客户端和经营数据保持。执行细节及验收边界见[切换与回退清单](CLIENT_LICENSE_ROLLOUT.md)。客户端在提交成功状态前验证流式首事件，首事件无有效签名时返回403；后续事件仍按序增量验签。
 
 安全核对参考[OWASP Authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)及[Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)：保留原token鉴权、TLS和秘密隔离；随机挑战、用途区分、有效期及失效后不可恢复。未改登录/支付协议，不宣称整站ASVS认证。
