@@ -2,7 +2,9 @@ import crypto from 'node:crypto'
 import { officialServicePolicy } from './resource-access.mjs'
 import { failure } from './protocol.mjs'
 
-export function officialAuthorization({ centerUrl, database, findSupplier, fetchImpl = fetch }) {
+export function officialAuthorization({ centerUrl, database, findSupplier, subjectBindings = {}, fetchImpl = fetch }) {
+  if (Object.entries(subjectBindings).some(([from, to]) => !/^[A-Za-z0-9_.:-]{1,64}$/.test(from) || typeof to !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(to))
+    || new Set(Object.values(subjectBindings)).size !== Object.keys(subjectBindings).length) throw new Error('Official subject bindings must be explicit and one-to-one')
   const url = new URL(centerUrl)
   if (url.protocol !== 'https:' && !(process.env.NODE_ENV === 'test' && url.hostname === '127.0.0.1')) throw new Error('Official authorization requires HTTPS')
   return async (req, res, next) => {
@@ -10,15 +12,18 @@ export function officialAuthorization({ centerUrl, database, findSupplier, fetch
       const policy = officialServicePolicy(req.path), token = String(req.headers.authorization || '')
       const response = await fetchImpl(`${url.origin}/api/license-center/v1/introspect`, { method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', Authorization: token }, body: JSON.stringify({ audience: policy.audience }), signal: AbortSignal.timeout(8000) })
       const payload = await response.json(), claims = payload.data
-      if (!response.ok || !payload.success || !claims || claims.sub !== claims.rootId || claims.grant?.level !== 1) throw failure('OFFICIAL_AUTHORIZATION_DENIED', '独立中心拒绝官方服务访问', 403)
+      if (!response.ok || !payload.success || !claims || claims.sub !== claims.rootId || claims.grant?.id !== claims.sub || claims.grant?.level !== 1) throw failure('OFFICIAL_AUTHORIZATION_DENIED', '独立中心拒绝官方服务访问', 403)
       if (policy.permission && !claims.grant.capabilities.some(c => c.enabled && c.key === policy.permission)) throw failure('CAPABILITY_DENIED', '授权不包含该官方能力', 403)
       const submitted = req.body?.supplierId || req.query?.supplierId || req.headers['x-supplier-id']
       if (submitted && submitted !== claims.sub) throw failure('ORGANIZATION_MISMATCH', '请求与授权主体不符', 403)
       const grant = claims.grant
+      const businessId = Object.hasOwn(subjectBindings, grant.id) ? subjectBindings[grant.id] : grant.id
+      if (businessId !== grant.id && !await findSupplier(businessId)) throw failure('BUSINESS_BINDING_MISSING', '已确认的历史业务身份不存在', 503)
       await database().query(`INSERT IGNORE INTO ai_center_suppliers (id,name,token_hash,token_preview,status,license_type,organization_id,authorization_version,expires_at,notes)
-        VALUES (?,?,?,'','enabled','central',?,?,?,?)`, [grant.id, grant.name, `central:${crypto.randomBytes(32).toString('hex')}`, grant.id, grant.version, grant.expiresAt ? new Date(grant.expiresAt) : null, '独立授权中心验证的业务关联；不能签发授权'])
+        VALUES (?,?,?,'','enabled','central',?,?,?,?)`, [businessId, grant.name, `central:${crypto.randomBytes(32).toString('hex')}`, businessId, grant.version, grant.expiresAt ? new Date(grant.expiresAt) : null, '独立授权中心验证的业务关联；不能签发授权'])
+      await database().query("UPDATE ai_center_suppliers SET license_type='central',authorization_version=?,expires_at=? WHERE id=?", [grant.version, grant.expiresAt ? new Date(grant.expiresAt) : null, businessId])
       req.centralAuthorization = claims
-      req.centerSupplier = { ...await findSupplier(grant.id), id: grant.id, organization_id: grant.id, status: 'enabled', expires_at: grant.expiresAt, centralAuthorization: true }
+      req.centerSupplier = { ...await findSupplier(businessId), id: businessId, organization_id: businessId, licenseGrantId: grant.id, status: 'enabled', expires_at: grant.expiresAt, centralAuthorization: true }
       next()
     } catch (e) { next(e) }
   }

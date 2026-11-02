@@ -3880,7 +3880,7 @@ async function enrichUserContext(user) {
 
 setAuthDependencies({
   legacyOfficialSupplierIds: new Set((process.env.AI_OFFICIAL_LEGACY_SUPPLIER_IDS || '').split(',').map(id => id.trim()).filter(Boolean)),
-  authorizeOfficial: CENTER_SUPPLIER_MANAGEMENT_ENABLED && process.env.AI_OFFICIAL_AUTHORIZATION_MODE !== 'legacy' ? officialAuthorization({ centerUrl: process.env.AI_LICENSE_CENTER_URL || 'https://license.okpa.cn', database: db, findSupplier: findCenterSupplierById }) : null,
+  authorizeOfficial: CENTER_SUPPLIER_MANAGEMENT_ENABLED && process.env.AI_OFFICIAL_AUTHORIZATION_MODE !== 'legacy' ? officialAuthorization({ centerUrl: process.env.AI_LICENSE_CENTER_URL || 'https://license.okpa.cn', database: db, findSupplier: findCenterSupplierById, subjectBindings: process.env.AI_OFFICIAL_SUBJECT_BINDINGS_FILE ? JSON.parse(fs.readFileSync(process.env.AI_OFFICIAL_SUBJECT_BINDINGS_FILE, 'utf8')) : {} }) : null,
   getUserBySession,
   getEffectivePermissionKeys,
   permissionByKey,
