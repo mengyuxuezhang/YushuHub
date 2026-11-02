@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { KeyRound, Layers3, ClipboardList, LogOut, RefreshCw, Menu, PanelLeftClose, ShieldCheck } from '@lucide/vue'
-const props = defineProps<{ authenticated: boolean; page: string; busy: boolean; username: string }>()
+import { KeyRound, Layers3, ClipboardList, LogOut, RefreshCw, Menu, PanelLeftClose, ShieldCheck, UsersRound, LockKeyhole } from '@lucide/vue'
+const props = defineProps<{ authenticated: boolean; page: string; busy: boolean; username: string; canManageAccounts?: boolean }>()
 const emit = defineEmits<{ navigate: [page: string]; refresh: []; logout: [] }>()
 const collapsed = ref(false)
-const tabs = [{ id: 'grants', name: '代理授权', icon: KeyRound, description: '管理代理资格、服务商模式与部署绑定' }, { id: 'packages', name: '套餐配置', icon: Layers3, description: '配置功能权限、项目数量与累计构建额度' }, { id: 'audit', name: '操作审计', icon: ClipboardList, description: '查看授权变更记录与到期通知状态' }]
-const current = computed(() => tabs.find(tab => tab.id === props.page) || tabs[0]!)
+const tabs = computed(() => [{ id: 'grants', name: '代理授权', icon: KeyRound, description: '管理代理资格、服务商模式与部署绑定' }, { id: 'packages', name: '套餐配置', icon: Layers3, description: '配置功能权限、项目数量与累计构建额度' }, { id: 'audit', name: '操作审计', icon: ClipboardList, description: '查看授权变更记录与到期通知状态' }, ...(props.canManageAccounts ? [{ id: 'accounts', name: '账号管理', icon: UsersRound, description: '新增管理员及管理其他管理员的登录密码' }] : []), { id: 'password', name: '修改密码', icon: LockKeyhole, description: '修改自己的登录密码' }])
+const current = computed(() => tabs.value.find(tab => tab.id === props.page) || tabs.value[0]!)
 </script>
 <template>
   <div v-if="authenticated" class="admin-shell license-workspace" :class="{ 'is-collapsed': collapsed }">

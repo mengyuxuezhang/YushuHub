@@ -11,6 +11,11 @@
 | GET `/operator/login-challenge` | 无需登录，返回服务端 mode；captcha模式附 challengeId/imageDataUrl/expiresInSeconds |
 | POST `/operator/login` | username/password；默认totp模式加code，测试captcha模式加challengeId/captchaAnswer；成功返回30分钟会话，验证信息不可复用 |
 | POST `/operator/logout` | 撤销本次会话 |
+| GET `/operator/me` | 当前管理员id/displayName/role/canManageAccounts，不返回凭据 |
+| GET `/operator/accounts` | 仅主管理员，脱敏管理员列表 |
+| POST `/operator/accounts` | 仅主管理员；username/displayName/password，固定创建普通管理员，一次返回备用totpSecret |
+| POST `/operator/accounts/:id/password` | 仅主管理员重置其他管理员密码；password，目标旧会话全部失效 |
+| POST `/operator/password` | 本人改密：currentPassword/newPassword；会话确定主体，不接收目标账号，保存后全部旧会话失效 |
 | GET `/operator/state` | 脱敏授权、套餐、中文能力目录capabilityGroups、使用数量、审计及通知状态；不返回实例凭据或激活码 |
 | POST `/operator/packages` | 创建套餐：id/name、capabilities、quotas；内部修订由服务端初始化 |
 | PATCH `/operator/packages/:id` | expectedVersion/name/capabilities/quotas，原子更新套餐及全部未撤销关联授权，保留用量 |

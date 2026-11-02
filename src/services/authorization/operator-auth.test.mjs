@@ -64,3 +64,32 @@ test('switching login mode invalidates old sessions and restores the retained TO
   await assert.rejects(f.auth.authenticate(session.token), { code: 'OPERATOR_UNAUTHORIZED' })
   assert.throws(() => createOperatorAuth({ store: f.store, operators: f.operators, loginMode: 'disabled' }), /login mode/)
 })
+
+test('only the bootstrapped owner creates or resets other admins; resetting invalidates their sessions', async () => {
+  const f=fixture('captcha'), owner=f.input.username
+  await f.auth.initialize()
+  const created=await f.auth.createAccount(owner,{username:'test-admin',displayName:'测试管理员',password:'Test-password-123',role:'owner'})
+  assert.equal(created.account.role,'admin');assert.equal(created.totpSecret.length,32)
+  assert.equal((await f.auth.profile(owner)).canManageAccounts,true)
+  await assert.rejects(f.auth.createAccount(owner,{username:'TEST-ADMIN',password:'Test-password-123'}),{code:'ACCOUNT_EXISTS'})
+  for(const operation of [()=>f.auth.listAccounts('test-admin'),()=>f.auth.createAccount('test-admin',{username:'forged',password:'Test-password-123'}),()=>f.auth.resetPassword('test-admin',owner,{password:'Test-password-456'})])await assert.rejects(operation(),{code:'ACCOUNT_MANAGEMENT_DENIED'})
+  const login=await f.auth.login({...f.captcha(),username:'test-admin',password:'Test-password-123'},'test-client')
+  await f.auth.resetPassword(owner,'test-admin',{password:'Test-password-456'})
+  await assert.rejects(f.auth.authenticate(login.token),{code:'OPERATOR_UNAUTHORIZED'})
+  await assert.rejects(f.auth.login({...f.captcha(),username:'test-admin',password:'Test-password-123'},'test-client'),{code:'LOGIN_FAILED'})
+  assert.equal(await f.auth.authenticate((await f.auth.login({...f.captcha(),username:'test-admin',password:'Test-password-456'},'test-client')).token),'test-admin')
+  const listed=JSON.stringify(await f.auth.listAccounts(owner));assert(!listed.includes('passwordHash'));assert(!listed.includes(created.totpSecret))
+})
+
+test('self password changes require the old password, ignore target spoofing and survive restart without reseeding', async () => {
+  const f=fixture('captcha'), session=await f.auth.login(f.captcha(),'test-client'),owner=f.input.username
+  await assert.rejects(f.auth.changePassword(owner,{currentPassword:'wrong',newPassword:'Test-password-456'}),{code:'CURRENT_PASSWORD_INVALID'})
+  await f.auth.changePassword(owner,{currentPassword:f.input.password,newPassword:'Test-password-456',username:'another-admin'})
+  await assert.rejects(f.auth.authenticate(session.token),{code:'OPERATOR_UNAUTHORIZED'})
+  const restarted=createOperatorAuth({store:f.store,operators:f.operators,now:f.now,loginMode:'captcha'});await restarted.initialize()
+  await assert.rejects(f.auth.login(f.captcha(),'test-client'),{code:'LOGIN_FAILED'})
+  const next=await f.auth.login({...f.captcha(),password:'Test-password-456'},'test-client');assert.equal(await restarted.authenticate(next.token),owner)
+  assert(!JSON.stringify(f.state.audit).includes('Test-password-456'))
+  await assert.rejects(f.auth.resetPassword(owner,owner,{password:'Test-password-789'}),{code:'USE_SELF_PASSWORD'})
+  await assert.rejects(f.auth.changePassword(owner,{currentPassword:'Test-password-456',newPassword:'short'}),{code:'WEAK_PASSWORD'})
+})
