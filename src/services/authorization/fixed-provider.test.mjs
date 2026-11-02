@@ -1,9 +1,24 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveTextConnection, assertTextModelWrite, filterFixedSyncPacket, assertProviderWrite, OKPA_TEXT_PROVIDER_ID, OKPA_TEXT_BASE_URL } from './fixed-provider.mjs'
+import { resolveTextConnection, assertTextModelWrite, filterFixedSyncPacket, assertProviderWrite, fixedTextConfiguration, OKPA_TEXT_PROVIDER_ID, OKPA_TEXT_BASE_URL } from './fixed-provider.mjs'
 import { licenseAllowsPermission, licenseBusinessGuard } from './runtime.mjs'
 
 const fixed = { source: 'license-center', verified: true, status: 'enabled', modelMode: 'fixed', capabilities: [{ key: 'model_keys.manage', enabled: true }] }
+
+test('fixed migration retains disabled duplicate identities and refuses ambiguous active duplicates before writes', async () => {
+  const models = [{ id: 'old', providerId: 'old-provider', modelId: 'Same-Model', status: 'disabled' }, { id: 'active', providerId: 'existing-okpa', modelId: 'same-model', status: 'enabled' }]
+  const queries = [], connection = { beginTransaction: async () => {}, rollback: async () => {}, release() {}, query: async sql => { queries.push(sql); return [models] } }
+  const service = fixedTextConfiguration({ query: connection.query, getConnection: async () => connection })
+  const preview = await service.preview('org')
+  assert.deepEqual(preview.retainedDisabledModels.map(m => m.id), ['old'])
+  assert.deepEqual(preview.conflicts, [])
+  models[0].status = 'enabled'
+  const changed = await service.preview('org')
+  assert.notEqual(changed.previewDigest, preview.previewDigest)
+  assert.equal(changed.conflicts.length, 1)
+  await assert.rejects(service.apply('org', 'owner', changed), { code: 'FIXED_MODEL_CONFLICT' })
+  assert(queries.every(sql => sql.startsWith('SELECT ')))
+})
 test('fixed text ignores a tampered stored address but rejects another provider and arbitrary endpoints', () => {
   const p = { id: OKPA_TEXT_PROVIDER_ID, baseUrl: 'https://attacker.invalid/v1' }
   assert.equal(resolveTextConnection(fixed, p, { modelType: 'text' }).baseUrl, OKPA_TEXT_BASE_URL)

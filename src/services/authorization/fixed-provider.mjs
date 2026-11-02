@@ -55,7 +55,25 @@ export function fixedTextConfiguration(pool) {
   async function preview(organizationId) {
     if (!organizationId) throw failure('ORGANIZATION_REQUIRED', '请先归属经营主体', 403)
     const [models] = await pool.query("SELECT id,provider_id AS providerId,model_id AS modelId,display_name AS name,status,updated_at FROM ai_provider_models WHERE organization_id=? AND model_type='text' AND archived_at IS NULL ORDER BY id", [organizationId])
-    const result = { organizationId, providerId: OKPA_TEXT_PROVIDER_ID, baseUrl: OKPA_TEXT_BASE_URL, models, preservesNonText: true, copiesOldKeys: false }
+    const groups = new Map()
+    for (const model of models) {
+      const key = model.modelId.toLowerCase()
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(model)
+    }
+    const retainedDisabledModels = [], conflicts = []
+    for (const group of groups.values()) {
+      if (group.length < 2) continue
+      const enabled = group.filter(m => m.status === 'enabled')
+      const official = group.find(m => m.providerId === OKPA_TEXT_PROVIDER_ID)
+      if (enabled.length > 1 || official && enabled.length && enabled[0] !== official) {
+        conflicts.push({ modelId: group[0].modelId, models: group })
+        continue
+      }
+      const selected = official || enabled[0] || group[0]
+      retainedDisabledModels.push(...group.filter(m => m !== selected))
+    }
+    const result = { organizationId, providerId: OKPA_TEXT_PROVIDER_ID, baseUrl: OKPA_TEXT_BASE_URL, models, retainedDisabledModels, conflicts, preservesNonText: true, copiesOldKeys: false }
     return { ...result, previewDigest: digest(JSON.stringify(result)) }
   }
   return { preview, async apply(organizationId, ownerUserId, input) {
@@ -65,17 +83,22 @@ export function fixedTextConfiguration(pool) {
       await connection.query("SELECT id FROM ai_provider_models WHERE organization_id=? AND model_type='text' AND archived_at IS NULL ORDER BY id FOR UPDATE", [organizationId])
       const current = await fixedTextConfiguration(connection).preview(organizationId)
       if (input.previewDigest !== current.previewDigest) throw failure('PREVIEW_CHANGED', '模型配置已变更，请重新预览', 409)
+      if (current.conflicts.length) throw failure('FIXED_MODEL_CONFLICT', '同名模型存在多个启用记录，请先选择保留的模型并停用其他同名记录，再重新预览', 409)
       const [[existing]] = await connection.query('SELECT organization_id FROM ai_model_providers WHERE id=? FOR UPDATE', [OKPA_TEXT_PROVIDER_ID])
       if (existing && existing.organization_id !== organizationId) throw failure('ORGANIZATION_MISMATCH', '官方文本记录已属于其他主体', 409)
       await connection.query(`INSERT INTO ai_model_providers (id,name,protocol,base_url,status,is_default,organization_id) VALUES (?,'OKPA API','openai-compatible',?,'enabled',1,?)
         ON DUPLICATE KEY UPDATE base_url=VALUES(base_url),protocol=VALUES(protocol)`, [OKPA_TEXT_PROVIDER_ID, OKPA_TEXT_BASE_URL, organizationId])
-      for (const model of current.models) {
+      const retained = new Set(current.retainedDisabledModels.map(m => m.id))
+      const moving = current.models.filter(m => !retained.has(m.id))
+      for (const model of moving) {
+        const [[occupied]] = await connection.query('SELECT id FROM ai_provider_models WHERE provider_id=? AND model_id=? AND id<>? FOR UPDATE', [OKPA_TEXT_PROVIDER_ID, model.modelId, model.id])
+        if (occupied) throw failure('FIXED_MODEL_CONFLICT', '官方连接下已有同名模型（可能已归档），请先处理该记录再切换', 409)
         await connection.query("UPDATE ai_provider_models SET provider_id=?,endpoint_path='/chat/completions' WHERE id=? AND organization_id=?", [OKPA_TEXT_PROVIDER_ID, model.id, organizationId])
         await connection.query('UPDATE ai_model_pricing_rules SET provider_id=? WHERE provider_model_id=? AND organization_id=?', [OKPA_TEXT_PROVIDER_ID, model.id, organizationId])
         await syncAutomaticModelCapability(connection, { modelId: model.id, providerId: OKPA_TEXT_PROVIDER_ID, modelType: 'text', status: model.status, organizationId, ownerUserId })
       }
       await connection.commit()
-      return { configured: true, movedModels: current.models.length, providerId: OKPA_TEXT_PROVIDER_ID, copiesOldKeys: false }
+      return { configured: true, movedModels: moving.length, retainedDisabledModels: current.retainedDisabledModels.length, providerId: OKPA_TEXT_PROVIDER_ID, copiesOldKeys: false }
     } catch (e) { await connection.rollback(); throw e } finally { connection.release() }
   } }
 }

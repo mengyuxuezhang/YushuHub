@@ -1,4 +1,4 @@
-import { assertProviderWrite, OKPA_TEXT_PROVIDER_ID, isFixedText } from '../services/authorization/fixed-provider.mjs'
+import { assertProviderWrite, assertTextModelWrite, OKPA_TEXT_PROVIDER_ID, isFixedText } from '../services/authorization/fixed-provider.mjs'
 import { deleteProviderModel } from '../services/provider-model-deletion.mjs'
 import {
   requireAuth,
@@ -231,6 +231,9 @@ export function registerModelServiceRoutes(app, deps) {
 
   app.post('/api/provider-models/:id/enable', requireAuth, requireModelServiceManager, requirePermission('provider_models.manage', '模型管理'), async (req, res) => {
     try {
+      const model = await findProviderModelById(req.params.id)
+      if (!model) throw new Error('模型不存在')
+      assertTextModelWrite(await getSupplierLicense(), model)
       res.json({ success: true, data: await enableProviderModel(req.params.id, scopeOf(req)) })
     } catch (err) {
       res.status(err?.statusCode || 400).json({ success: false, error: err instanceof Error ? err.message : String(err) })

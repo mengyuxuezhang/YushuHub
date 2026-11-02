@@ -21,7 +21,10 @@ onMounted(() => refresh())
     </article>
     <article v-if="license?.modelMode === 'fixed' && license.verified" class="panel-card"><h2>固定文本连接</h2><p>https://api.okpa.cn/v1</p><p>在中转站自行充值并创建Key，终端支付与积分仍由本后台管理。音频、生图和独立搜索配置保持原样。</p><a href="https://api.okpa.cn/" target="_blank" rel="noopener noreferrer">打开 OKPA API 充值与Key管理</a>
       <button v-if="auth.can('model_providers.manage')" class="secondary-button" :disabled="saving" @click="inspect">预览文本连接切换</button>
-      <div v-if="preview"><p>以下{{ preview.models.length }}个文本模型将绑定官方连接，原Key不会复制，终端售价保持不变。</p><ul><li v-for="m in preview.models" :key="m.id">{{ m.name }} · {{ m.modelId }}</li></ul><button class="primary-button" :disabled="saving" @click="configure">确认切换并保留非文本配置</button></div>
+      <div v-if="preview"><p>当前共{{ preview.models.length }}个文本模型。切换保留模型身份和终端售价，原Key不会复制。</p><ul><li v-for="m in preview.models" :key="m.id">{{ m.name }} · {{ m.modelId }}</li></ul>
+        <div v-if="preview.retainedDisabledModels.length"><p>以下已停用的同名模型保留原连接和历史记录，不参与切换：</p><ul><li v-for="m in preview.retainedDisabledModels" :key="m.id">{{ m.name }} · {{ m.providerId }}</li></ul></div>
+        <div v-if="preview.conflicts.length" role="alert"><p>同名模型存在启用冲突，请先停用重复记录，只保留一个待切换模型，再重新预览：</p><ul><li v-for="c in preview.conflicts" :key="c.modelId">{{ c.modelId }}</li></ul></div>
+        <button class="primary-button" :disabled="saving || !!preview.conflicts.length" @click="configure">确认切换并保留非文本配置</button></div>
     </article>
   </section>
 </template>
