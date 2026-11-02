@@ -9,6 +9,9 @@ $ErrorActionPreference = "Stop"
 
 function Remove-WithRetry {
   param([string]$Path)
+  $resolvedTarget = [IO.Path]::GetFullPath($Path)
+  $allowedStageRoot = [IO.Path]::GetFullPath((Join-Path $root '.pack'))
+  if ($resolvedTarget -ne $allowedStageRoot -and -not $resolvedTarget.StartsWith($allowedStageRoot + [IO.Path]::DirectorySeparatorChar)) { throw 'Refusing cleanup outside the packaging workspace' }
   for ($i = 0; $i -lt 5; $i++) {
     try {
       Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
@@ -30,6 +33,7 @@ if (-not $Version) {
 }
 
 $name = "agent-ai-admin-v$Version"
+if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-.][a-zA-Z0-9.-]+)?$') { throw 'Invalid package version' }
 $stageRoot = Join-Path $root ".pack"
 $stage = Join-Path $stageRoot $name
 if ([System.IO.Path]::IsPathRooted($OutputDir)) {
@@ -40,6 +44,7 @@ if ([System.IO.Path]::IsPathRooted($OutputDir)) {
 $zipPath = Join-Path $outDir "$name.zip"
 $manifestPath = Join-Path $outDir "latest.json"
 
+if ([IO.Path]::GetFullPath($stageRoot) -ne [IO.Path]::GetFullPath((Join-Path $root '.pack'))) { throw 'Invalid packaging workspace' }
 Remove-Item -LiteralPath $stageRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $stage | Out-Null
 New-Item -ItemType Directory -Force $outDir | Out-Null
@@ -97,6 +102,21 @@ foreach ($doc in $publicDocs) {
   if (Test-Path -LiteralPath $sourceDoc) {
     Copy-Item -LiteralPath $sourceDoc -Destination $stageDocs -Force
   }
+}
+
+# The independent signing/operations service must never enter an agent deployment ZIP.
+$centerOnlyPaths = @(
+  'cloud/license-center', 'web/license-center', 'src/routes/license-center.mjs',
+  'scripts/authorization-init.mjs', 'scripts/e2e-direct-newapi.mjs',
+  'src/services/authorization/center.mjs', 'src/services/authorization/package-management.mjs',
+  'src/services/authorization/audit-presentation.mjs', 'src/services/authorization/operator-auth.mjs',
+  'src/services/authorization/operator-accounts.mjs', 'src/services/authorization/operator-passwords.mjs',
+  'src/services/authorization/reminders.mjs'
+)
+foreach ($relativePath in $centerOnlyPaths) {
+  $targetPath = [IO.Path]::GetFullPath((Join-Path $stage $relativePath))
+  if (-not $targetPath.StartsWith([IO.Path]::GetFullPath($stage) + [IO.Path]::DirectorySeparatorChar)) { throw 'Invalid center exclusion path' }
+  if (Test-Path -LiteralPath $targetPath) { Remove-Item -LiteralPath $targetPath -Recurse -Force }
 }
 
 # Nested workspaces (for example web-admin) have their own dependency directories. They are

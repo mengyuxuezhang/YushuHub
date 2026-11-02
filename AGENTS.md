@@ -1,5 +1,7 @@
 # YushuHub 开发约定
 
+授权中心已迁至独立公开仓库mengyuxuezhang/YushuLicenseCenter，签发与运营源码只在那里维护，本仓库仅保留接入/公共协议和官方业务鉴权。
+
 本分支实施简化方案：先读docs/DIRECT_NEWAPI_PLAN.md和docs/DIRECT_NEWAPI_STATUS.md。永久取消二级代理，保留员工；固定文本直连New API。不整体合并旧供货分支，不引入供货钱包/模型网关/自动分账，不覆盖旧测试环境。
 
 YushuHub 是管理端的唯一主研发仓库。开始工作先阅读 README.md、CONTRIBUTING.md、docs/DEVELOPMENT.md 和 docs/RELEASING.md，fetch origin，从最新 origin/master 创建分支。

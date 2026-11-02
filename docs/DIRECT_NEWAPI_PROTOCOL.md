@@ -1,5 +1,7 @@
 # 单层授权中心协议 v1
 
+中心接口的权威文档已迁至[YushuLicenseCenter协议](https://github.com/mengyuxuezhang/YushuLicenseCenter/blob/main/docs/PROTOCOL.md)，本文件作为管理端兼容说明。
+
 以[规划](DIRECT_NEWAPI_PLAN.md)及[操作手册](DIRECT_NEWAPI_OPERATIONS.md)为准。此协议无上下级、供货钱包或模型结算接口。
 
 统一 JSON 响应为 `{success:true,data}` 或 `{success:false,code,error}`。中心入口为 `/api/license-center/v1`，实例凭据与用途令牌使用 `Authorization: Bearer ...`，只能通过 HTTPS 传输。测试仅允许显式 `NODE_ENV=test` 的127.0.0.1 HTTP。

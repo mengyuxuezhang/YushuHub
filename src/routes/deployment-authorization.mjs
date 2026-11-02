@@ -1,7 +1,7 @@
 import { requireAuth, requirePermission } from '../middleware/auth.mjs'
-import { endpoint } from './license-center.mjs'
 import { failure } from '../services/authorization/protocol.mjs'
 import { fixedTextConfiguration } from '../services/authorization/fixed-provider.mjs'
+const endpoint = operation => async (req, res, next) => { try { res.json({ success: true, data: await operation(req) }) } catch (error) { next(error) } }
 
 export function registerDeploymentAuthorizationRoutes(app, { runtime, database }) {
   if (!runtime) return

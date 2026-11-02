@@ -9,12 +9,9 @@ const repoRoot = path.resolve(__dirname, '..')
 
 const targets = [
   ...readdirSync(path.join(repoRoot, 'src/services/authorization')).filter(file => file.endsWith('.mjs')).map(file => `src/services/authorization/${file}`),
-  'cloud/license-center/server.mjs',
-  'src/routes/license-center.mjs',
   'src/routes/deployment-authorization.mjs',
   'src/repositories/authorization-state.mjs',
   'src/repositories/authorization-file-state.mjs',
-  'scripts/authorization-init.mjs',
   'scripts/authorization-upgrade-inspect.mjs',
   'scripts/e2e-direct-newapi.mjs',
   'src/services/model-key-scope.mjs',

@@ -21,7 +21,7 @@
 
 使用独立 MySQL 数据库，不能复用经营库。中心只处理授权、低频资源额度和通知，不接收模型内容、不代扣上游费用。
 
-“独立中心”当前指独立进程、入口与数据库，源码仍位于本仓库，尚未拆成私有仓库；下游完整源码不能承诺本地校验不可改写。交付脚本尚需拆分中心与代理包，具体核对及待办见[源码与信任边界](DIRECT_NEWAPI_SECURITY_BOUNDARY.md)。
+授权中心现由独立公开仓库[YushuLicenseCenter](https://github.com/mengyuxuezhang/YushuLicenseCenter)维护。下列中心安装命令在该仓库中执行，不在本管理端仓库执行；以其README为安装入口。下游完整源码不能承诺本地校验不可改写，交付隔离与信任边界见[说明](DIRECT_NEWAPI_SECURITY_BOUNDARY.md)。
 
 1. 创建独立库和最小权限数据库账号。生产签名材料、数据库密码、运营账号资料及 Webhook 放在仓库外受控目录。
 2. 在受控会话设置至少16位的 `AI_LICENSE_BOOTSTRAP_PASSWORD`，运行 `node scripts/authorization-init.mjs <受控空目录> <运营账号>`。脚本生成 Ed25519 密钥、实例凭据派生密钥和带密码哈希/TOTP 的运营文件，拒绝覆盖已有材料。把 TOTP 秘密导入可信验证器，随后清除引导密码环境变量。
@@ -112,3 +112,9 @@ Windows仅虚构项目的3.0.78→3.0.79升级验证了客户端自主检查、�
 代理列表直接提供“停用／启用”和“删除”：停用可恢复，但启用不延长原期限；删除经确认后立即撤销授权并从列表移除，不能恢复。此删除不连接或删除代理经营库，用户、订单、积分和审计继续保留，原激活码和凭据不能重新授权。以上动作都需要当前内部修订号防止并发覆盖。
 
 “操作审计”使用中文操作名称、代理或套餐名称和结果说明；保留内部事件代码供服务追踪，页面无需理解英文代码或JSON。
+
+## 跨仓库开发验证
+
+管理端执行原有check、前端类型/测试/架构/构建；中心在独立仓库执行check、web:typecheck、web:test、web:architecture、web:build。协议两侧保留必要公共实现，任何协议或能力键变化都需联调。
+
+跨仓集成：先在独立中心执行npm ci及前端构建，再设置AI_LICENSE_CENTER_SOURCE为其源码目录，并设置AI_DIRECT_TEST_DB_CONFIG为受控的独立测试MySQL连接文件，运行npm run test:direct-newapi:e2e。脚本创建并清理随机direct_test_*库，只用模拟供应商；不能配置生产MySQL。

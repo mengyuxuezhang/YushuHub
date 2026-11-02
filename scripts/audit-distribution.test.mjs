@@ -35,6 +35,9 @@ test('rejects desktop source, private infrastructure and credential material', (
     ['src/config.mjs', 'const repo = "ssh://root@example.com/www/wwwroot/git/private.git"'],
     ['src/worker.mjs', 'const host = "120.53.230.168"'],
     ['.env.example', 'AI_BUILD_CENTER_TOKEN=real-secret-value'],
+    ['cloud/license-center/server.mjs', 'signing service'],
+    ['src/services/authorization/operator-accounts.mjs', 'operator administration'],
+    ['web/license-center/index.html', 'center frontend'],
   ]
   for (const [name, body] of cases) {
     const item = fixture({ 'package.json': '{"name":"agent-ai-admin"}', [name]: body })

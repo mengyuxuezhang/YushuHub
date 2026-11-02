@@ -2,6 +2,8 @@
 
 2026-11-01确认。本文件是本分支实施目标，替代旧供货重构方案；旧成果保留在`feat/independent-license-center`，不整体合并，归档源码、数据和证据保留；旧TEST运行服务已按负责人后续决定停用。
 
+授权中心按2026-11-02最新指令已拆为独立公开仓库[YushuLicenseCenter](https://github.com/mengyuxuezhang/YushuLicenseCenter)，本仓库仅维护管理端及接入代码，保留原有历史。
+
 ## 固定决策
 
 - 从`origin/master`（本次基线2aab87d）开发`feat/license-center-direct-newapi`。

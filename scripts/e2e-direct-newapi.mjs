@@ -8,12 +8,17 @@ import { pathToFileURL, fileURLToPath } from 'node:url'
 import express from 'express'
 import mysql from 'mysql2/promise'
 import AdmZip from 'adm-zip'
-import { mysqlStateStore } from '../src/repositories/authorization-state.mjs'
-import { createLicenseCenter, emptyCenterState } from '../src/services/authorization/center.mjs'
-import { createOperatorAuth, passwordHash, totp } from '../src/services/authorization/operator-auth.mjs'
-import { registerLicenseCenterRoutes } from '../src/routes/license-center.mjs'
 import { ModelServiceV2Sync } from '../src/services/model-service-v2-sync.mjs'
 import { ModelCredentialVault } from '../src/services/model-credentials.mjs'
+
+// Integration tests load the independently maintained center, never a bundled signing server.
+const centerRoot = path.resolve(process.env.AI_LICENSE_CENTER_SOURCE || fileURLToPath(new URL('../../YushuLicenseCenter/', import.meta.url)))
+if (!fs.existsSync(path.join(centerRoot,'package.json'))) throw new Error('Install YushuLicenseCenter separately and set AI_LICENSE_CENTER_SOURCE')
+const centerModule = file => import(pathToFileURL(path.join(centerRoot,file)).href)
+const { mysqlStateStore } = await centerModule('src/repositories/authorization-state.mjs')
+const { createLicenseCenter, emptyCenterState } = await centerModule('src/services/authorization/center.mjs')
+const { createOperatorAuth, passwordHash, totp } = await centerModule('src/services/authorization/operator-auth.mjs')
+const { registerLicenseCenterRoutes } = await centerModule('src/routes/license-center.mjs')
 
 // Explicit disposable DB credentials only. Never infer credentials from a live deployment.
 if (!process.env.AI_DIRECT_TEST_DB_CONFIG) throw new Error('AI_DIRECT_TEST_DB_CONFIG must name a protected disposable MySQL configuration file')
@@ -67,7 +72,7 @@ try {
   const center = createLicenseCenter({ store, privateKey: keys.privateKey, publicKeys, keyId: 'test', credentialKey: crypto.randomBytes(48) })
   const secret = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', operators = createOperatorAuth({ store, operators: [{ id: 'test-operator', passwordHash: passwordHash(password), totpSecret: secret }] })
   const app = express(); app.use(express.json()); registerLicenseCenterRoutes(app, { center, operators }); app.get('/mock-version', (_req, res) => res.json({ version: '1.9.59' }))
-  app.use('/license-center',express.static(path.join(root,'web','license-center')))
+  app.use('/license-center',express.static(path.join(centerRoot,'web','license-center')))
   app.use((err, _req, res, _next) => res.status(err.statusCode || 500).json({ success: false, code: err.code, error: err.message })); centerUrl = await listen(app)
   assert.equal((await fetch(centerUrl+'/license-center/')).status,200)
   const operator = await request(centerUrl + '/api/license-center/v1/operator/login', { username: 'test-operator', password, code: totp(secret, Math.floor(Date.now() / 30_000)) })

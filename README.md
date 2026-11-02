@@ -12,6 +12,8 @@
 
 本分支实施[独立授权中心与代理直连 New API](docs/DIRECT_NEWAPI_PLAN.md)，永久取消二级代理。接手请读[实现与验收进度](docs/DIRECT_NEWAPI_STATUS.md)、[协议](docs/DIRECT_NEWAPI_PROTOCOL.md)及[配置、升级与回退手册](docs/DIRECT_NEWAPI_OPERATIONS.md)。旧供货方案源码、数据和证据归档保留，旧TEST运行服务已按负责人决定停用。当前不是正式发布版本。
 
+授权中心现已拆到独立公开仓库[YushuLicenseCenter](https://github.com/mengyuxuezhang/YushuLicenseCenter)。本仓库只维护代理经营管理端、授权接入与官方业务鉴权，不再包含中心签发和运营页面；源码与交付边界见[说明](docs/DIRECT_NEWAPI_SECURITY_BOUNDARY.md)。
+
 ## 界面预览
 
 以下为真实管理界面截图，使用虚构演示数据，不含真实客户账号、密钥或运营数据。显示的品牌可由部署方配置。
