@@ -89,6 +89,7 @@ try {
   agent = await launch(baseline, 'legacy'); await login()
   const [[org]] = await business.query('SELECT primary_organization_id AS id FROM ai_users WHERE id=\'admin\'')
   assert.ok(org.id)
+  await business.query("UPDATE ai_organizations SET name='Existing business',external_id='legacy-external-id' WHERE id=?", [org.id])
   const vault = new ModelCredentialVault(path.join(temporary, 'model.key')), encrypted = await vault.seal('sk-test-old-third-party', 'test-account')
   for (const [id, type] of [['test-text','text'],['test-image','image'],['test-audio','audio'],['test-search','search']]) {
     await business.query('INSERT INTO ai_model_providers (id,name,base_url,organization_id) VALUES (?,?,?,?)', [id,id,'https://original.example.test/v1',org.id])
@@ -107,6 +108,8 @@ try {
   assert.equal(JSON.parse(fs.readFileSync(reportFile,'utf8')).terminalPoints,'123.456789')
   await stop(agent); cookie = ''; agent = await launch(root, 'legacy'); await login()
   assert.equal((await request(agentUrl + '/api/license')).data.verified, true)
+  const [[retainedOrganization]] = await business.query('SELECT name,external_id FROM ai_organizations WHERE id=?', [org.id])
+  assert.equal(retainedOrganization.name,'Existing business'); assert.equal(retainedOrganization.external_id,'legacy-external-id')
   const [[rights]]=await business.query("SELECT credit_balance FROM ai_end_users WHERE id='test-user'");assert.equal(String(rights.credit_balance),'123.456789')
   const [[order]]=await business.query("SELECT status,amount_fen FROM ai_payment_orders WHERE id='test-order'");assert.equal(order.status,'fulfilled');assert.equal(Number(order.amount_fen),100)
   const [[membership]]=await business.query("SELECT card_id FROM ai_end_user_memberships WHERE id='test-membership'");assert.equal(membership.card_id,'free')
