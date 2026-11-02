@@ -2,8 +2,11 @@ import { requireAuth, requirePermission } from '../middleware/auth.mjs'
 import { assertCanManageOrganization } from '../services/organizations.mjs'
 import { db } from '../db/pool.mjs'
 export function registerOrganizationRoutes(app, { repository, getSupplierLicense, resourceUsage, permissionByKey = () => null }) {
+  const describeCapability = capability => capability.key === '*'
+    ? { ...capability, name: '全部权限' }
+    : { ...capability, name: permissionByKey(capability.key)?.name || capability.key }
   app.get('/api/organizations/context', requireAuth, requirePermission('organizations.view'), (req, res) => res.json({ success: true, data: {
-    ...req.organizationContext, capabilities: (req.organizationContext?.capabilities || []).map(c => ({ ...c, name: permissionByKey(c.key)?.name || c.key })) } }))
+    ...req.organizationContext, capabilities: (req.organizationContext?.capabilities || []).map(describeCapability) } }))
   app.get('/api/organizations/quota-usage', requireAuth, async (req, res, next) => {
     try {
       const org = req.organizationContext?.organizationId
@@ -23,7 +26,8 @@ export function registerOrganizationRoutes(app, { repository, getSupplierLicense
         const target = await repository.findOrganizationById(req.params.id)
         if (!target) throw Object.assign(new Error('主体不存在'), { statusCode: 404 })
         assertCanManageOrganization(req.organizationContext, target)
-        res.json({ success: true, data: await operation(req.params.id) })
+        const data = await operation(req.params.id)
+        res.json({ success: true, data: suffix === 'capabilities' ? data.map(describeCapability) : data })
       } catch (e) { next(e) }
     })
   }
