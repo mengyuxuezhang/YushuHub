@@ -1,5 +1,6 @@
 import { officialAuthorization, officialRequest } from '../../src/services/authorization/official-services.mjs'
 import { createAuthorizationRuntime, licenseAllowsPermission, licenseBusinessGuard } from '../../src/services/authorization/runtime.mjs'
+import { detectLegacyUpgrade } from '../../src/services/authorization/legacy-upgrade.mjs'
 import { resolveTextConnection, assertTextModelWrite, assertProviderWrite, isFixedText, filterFixedSyncPacket, OKPA_TEXT_PROVIDER_ID } from '../../src/services/authorization/fixed-provider.mjs'
 import { registerDeploymentAuthorizationRoutes } from '../../src/routes/deployment-authorization.mjs'
 import { normalizeModelProviderKey, listModelProviderKeys as listProviderKeys, saveModelProviderKey as saveProviderKey } from '../../src/services/model-provider-keys.mjs'
@@ -368,9 +369,12 @@ async function buildCenterBinary(pathname, body = {}, config = null) {
   }
 }
 
+const detectedLegacyUpgrade = await detectLegacyUpgrade({ root: repoRoot, workDir: SELF_UPDATE_WORK_DIR, env: process.env, database: {host: DB_HOST, port: DB_PORT, user: DB_USER, password: DB_PASSWORD, database: DB_NAME} })
+if (detectedLegacyUpgrade) { process.env.AI_AUTHORIZATION_MODE = 'legacy'; console.log('[ai-admin] 检测到旧版升级，继续使用原授权连接。') }
 const { getSupplierLicense: getLegacySupplierLicense, resetSupplierLicenseCache } = createSupplierLicenseService({
   officialCenterEnabled: CENTER_SUPPLIER_MANAGEMENT_ENABLED,
   defaults: defaultSupplierLicense,
+  requireConfigured: detectedLegacyUpgrade,
   getConfig: getBuildCenterConfig,
   configCacheKey: buildCenterConfigCacheKey,
   listProjectIds: listLocalSupplierProjectIds,
@@ -6755,6 +6759,7 @@ registerPaymentRoutes(app, {
 const curatedSkillSync = registerCuratedSkillRoutes(app, {
   keyOwnerUserIdForEndUser,
   centerMode: CENTER_SUPPLIER_MANAGEMENT_ENABLED,
+  allowLegacySecondLevelRecords: process.env.AI_AUTHORIZATION_MODE === 'legacy',
   fetchCenterCatalog: () => buildCenterApi('/api/center/curated-skills/catalog'),
   fetchCenterPackage: (skillId, version) => buildCenterBinary(`/api/center/curated-skills/${encodeURIComponent(skillId)}/versions/${encodeURIComponent(version)}/package`),
   fetchCenterLease: (skillId, version, body) => buildCenterApi(`/api/center/curated-skills/${encodeURIComponent(skillId)}/versions/${encodeURIComponent(version)}/lease`, body),

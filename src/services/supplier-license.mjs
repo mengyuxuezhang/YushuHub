@@ -19,7 +19,7 @@ export function normalizeSupplierLicense(input = {}, defaults = {}, now = Date.n
   }, now)
 }
 
-export function createSupplierLicenseService({ officialCenterEnabled, defaults, getConfig, configCacheKey, listProjectIds, centerApi, organizationRepository, now = Date.now }) {
+export function createSupplierLicenseService({ officialCenterEnabled, defaults, getConfig, configCacheKey, listProjectIds, centerApi, organizationRepository, requireConfigured = false, now = Date.now }) {
   let cache = { value: null, checkedAt: 0, key: '' }
   const normalize = (license) => normalizeSupplierLicense(license, defaults, now())
   function resetSupplierLicenseCache() { cache = { value: null, checkedAt: 0, key: '' } }
@@ -30,7 +30,7 @@ export function createSupplierLicenseService({ officialCenterEnabled, defaults, 
     const timestamp = now()
     try {
       config = await getConfig()
-      if (!config.enabled) return normalize({ ...defaults, verified: true, message: '未配置官方构建中心，使用本地默认权限' })
+      if (!config.enabled) return requireConfigured ? normalize({ ...defaults, verified: false, status: 'disabled', message: '原授权连接未配置，请联系运营人员' }) : normalize({ ...defaults, verified: true, message: '未配置官方构建中心，使用本地默认权限' })
       key = configCacheKey(config)
       if (!options.force && cache.value && cache.key === key && timestamp - cache.checkedAt < 60_000) {
         return normalize(cache.value)

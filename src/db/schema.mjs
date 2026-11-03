@@ -306,6 +306,7 @@ export async function initDatabase(options = {}) {
     seedDefaultModelProviderData,
     setPool,
     centerMode = false,
+    allowLegacySecondLevelRecords = false,
     supplierId = '',
     permissionKeys = [],
   } = options
@@ -325,7 +326,8 @@ export async function initDatabase(options = {}) {
   const [[existingOrganizations]] = await pool.query('SELECT COUNT(*) n FROM information_schema.TABLES WHERE TABLE_SCHEMA=? AND TABLE_NAME=?', [DB_NAME, 'ai_organizations'])
   if (Number(existingOrganizations.n)) {
     const [[secondLevel]] = await pool.query('SELECT COUNT(*) n FROM ai_organizations WHERE agent_level=2')
-    if (Number(secondLevel.n)) { await pool.end(); throw Object.assign(new Error('检测到二级代理数据，升级已停止；请核对数据，不会自动转换或删除'), { code: 'SECOND_LEVEL_DATA_FOUND' }) }
+    if (Number(secondLevel.n) && !allowLegacySecondLevelRecords) { await pool.end(); throw Object.assign(new Error('检测到二级代理数据，升级已停止；请核对数据，不会自动转换或删除'), { code: 'SECOND_LEVEL_DATA_FOUND' }) }
+    if (Number(secondLevel.n) && allowLegacySecondLevelRecords) console.warn('[ai-admin] 旧二级组织记录已保留，但不支持作为二级主体登录；请核对后迁移。')
   }
   if (typeof setPool === 'function') setPool(pool)
 
