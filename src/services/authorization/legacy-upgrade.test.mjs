@@ -14,7 +14,10 @@ test('legacy detection requires old update backup and existing upstream identity
  assert.equal(await detectLegacyUpgrade({...base,env:{AI_AUTHORIZATION_MODE:'center'}}),false)
  assert.equal(await detectLegacyUpgrade({...base,env:{AI_LICENSE_CENTER_URL:'https://example.test'}}),false)
  fs.writeFileSync(path.join(root,'data','deployment-license.json'),'{}');assert.equal(await detectLegacyUpgrade(base),false)
- fs.rmSync(path.join(root,'data','deployment-license.json'));fs.rmSync(backup,{recursive:true});assert.equal(await detectLegacyUpgrade(base),false)
+ fs.rmSync(path.join(root,'data','deployment-license.json'));fs.rmSync(backup,{recursive:true});assert.equal(await detectLegacyUpgrade(base),true)
+ fs.rmSync(path.join(root,'data','legacy-upgrade-mode.json'));assert.equal(await detectLegacyUpgrade(base),false)
+ fs.mkdirSync(backup,{recursive:true});fs.writeFileSync(path.join(backup,'package.json'),JSON.stringify({version:'1.9.57'}))
+ const newer=path.join(workDir,'backups','backup-1.9.61-999999-abcdef12');fs.mkdirSync(newer);fs.writeFileSync(path.join(newer,'package.json'),JSON.stringify({version:'1.9.61'}));assert.equal(await detectLegacyUpgrade(base),false)
 })
 test('auto legacy mode never grants defaults after connection disappears',async()=>{
  const service=createSupplierLicenseService({defaults:{status:'enabled'},getConfig:async()=>({enabled:false}),requireConfigured:true})
