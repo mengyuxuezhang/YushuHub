@@ -6759,7 +6759,6 @@ registerPaymentRoutes(app, {
 const curatedSkillSync = registerCuratedSkillRoutes(app, {
   keyOwnerUserIdForEndUser,
   centerMode: CENTER_SUPPLIER_MANAGEMENT_ENABLED,
-  allowLegacySecondLevelRecords: process.env.AI_AUTHORIZATION_MODE === 'legacy',
   fetchCenterCatalog: () => buildCenterApi('/api/center/curated-skills/catalog'),
   fetchCenterPackage: (skillId, version) => buildCenterBinary(`/api/center/curated-skills/${encodeURIComponent(skillId)}/versions/${encodeURIComponent(version)}/package`),
   fetchCenterLease: (skillId, version, body) => buildCenterApi(`/api/center/curated-skills/${encodeURIComponent(skillId)}/versions/${encodeURIComponent(version)}/lease`, body),
@@ -6984,6 +6983,7 @@ pool = await initDatabase({
   seedDefaultModelProviderData,
   setPool,
   centerMode: CENTER_SUPPLIER_MANAGEMENT_ENABLED,
+  allowLegacySecondLevelRecords: process.env.AI_AUTHORIZATION_MODE === 'legacy',
   supplierId: BUILD_CENTER_SUPPLIER_ID,
   permissionKeys: permissionCatalogItems().map((item) => item.key),
 })
