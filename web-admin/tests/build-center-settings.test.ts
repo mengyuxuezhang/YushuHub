@@ -27,53 +27,16 @@ async function openSettings(mounted: ReturnType<typeof mountSettings>) {
   mounted.state.editSettings(); await nextTick()
 }
 
-describe('build-center settings supplier identity', () => {
-  it('renders the missing Supplier ID field and submits a trimmed value with URL and Token', async () => {
-    const mounted = mountSettings({ buildCenterUrl: 'https://center.okpa.cn', buildCenterSupplierId: '' })
-    try {
-      await openSettings(mounted)
-      const input = mounted.host.querySelector<HTMLInputElement>('#build-center-supplier-id')!
-      expect(input).not.toBeNull()
-      expect(mounted.host.textContent).toContain('供应商 ID（Supplier ID）')
-      input.value = '  supplier-test  '; input.dispatchEvent(new Event('input', { bubbles: true }))
-      const token = mounted.host.querySelector<HTMLInputElement>('input[placeholder="留空保持不变"]')!
-      token.value = 'test-only-token'; token.dispatchEvent(new Event('input', { bubbles: true }))
-      await nextTick()
-      mounted.host.querySelector<HTMLButtonElement>('.drawer-footer button')!.click()
-      await vi.waitFor(() => expect(mounted.request).toHaveBeenCalledTimes(2))
-      const [url, init] = mounted.request.mock.calls[1]
-      expect(String(url)).toBe('/api/platform-settings')
-      expect(init?.method).toBe('POST')
-      expect(JSON.parse(String(init?.body))).toMatchObject({
-        buildCenterUrl: 'https://center.okpa.cn', buildCenterSupplierId: 'supplier-test', buildCenterToken: 'test-only-token',
-      })
-      await vi.waitFor(() => expect(mounted.state.drawerOpen.value).toBe(false))
-    } finally { mounted.unmount() }
-  })
-
-  it('prefills the stored Supplier ID and keeps the token blank when saving existing settings', async () => {
+describe('build-center settings', () => {
+  it('shows the center URL and preserves existing legacy identity when saving', async () => {
     const mounted = mountSettings({ buildCenterUrl: 'https://center.okpa.cn', buildCenterSupplierId: 'existing-supplier', buildCenterTokenConfigured: true })
     try {
       await openSettings(mounted)
-      expect(mounted.host.querySelector<HTMLInputElement>('#build-center-supplier-id')?.value).toBe('existing-supplier')
-      expect(mounted.state.form.buildCenterToken).toBe('')
+      expect(mounted.host.textContent).toContain('官方构建中心')
+      expect(mounted.host.textContent).not.toContain('供应商 ID（Supplier ID）')
+      expect(mounted.host.textContent).not.toContain('构建中心 Token')
       await mounted.state.saveSettings()
-      expect(JSON.parse(String(mounted.request.mock.calls[1][1]?.body))).toMatchObject({ buildCenterSupplierId: 'existing-supplier', buildCenterToken: '' })
-    } finally { mounted.unmount() }
-  })
-
-  it('does not copy environment fallback values or token previews into editable fields', async () => {
-    const mounted = mountSettings({
-      buildCenterUrl: '', buildCenterSupplierId: '', buildCenterTokenConfigured: true,
-      effectiveBuildCenterUrl: 'https://center.okpa.cn', effectiveBuildCenterSupplierId: 'environment-supplier',
-      buildCenterTokenPreview: 'preview-only',
-    })
-    try {
-      await openSettings(mounted)
-      expect(mounted.host.querySelector<HTMLInputElement>('#build-center-supplier-id')?.value).toBe('')
-      expect(mounted.state.form.buildCenterToken).toBe('')
-      await mounted.state.saveSettings()
-      expect(JSON.parse(String(mounted.request.mock.calls[1][1]?.body))).toMatchObject({ buildCenterUrl: '', buildCenterSupplierId: '', buildCenterToken: '' })
+      expect(JSON.parse(String(mounted.request.mock.calls[1][1]?.body))).toMatchObject({ buildCenterUrl: 'https://center.okpa.cn', buildCenterSupplierId: 'existing-supplier', buildCenterToken: '' })
     } finally { mounted.unmount() }
   })
 })

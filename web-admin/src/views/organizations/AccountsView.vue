@@ -51,7 +51,7 @@ const {
       <div>
         <span class="eyebrow">Internal members</span>
         <h1>后台账号</h1>
-        <p>这里只管理组织内部成员；创建下级代理请前往“组织主体”。</p>
+        <p>这里只管理当前经营主体的内部成员和岗位权限。</p>
       </div>
       <div class="heading-actions">
         <button class="secondary-button" :disabled="loading" @click="load">

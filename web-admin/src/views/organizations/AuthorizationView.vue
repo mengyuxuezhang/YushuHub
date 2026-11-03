@@ -15,7 +15,7 @@ onMounted(() => refresh())
   <section class="management-page">
     <header class="page-heading"><div><span class="eyebrow">Deployment authorization</span><h1>授权与连接</h1><p>授权由独立中心签发，每个代理独立部署和经营。员工权限在账号与岗位中管理。</p></div><button class="secondary-button" :disabled="loading" @click="refresh(true)">刷新状态</button></header>
     <p v-if="error" role="alert">{{ error }}</p><p v-if="message" role="status">{{ message }}</p>
-    <article class="panel-card"><h2>{{ license?.verified ? '授权已验证' : '等待激活或续期' }}</h2><p>授权ID：{{ license?.id || '尚未绑定' }}</p><p>有效期：{{ license?.expiresAt || '未设置期限' }}</p><p v-if="license?.source !== 'license-center'">当前使用显式旧授权模式。按升级手册配置独立中心并切换模式后，再兑换激活码。</p><p>文本供应商模式：{{ license?.modelMode === 'fixed' ? '固定 OKPA API' : license?.modelMode === 'custom' ? '自定义' : '尚未取得授权' }}</p>
+    <article class="panel-card"><h2>{{ license?.verified ? '授权已验证' : '等待激活或续期' }}</h2><p>经营主体：{{ auth.user?.organizationContext?.organizationId || '尚未取得' }}</p><p>授权ID：{{ license?.id || '尚未绑定' }}</p><p>有效期：{{ license?.expiresAt || '未设置期限' }}</p><p v-if="license?.source !== 'license-center'">当前使用显式旧授权模式。按升级手册配置独立中心并切换模式后，再兑换激活码。</p><p>文本供应商模式：{{ license?.modelMode === 'fixed' ? '固定 OKPA API' : license?.modelMode === 'custom' ? '自定义' : '尚未取得授权' }}</p>
       <form v-if="license?.source === 'license-center' && !license?.verified && auth.user?.organizationContext?.isOwner" @submit.prevent="activate"><label>中心一次性激活码<input v-model="code" type="password" autocomplete="off" required /></label><button class="primary-button" :disabled="saving || !code.trim()">激活部署</button></form>
       <p>续期沿用原授权，不需要更换激活码。网络宽限受签名及授权有效期限制。</p>
     </article>

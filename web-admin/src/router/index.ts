@@ -13,7 +13,6 @@ import AgentMarketView from "@/views/markets/AgentMarketView.vue";
 import CatalogMarketView from "@/views/markets/CatalogMarketView.vue";
 import ModelServiceView from "@/views/models/ModelServiceView.vue";
 import PricingCenterView from "@/views/models/PricingCenterView.vue";
-import OrganizationsView from "@/views/organizations/OrganizationsView.vue";
 import AccountsView from "@/views/organizations/AccountsView.vue";
 import PermissionsView from "@/views/organizations/PermissionsView.vue";
 import CenterSuppliersView from "@/views/organizations/CenterSuppliersView.vue";
@@ -39,6 +38,7 @@ export const router = createRouter({
       component: AdminLayout,
       children: [
         { path: "", redirect: "/dashboard" },
+        { path: "organizations", redirect: "/authorization" },
         { path: "models/pricing", redirect: "/billing/text" },
         { path: "models/accounts", redirect: "/models/keys" },
         { path: "models/capabilities", redirect: "/models/catalog" },
@@ -63,9 +63,7 @@ export const router = createRouter({
                     ? PricingCenterView
                   : item.path === "/notices"
                     ? ClientNoticesView
-                  : item.path === "/organizations"
-                    ? OrganizationsView
-                    : item.path === "/accounts"
+                  : item.path === "/accounts"
                       ? AccountsView
                     : item.path === "/permissions"
                       ? PermissionsView

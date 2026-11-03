@@ -127,11 +127,11 @@ export const navigationSections: NavigationSection[] = [
     title: "组织与权限",
     items: [
       {
-        path: "/organizations",
-        title: "组织主体",
-        subtitle: "上下级代理和主体能力",
+        path: "/authorization",
+        title: "授权与连接",
+        subtitle: "授权状态和文本服务商",
         icon: Building2,
-        permissions: ["organizations.view"],
+        permissions: ["authorization.view"],
         phase: "P5",
       },
       {

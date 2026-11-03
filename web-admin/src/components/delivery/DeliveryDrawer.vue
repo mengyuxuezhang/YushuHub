@@ -14,8 +14,6 @@ defineEmits<{ close: []; save: []; testSmtp: []; 'update:smtpTestEmail': [value:
       <section class="form-section">
         <h3>构建与存储</h3>
         <label><span>官方构建中心</span><input v-model.trim="form.buildCenterUrl" /></label>
-        <label><span>供应商 ID（Supplier ID）</span><input id="build-center-supplier-id" v-model.trim="form.buildCenterSupplierId" autocomplete="off" placeholder="填写官方中心分配的 Supplier ID" /><small>与总后台“供应商接入”中的供应商 ID 一致，不是供应商名称；接入构建中心时需与 URL、Token 一起配置。</small></label>
-        <label><span>构建中心 Token</span><input v-model="form.buildCenterToken" type="password" placeholder="留空保持不变" /></label>
       </section>
       <section class="form-section artifact-storage-section">
         <div><h3>安装包存储</h3><p>选择构建产物保存位置；已有安装包不会因切换存储方式而迁移。</p></div>
