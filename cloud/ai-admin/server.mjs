@@ -1,4 +1,5 @@
 import { officialAuthorization, officialRequest } from '../../src/services/authorization/official-services.mjs'
+import { findSubmittedCenterBuild, centerSubmissionPatch, recoverUnlinkedCenterBuilds } from '../../src/services/build-submission-recovery.mjs'
 import { createAuthorizationRuntime, licenseAllowsPermission, licenseBusinessGuard } from '../../src/services/authorization/runtime.mjs'
 import { detectLegacyUpgrade } from '../../src/services/authorization/legacy-upgrade.mjs'
 import { resolveTextConnection, assertTextModelWrite, assertProviderWrite, isFixedText, filterFixedSyncPacket, OKPA_TEXT_PROVIDER_ID } from '../../src/services/authorization/fixed-provider.mjs'
@@ -4311,7 +4312,7 @@ async function submitBuildToCenter(build, project, user, publicUrls = {}) {
     }, config)
     const nextLog = `${build.log || ''}[admin] Submitted to Agent build center: ${submitted.id}\n`
     return updateBuild(build.id, {
-      status: submitted.status || 'queued',
+      status: submitted.status === 'succeeded' ? 'running' : submitted.status || 'queued',
       version: submitted.version || build.version || '',
       brand: submitted.brand || brand,
       remoteBuildId: submitted.id,
@@ -4319,6 +4320,8 @@ async function submitBuildToCenter(build, project, user, publicUrls = {}) {
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
+    const recovered = await findSubmittedCenterBuild(build, (pathname, body) => buildCenterApi(pathname, body, config)).catch(() => null)
+    if (recovered) return updateBuild(build.id, centerSubmissionPatch(build, recovered))
     return updateBuild(build.id, {
       status: 'failed',
       error: `提交官方构建中心失败：${message}`,
@@ -4438,6 +4441,7 @@ function localizeCenterBuildInBackground(local, remote, config) {
 async function syncCenterBuilds({ platformScope = false, ownerUserId = '' } = {}) {
   const config = await getBuildCenterConfig()
   if (!config.enabled) return { configured: false, checked: 0, updated: 0, localizationStarted: 0 }
+  await recoverUnlinkedCenterBuilds({ database: db(), normalizeBuild, updateBuild, platformScope, ownerUserId, request: (pathname, body) => buildCenterApi(pathname, body, config) }).catch(err => console.warn('[ai-admin] Failed to recover build submissions:', err instanceof Error ? err.message : String(err)))
   const sql = platformScope
     ? `SELECT * FROM ai_builds WHERE remote_build_id IS NOT NULL AND (status IN ('queued','running') OR version IS NULL OR version = '' OR brand_json IS NULL OR JSON_EXTRACT(brand_json, '$.clientMode') IS NULL) ORDER BY created_at DESC LIMIT 100`
     : `SELECT * FROM ai_builds WHERE owner_user_id = ? AND remote_build_id IS NOT NULL AND (status IN ('queued','running') OR version IS NULL OR version = '' OR brand_json IS NULL OR JSON_EXTRACT(brand_json, '$.clientMode') IS NULL) ORDER BY created_at DESC LIMIT 100`

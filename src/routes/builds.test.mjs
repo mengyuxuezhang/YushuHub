@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { isCenterDelegatedBuild, registerBuildRoutes } from './builds.mjs'
+import { setPool } from '../db/pool.mjs'
 
 function publishHandler(deps) {
   const routes = new Map()
@@ -39,6 +40,26 @@ function responseRecorder() {
     json(body) { this.body = body; return this },
   }
 }
+
+test('status lookup accepts bounded local IDs and scopes both ID forms to the authenticated supplier', async () => {
+  const handler = postHandler('/api/center/builds/status', { normalizeBuild: row => row })
+  const queries = []
+  setPool({ query: async (sql, params) => { queries.push({ sql, params }); return [[{ id: 'existing' }]] } })
+  try {
+    const res = responseRecorder()
+    await handler({ centerSupplier: { id: 'trusted-supplier' }, body: { supplierId: 'forged', buildIds: ['remote'], localBuildIds: ['local'] } }, res)
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(queries[0].params, ['trusted-supplier', 'remote', 'local'])
+    assert(queries[0].sql.includes('center_supplier_id = ? AND (id IN (?) OR center_local_build_id IN (?))'))
+    const many = Array.from({ length: 150 }, (_, i) => `local-${i}`)
+    await handler({ centerSupplier: { id: 'trusted-supplier' }, body: { localBuildIds: many } }, responseRecorder())
+    assert.equal(queries[1].params.length, 101)
+    const empty = responseRecorder()
+    await handler({ centerSupplier: { id: 'trusted-supplier' }, body: {} }, empty)
+    assert.deepEqual(empty.body.data, [])
+    assert.equal(queries.length, 2)
+  } finally { setPool(null) }
+})
 
 test('isCenterDelegatedBuild only marks official-center mirror records', () => {
   assert.equal(isCenterDelegatedBuild({ centerSupplierId: 'supplier-demo' }), true)

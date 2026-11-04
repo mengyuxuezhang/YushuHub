@@ -237,13 +237,17 @@ export function registerBuildRoutes(app, deps) {
     try {
       const supplierId = safeCenterId(req.centerSupplier?.id || req.body?.supplierId || '', '供应商 ID')
       const ids = Array.isArray(req.body?.buildIds) ? req.body.buildIds.map((id) => String(id || '').trim()).filter(Boolean).slice(0, 100) : []
-      if (ids.length === 0) {
+      const localIds = Array.isArray(req.body?.localBuildIds) ? req.body.localBuildIds.map((id) => String(id || '').trim()).filter(Boolean).slice(0, 100) : []
+      if (ids.length === 0 && localIds.length === 0) {
         res.json({ success: true, data: [] })
         return
       }
       const [rows] = await db().query(
-        `SELECT * FROM ai_builds WHERE center_supplier_id = ? AND id IN (${ids.map(() => '?').join(',')}) ORDER BY created_at DESC`,
-        [supplierId, ...ids],
+        `SELECT * FROM ai_builds WHERE center_supplier_id = ? AND (${[
+          ids.length ? `id IN (${ids.map(() => '?').join(',')})` : '',
+          localIds.length ? `center_local_build_id IN (${localIds.map(() => '?').join(',')})` : '',
+        ].filter(Boolean).join(' OR ')}) ORDER BY created_at DESC`,
+        [supplierId, ...ids, ...localIds],
       )
       res.json({ success: true, data: rows.map(normalizeBuild) })
     } catch (err) {

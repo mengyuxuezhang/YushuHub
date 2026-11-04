@@ -1,4 +1,5 @@
 import { readWorkerIdentities, validWorkerId } from './worker-authentication.mjs'
+import { hasCenterSubmissionIntent } from './build-submission-recovery.mjs'
 
 const MANAGED_WORKER_IDS = ['zj-xx001-windows-v1', 'local-windows-v3']
 const DEFAULT_WORKER_PRIORITY = [...MANAGED_WORKER_IDS]
@@ -100,7 +101,7 @@ export function resolveWorkerHeartbeatBuildId(requestedBuildId, runningBuildId) 
 }
 
 export function isDelegatedBuildRecord(row = {}) {
-  return Boolean(String(row.remote_build_id || row.remoteBuildId || row.center_supplier_id || row.centerSupplierId || '').trim())
+  return Boolean(String(row.remote_build_id || row.remoteBuildId || row.center_supplier_id || row.centerSupplierId || '').trim()) || hasCenterSubmissionIntent(row)
 }
 
 function normalizePackageVersion(value) {
