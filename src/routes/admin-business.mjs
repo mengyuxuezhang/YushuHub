@@ -126,7 +126,7 @@ export function registerAdminBusinessRoutes(app, deps) {
 
   app.get('/api/builds', requireAuth, requireAnyPermission(['builds.create', 'builds.publish'], '构建发布'), async (req, res, next) => {
     try {
-      const result = await listBuildsForUser(req.user, { ...req.query, sync: req.query.sync !== '0' })
+      const result = await listBuildsForUser(req.user, { ...req.query, sync: req.query.sync === 'background' ? 'background' : req.query.sync !== '0' })
       res.json({ success: true, data: req.query.view === 'list' ? compactBuildList(result) : result })
     } catch (err) {
       next(err)

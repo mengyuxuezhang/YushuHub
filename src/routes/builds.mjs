@@ -17,6 +17,7 @@ import { readAgentReleaseHistory } from '../services/release-history.mjs'
 import { PUBLIC_ADMIN_BASE_URL, PUBLIC_UPDATE_BASE_URL, PUBLIC_PREVIEW_BASE_URL } from '../config/env.mjs'
 import { resolvePublicUrlsForRequest } from '../utils/public-url.mjs'
 import { annotateWorkerSourceStatus, isManagedWorkerId, resolveWorkerHeartbeatBuildId } from '../services/worker-scheduling.mjs'
+import { buildStatusColumns, compactBuildStatus } from '../services/build-status-view.mjs'
 
 export function isCenterDelegatedBuild(build) {
   return Boolean(String(build?.centerSupplierId || '').trim())
@@ -227,7 +228,7 @@ export function registerBuildRoutes(app, deps) {
       const build = await createCenterBuild(req.body || {}, req.centerSupplier)
       // Keep a durable reservation on ambiguous failures; replay uses the same local build ID.
       if (reservation) await officialResources(req, { action: 'confirm', kind: 'builds', resourceId, reservationId: reservation.reservationId })
-      res.json({ success: true, data: build })
+      res.json({ success: true, data: req.body?.view === 'status' ? compactBuildStatus(build) : build })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
     }
@@ -238,18 +239,19 @@ export function registerBuildRoutes(app, deps) {
       const supplierId = safeCenterId(req.centerSupplier?.id || req.body?.supplierId || '', '供应商 ID')
       const ids = Array.isArray(req.body?.buildIds) ? req.body.buildIds.map((id) => String(id || '').trim()).filter(Boolean).slice(0, 100) : []
       const localIds = Array.isArray(req.body?.localBuildIds) ? req.body.localBuildIds.map((id) => String(id || '').trim()).filter(Boolean).slice(0, 100) : []
+      const lightweight = req.body?.view === 'status'
       if (ids.length === 0 && localIds.length === 0) {
         res.json({ success: true, data: [] })
         return
       }
       const [rows] = await db().query(
-        `SELECT * FROM ai_builds WHERE center_supplier_id = ? AND (${[
+        `SELECT ${lightweight ? buildStatusColumns() : '*'} FROM ai_builds WHERE center_supplier_id = ? AND (${[
           ids.length ? `id IN (${ids.map(() => '?').join(',')})` : '',
           localIds.length ? `center_local_build_id IN (${localIds.map(() => '?').join(',')})` : '',
         ].filter(Boolean).join(' OR ')}) ORDER BY created_at DESC`,
         [supplierId, ...ids, ...localIds],
       )
-      res.json({ success: true, data: rows.map(normalizeBuild) })
+      res.json({ success: true, data: rows.map(row => lightweight ? compactBuildStatus(normalizeBuild(row)) : normalizeBuild(row)) })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
     }

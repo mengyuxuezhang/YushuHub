@@ -36,10 +36,10 @@ export const deleteProject = (id: string) =>
   api<any>(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
 export const uploadProjectAsset = (filename: string, dataUrl: string) =>
   api<{ url: string }>("/api/uploads", json({ filename, dataUrl }));
-export const listBuilds = () => api<any[]>("/api/builds?sync=1&view=list");
+export const listBuilds = () => api<any[]>("/api/builds?sync=background&view=list");
 export const listBuildPage = (query: PageQuery = {}) => {
   const suffix = pageQueryString(query);
-  return api<PageResult<any>>(`/api/builds${suffix ? `${suffix}&` : "?"}sync=1&view=list`);
+  return api<PageResult<any>>(`/api/builds${suffix ? `${suffix}&` : "?"}sync=background&view=list`);
 };
 export const listWorkers = () => api<any[]>("/api/workers");
 export const getAgentSourceVersion = (fullHistory = false) =>

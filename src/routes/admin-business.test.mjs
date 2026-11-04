@@ -143,6 +143,17 @@ test('build list forwards explicit search fields and structured status', async (
   assert.deepEqual(receivedOptions, { ...query, sync: false })
 })
 
+test('build list preserves the opt-in background synchronization mode', async () => {
+  const { app, routes } = captureRoutes()
+  let mode
+  registerAdminBusinessRoutes(app, { listBuildsForUser: async (_user, options) => { mode = options.sync; return [] } })
+  const route = routes.find(item => item.method === 'GET' && item.path === '/api/builds')
+  const res = responseRecorder()
+  await route.handlers.at(-1)({ query: { sync: 'background', view: 'list' }, user: {} }, res, error => { throw error })
+  assert.equal(mode, 'background')
+  assert.deepEqual(res.body.data, [])
+})
+
 test('compact build lists exclude embedded images without losing logs, permissions or pagination', async () => {
   const record = { id: 'b1', brand: { logoUrl: 'data:image/png;base64,large', clientMode: 'personal' }, log: 'build log', canOperate: false, files: ['setup.exe'] }
   for (const paged of [false, true]) {

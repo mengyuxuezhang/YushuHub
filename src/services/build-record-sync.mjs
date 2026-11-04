@@ -12,7 +12,8 @@ export function remoteBuildMetadataPatch(localBuild, remoteBuild) {
   if (version && version !== nonEmptyText(localBuild?.version)) patch.version = version
 
   const remoteBrand = remoteBuild?.brand
-  if (remoteBrand && typeof remoteBrand === 'object' && !Array.isArray(remoteBrand)) {
+  if (remoteBrand && typeof remoteBrand === 'object' && !Array.isArray(remoteBrand)
+    && (!remoteBuild.brandMetadataOnly || localBuild.brandMetadataMissing || !localBuild.brand?.clientMode)) {
     const localBrand = localBuild?.brand && typeof localBuild.brand === 'object' && !Array.isArray(localBuild.brand)
       ? localBuild.brand
       : {}

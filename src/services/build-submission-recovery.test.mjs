@@ -18,7 +18,7 @@ test('retains the official source before a remote response exists', () => {
 test('recovers an accepted submission using a read-only status lookup', async () => {
   const found = await findSubmittedCenterBuild(local, async (path, body) => {
     assert.equal(path, '/api/center/builds/status')
-    assert.deepEqual(body, { localBuildIds: [local.id] })
+    assert.deepEqual(body, { localBuildIds: [local.id], view: 'status' })
     return [remote]
   })
   assert.equal(found, remote)
@@ -41,7 +41,7 @@ test('background reconciliation restores old failed submissions without creating
     database: { query: async (sql, params) => { assert(sql.includes('owner_user_id = ?')); assert(sql.includes('LIMIT 100')); assert.deepEqual(params, ['test-owner']); return [[local]] } },
     normalizeBuild: row => row, ownerUserId: 'test-owner',
     updateBuild: async (...args) => writes.push(args),
-    request: async (path, body) => { assert.equal(path, '/api/center/builds/status'); assert.deepEqual(body, { localBuildIds: [local.id] }); return [remote] },
+    request: async (path, body) => { assert.equal(path, '/api/center/builds/status'); assert.deepEqual(body, { localBuildIds: [local.id], view: 'status' }); return [remote] },
   })
   assert.equal(count, 1)
   assert.equal(writes[0][0], local.id)

@@ -8,7 +8,7 @@ export function hasCenterSubmissionIntent(build = {}) {
 }
 
 export async function findSubmittedCenterBuild(build, request) {
-  const results = await request('/api/center/builds/status', { localBuildIds: [build.id] })
+  const results = await request('/api/center/builds/status', { localBuildIds: [build.id], view: 'status' })
   return (Array.isArray(results) ? results : []).find(remote => remote.centerLocalBuildId === build.id
     && remote.brand?.sourceProjectId === build.projectId) ?? null
 }
@@ -38,7 +38,7 @@ export async function recoverUnlinkedCenterBuilds({ database, normalizeBuild, up
     ORDER BY created_at DESC LIMIT 100`, platformScope ? [] : [ownerUserId])
   const builds = rows.map(normalizeBuild).filter(hasCenterSubmissionIntent)
   if (!builds.length) return 0
-  const remotes = await request('/api/center/builds/status', { localBuildIds: builds.map(build => build.id) })
+  const remotes = await request('/api/center/builds/status', { localBuildIds: builds.map(build => build.id), view: 'status' })
   let recovered = 0
   for (const build of builds) {
     const remote = (Array.isArray(remotes) ? remotes : []).find(item => item.centerLocalBuildId === build.id && item.brand?.sourceProjectId === build.projectId)

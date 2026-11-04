@@ -67,6 +67,27 @@ test('isCenterDelegatedBuild only marks official-center mirror records', () => {
   assert.equal(isCenterDelegatedBuild({ remoteBuildId: 'remote-build' }), false)
 })
 
+test('lightweight status and acknowledgement omit images, while legacy responses keep the full brand', async () => {
+  const record = { id: 'remote', status: 'succeeded', files: [{ sha256: 'digest' }], brand: { clientMode: 'personal', sourceProjectId: 'project', sourceBuildId: 'local', logoUrl: 'data:image/png;base64,' + 'x'.repeat(6_000_000) } }
+  const status = postHandler('/api/center/builds/status', { normalizeBuild: row => row })
+  let sql
+  setPool({ query: async query => { sql = query; return [[record]] } })
+  try {
+    for (const view of ['status', undefined]) {
+      const res = responseRecorder()
+      await status({ centerSupplier: { id: 'supplier' }, body: { buildIds: ['remote'], view } }, res)
+      assert.equal(res.body.data[0].brand.logoUrl !== undefined, view !== 'status')
+      assert.equal(sql.startsWith('SELECT *'), view !== 'status')
+      const submit = postHandler('/api/center/builds', { createCenterBuild: async () => record })
+      const ack = responseRecorder()
+      await submit({ centerSupplier: { id: 'supplier' }, body: { view, localBuildId: 'local' } }, ack)
+      assert.equal(ack.body.data.brand.logoUrl !== undefined, view !== 'status')
+      assert.deepEqual(ack.body.data.files, record.files)
+    }
+    assert(record.brand.logoUrl.length > 6_000_000)
+  } finally { setPool(null) }
+})
+
 test('license metadata exposes expiry to old and new downstream clients without changing configured status', async () => {
   const handler = postHandler('/api/center/license', {
     supplierLicensePayload: async () => ({ id: 'supplier-a', status: 'enabled', expiresAt: '2020-01-01T00:00:00Z', authorizationVersion: 2 }),

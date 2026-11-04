@@ -1,5 +1,7 @@
 import { officialAuthorization, officialRequest } from '../../src/services/authorization/official-services.mjs'
 import { findSubmittedCenterBuild, centerSubmissionPatch, recoverUnlinkedCenterBuilds } from '../../src/services/build-submission-recovery.mjs'
+import { buildStatusColumns } from '../../src/services/build-status-view.mjs'
+import { createBuildSyncCoordinator, syncBeforeBuildList } from '../../src/services/build-sync-coordinator.mjs'
 import { createAuthorizationRuntime, licenseAllowsPermission, licenseBusinessGuard } from '../../src/services/authorization/runtime.mjs'
 import { detectLegacyUpgrade } from '../../src/services/authorization/legacy-upgrade.mjs'
 import { resolveTextConnection, assertTextModelWrite, assertProviderWrite, isFixedText, filterFixedSyncPacket, OKPA_TEXT_PROVIDER_ID } from '../../src/services/authorization/fixed-provider.mjs'
@@ -4305,6 +4307,7 @@ async function submitBuildToCenter(build, project, user, publicUrls = {}) {
     const submitted = await buildCenterApi('/api/center/builds', {
       supplierId: config.supplierId,
       localBuildId: build.id,
+      view: 'status',
       requestedBy: user?.username || user?.id || build.requestedBy || '',
       version: build.version,
       brand,
@@ -4314,7 +4317,7 @@ async function submitBuildToCenter(build, project, user, publicUrls = {}) {
     return updateBuild(build.id, {
       status: submitted.status === 'succeeded' ? 'running' : submitted.status || 'queued',
       version: submitted.version || build.version || '',
-      brand: submitted.brand || brand,
+      brand: submitted.brandMetadataOnly ? brand : submitted.brand || brand,
       remoteBuildId: submitted.id,
       log: nextLog,
     })
@@ -4438,7 +4441,12 @@ function localizeCenterBuildInBackground(local, remote, config) {
   return true
 }
 
-async function syncCenterBuilds({ platformScope = false, ownerUserId = '' } = {}) {
+const buildSyncCoordinator = createBuildSyncCoordinator()
+function syncCenterBuilds(options = {}) {
+  return buildSyncCoordinator.run(options.platformScope ? 'platform' : `owner:${options.ownerUserId || ''}`, () => performCenterBuildSync(options))
+}
+
+async function performCenterBuildSync({ platformScope = false, ownerUserId = '' } = {}) {
   const config = await getBuildCenterConfig()
   if (!config.enabled) return { configured: false, checked: 0, updated: 0, localizationStarted: 0 }
   await recoverUnlinkedCenterBuilds({ database: db(), normalizeBuild, updateBuild, platformScope, ownerUserId, request: (pathname, body) => buildCenterApi(pathname, body, config) }).catch(err => console.warn('[ai-admin] Failed to recover build submissions:', err instanceof Error ? err.message : String(err)))
@@ -4447,13 +4455,14 @@ async function syncCenterBuilds({ platformScope = false, ownerUserId = '' } = {}
     : `SELECT * FROM ai_builds WHERE owner_user_id = ? AND remote_build_id IS NOT NULL AND (status IN ('queued','running') OR version IS NULL OR version = '' OR brand_json IS NULL OR JSON_EXTRACT(brand_json, '$.clientMode') IS NULL) ORDER BY created_at DESC LIMIT 100`
   const params = platformScope ? [] : [ownerUserId]
   const [rows] = await db().query(sql, params)
-  const builds = rows.map(normalizeBuild).filter((build) => build?.remoteBuildId)
+  const builds = rows.map(row => ({ ...normalizeBuild(row), brandMetadataMissing: !parseJson(row.brand_json, null)?.clientMode })).filter((build) => build?.remoteBuildId)
   if (builds.length === 0) return { configured: true, checked: 0, updated: 0, localizationStarted: 0 }
   let remoteBuilds = []
   try {
     remoteBuilds = await buildCenterApi('/api/center/builds/status', {
       supplierId: config.supplierId,
       buildIds: builds.map((build) => build.remoteBuildId),
+      view: 'status',
     }, config)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -4499,16 +4508,20 @@ async function syncCenterBuildsForUser(user) {
 }
 
 async function listBuildsForUser(user, options = {}) {
-  if (options.sync !== false) await syncCenterBuildsForUser(user)
+  await syncBeforeBuildList(options.sync, {
+    background: () => syncCenterBuilds({ platformScope: true }),
+    foreground: () => syncCenterBuildsForUser(user),
+    onError: error => console.warn('[ai-admin] Background build synchronization failed:', error instanceof Error ? error.message : String(error)),
+  })
   const ownerUserId = user.organizationContext?.legacyOwnerUserId || user.id
   const platform = user.organizationContext?.dataScope === 'platform'
   let sql = platform
-    ? `SELECT b.*, p.app_name AS project_name, p.client_mode AS project_client_mode, u.username AS owner_username, u.display_name AS owner_display_name, u.role AS owner_role,
+    ? `SELECT ${options.view === 'list' ? buildStatusColumns('b.') : 'b.*'}, p.app_name AS project_name, p.client_mode AS project_client_mode, u.username AS owner_username, u.display_name AS owner_display_name, u.role AS owner_role,
         CASE WHEN b.owner_user_id = ? AND (b.center_supplier_id IS NULL OR b.center_supplier_id = '') THEN 1 ELSE 0 END AS can_operate
        FROM ai_builds b
        LEFT JOIN ai_projects p ON p.id = b.project_id
        LEFT JOIN ai_users u ON u.id = b.owner_user_id`
-    : `SELECT b.*, p.app_name AS project_name, p.client_mode AS project_client_mode, u.username AS owner_username, u.display_name AS owner_display_name, u.role AS owner_role,
+    : `SELECT ${options.view === 'list' ? buildStatusColumns('b.') : 'b.*'}, p.app_name AS project_name, p.client_mode AS project_client_mode, u.username AS owner_username, u.display_name AS owner_display_name, u.role AS owner_role,
         1 AS can_operate
        FROM ai_builds b
        LEFT JOIN ai_projects p ON p.id = b.project_id

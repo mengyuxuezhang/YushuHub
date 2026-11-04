@@ -53,7 +53,7 @@ describe('delivery and system API contracts', () => {
   it('serializes explicit build fields and status into the paged list request', async () => {
     const f = vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok({ items: [], page: 1, pageSize: 20, total: 0, totalPages: 1 }))
     await listBuildPage({ search: '3.0.0', searchField: 'version', status: 'succeeded', page: 2, pageSize: 20 })
-    expect(String(f.mock.calls[0][0])).toBe('/api/builds?page=2&pageSize=20&search=3.0.0&searchField=version&status=succeeded&sync=1&view=list')
+    expect(String(f.mock.calls[0][0])).toBe('/api/builds?page=2&pageSize=20&search=3.0.0&searchField=version&status=succeeded&sync=background&view=list')
   })
 
   it('creates encoded download links and selects the installer as the primary artifact', () => {
