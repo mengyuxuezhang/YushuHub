@@ -2,6 +2,7 @@
 import { Play, Save, X } from '@lucide/vue'
 import ClientMenuEditor from './ClientMenuEditor.vue'
 import ProjectAssetField from './ProjectAssetField.vue'
+import ProjectDownloadSettings from './ProjectDownloadSettings.vue'
 import { ref } from 'vue'
 import LoginPreview from './LoginPreview.vue'
 import { loginDesigns } from '@/utils/login-preview'
@@ -35,6 +36,7 @@ defineEmits<{ close: []; save: []; 'save-and-build': [] }>()
             <label><span>账号访问范围</span><select v-model="form.clientPolicy.projectAccountsOnly"><option :value="false">保持现有账号兼容</option><option :value="true">仅本项目账号</option></select><small>限制后只有来源属于本项目的账号可访问。请先为现有用户确认来源项目，再开启。</small></label>
           </div>
         </section>
+        <ProjectDownloadSettings :form="form" />
         <section class="form-section"><div class="section-heading"><span>2</span><div><h3>品牌素材</h3><p>可直接上传，也可以填写已有图片 URL。</p></div></div><div class="project-asset-grid">
           <ProjectAssetField v-model="form.logoUrl" label="品牌 Logo" />
           <ProjectAssetField v-model="form.iconUrl" label="安装包 / 窗口图标" accept=".ico,image/x-icon,image/vnd.microsoft.icon,image/png" hint="建议 256×256 透明 PNG，或包含 256 尺寸的 ICO。" />

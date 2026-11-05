@@ -605,6 +605,7 @@ export async function initDatabase(options = {}) {
   await ensureColumn('ai_projects', 'model_tutorial_url', 'TEXT NULL AFTER docs_url')
   await ensureColumn('ai_projects', 'client_menus', 'JSON NULL AFTER model_tutorial_url')
   await ensureColumn('ai_projects', 'client_policy_json', 'JSON NULL')
+  await ensureColumn('ai_projects', 'latest_download_file_name', "VARCHAR(128) NOT NULL DEFAULT ''")
   await ensureColumn('ai_projects', 'organization_id', "VARCHAR(64) NOT NULL DEFAULT '' AFTER owner_user_id")
   await ensureColumn('ai_projects', 'client_mode', "ENUM('personal','enterprise') NOT NULL DEFAULT 'personal' AFTER organization_id")
   await pool.query(`

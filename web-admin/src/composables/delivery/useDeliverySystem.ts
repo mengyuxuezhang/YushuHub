@@ -133,6 +133,8 @@ export function useDeliverySystem(section: DeliverySection) {
       ownerUserId: x?.ownerUserId || "",
       clientMode: "personal",
       clientPolicy: { registrationEnabled: x?.clientPolicy?.registrationEnabled ?? true, customModelsEnabled: x?.clientPolicy?.customModelsEnabled ?? false, projectAccountsOnly: x?.clientPolicy?.projectAccountsOnly ?? false },
+      latestDownloadFileName: x?.latestDownloadFileName || "",
+      latestDownloadUrl: x?.latestDownloadUrl || "",
       appName: x?.appName || "",
       brandName: x?.brandName || "",
       shortName: x?.shortName || "",

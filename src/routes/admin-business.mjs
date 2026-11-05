@@ -14,6 +14,7 @@ import { safeProjectId } from '../utils/slug.mjs'
 import { PUBLIC_ADMIN_BASE_URL, PUBLIC_UPDATE_BASE_URL } from '../config/env.mjs'
 import { resolvePublicUrlsForRequest } from '../utils/public-url.mjs'
 import { annotateWorkerSourceStatus } from '../services/worker-scheduling.mjs'
+import { projectDownloadInfo } from '../services/project-downloads.mjs'
 import { compactBuildList } from '../services/build-list-view.mjs'
 
 export function registerAdminBusinessRoutes(app, deps) {
@@ -91,7 +92,7 @@ export function registerAdminBusinessRoutes(app, deps) {
         adminBaseUrl: PUBLIC_ADMIN_BASE_URL,
         updateBaseUrl: PUBLIC_UPDATE_BASE_URL,
       })
-      res.json({ success: true, data: await listProjectsForUser(req.user, publicUrls.adminBaseUrl) })
+      res.json({ success: true, data: (await listProjectsForUser(req.user, publicUrls.adminBaseUrl)).map(project => projectDownloadInfo(project, publicUrls.adminBaseUrl)) })
     } catch (err) {
       next(err)
     }
@@ -110,7 +111,7 @@ export function registerAdminBusinessRoutes(app, deps) {
         updateBaseUrl: PUBLIC_UPDATE_BASE_URL,
       })
       const saved = await upsertProject(req.body || {}, req.user, existing, publicUrls.adminBaseUrl)
-      res.json({ success: true, data: saved })
+      res.json({ success: true, data: projectDownloadInfo(saved, publicUrls.adminBaseUrl) })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
     }

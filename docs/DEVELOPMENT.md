@@ -20,3 +20,5 @@
 前端执行 npm run admin:install、npm run admin:typecheck、npm run admin:test、npm run admin:architecture 和 npm run admin:build。构建会更新 web/admin-v2，需连同源码提交。npm run admin:dev 启动开发服务，API 代理指向本地后端。
 
 保持组织、账号、角色与数据范围的边界，不把历史企业业务重新接入。第三方 Agent 接入需要自行实现账号、模型代理、权益和资源协议；桌面构建中心及其他产品的使用授权单独取得。
+
+项目固定下载链接的配置、兼容迁移与反向代理说明见 [PROJECT_DOWNLOADS.md](PROJECT_DOWNLOADS.md)。

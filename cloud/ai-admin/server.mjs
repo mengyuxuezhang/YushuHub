@@ -105,6 +105,9 @@ import { registerVoiceResourceRoutes } from '../../src/routes/voice-resources.mj
 import { registerUserRoutes } from '../../src/routes/users.mjs'
 import { registerUserUsageReportRoutes } from '../../src/routes/user-usage-report.mjs'
 import { registerAdminBusinessRoutes } from '../../src/routes/admin-business.mjs'
+import { registerProjectDownloadRoutes } from '../../src/routes/project-downloads.mjs'
+import { createProjectDownloadService, normalizeLatestDownloadFileName } from '../../src/services/project-downloads.mjs'
+import { findLatestProjectRelease } from '../../src/repositories/project-downloads.mjs'
 import { registerBuildRoutes } from '../../src/routes/builds.mjs'
 import { registerMembershipRoutes } from '../../src/routes/memberships.mjs'
 import { registerPaymentRoutes } from '../../src/routes/payments.mjs'
@@ -198,6 +201,7 @@ app.use((req, res, next) => {
   next()
 })
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true }))
+registerProjectDownloadRoutes(app, { downloads: createProjectDownloadService({ findProject: findProjectById, findLatestRelease: findLatestProjectRelease }) })
 app.use('/updates/ai', express.static(PUBLIC_UPDATE_ROOT, { maxAge: '5m' }))
 app.use('/updates/ai-staging', express.static(PUBLIC_PREVIEW_ROOT, { maxAge: '5m' }))
 app.use('/agent/ai', express.static(PUBLIC_UPDATE_ROOT, { maxAge: '5m' }))
@@ -947,6 +951,7 @@ function normalizeProject(row, publicAdminBaseUrl = PUBLIC_ADMIN_BASE_URL) {
     ownerRole: row.owner_role || '',
     clientMode: 'personal',
     clientPolicy: normalizeClientPolicy(row.client_policy_json),
+    latestDownloadFileName: row.latest_download_file_name || '',
     appName: row.app_name,
     brandName: row.brand_name,
     shortName: row.short_name,
@@ -3999,6 +4004,7 @@ async function validateProject(input, currentUser, existingProject = null, publi
     clientMode: 'personal',
     appName,
     brandName,
+    latestDownloadFileName: normalizeLatestDownloadFileName(input.latestDownloadFileName === undefined ? existingProject?.latestDownloadFileName : input.latestDownloadFileName),
     shortName: String(input.shortName || brandName).trim(),
     description: String(input.description || `${appName} Desktop`).trim(),
     appId: existingProject?.appId || generatedAppId,
@@ -4061,8 +4067,8 @@ async function upsertProject(input, user, existingProject = null, publicAdminBas
         id, owner_user_id, organization_id, client_mode, app_name, brand_name, short_name, description, app_id, config_dir_name,
         logo_url, icon_url, contact_qr_url, login_logo_url, login_design, login_title, login_subtitle,
         login_hero_title, login_hero_subtitle, about_text, official_site_url, docs_url, model_tutorial_url,
-        client_menus, theme_color, show_github_link, status, client_policy_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        client_menus, theme_color, show_github_link, status, client_policy_json, latest_download_file_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         owner_user_id = VALUES(owner_user_id),
         organization_id = VALUES(organization_id),
@@ -4090,7 +4096,8 @@ async function upsertProject(input, user, existingProject = null, publicAdminBas
         theme_color = VALUES(theme_color),
         show_github_link = VALUES(show_github_link),
         status = VALUES(status),
-        client_policy_json = VALUES(client_policy_json)`,
+        client_policy_json = VALUES(client_policy_json),
+        latest_download_file_name = VALUES(latest_download_file_name)`,
       [
         project.id,
         project.ownerUserId,
@@ -4120,6 +4127,7 @@ async function upsertProject(input, user, existingProject = null, publicAdminBas
         project.showGithubLink ? 1 : 0,
         project.status,
         JSON.stringify(policy),
+        project.latestDownloadFileName,
       ],
     )
   } catch (err) {

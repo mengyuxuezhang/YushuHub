@@ -8,6 +8,9 @@ const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, '..')
 
 const targets = [
+  'src/services/project-downloads.mjs',
+  'src/routes/project-downloads.mjs',
+  'src/repositories/project-downloads.mjs',
   ...readdirSync(path.join(repoRoot, 'src/services/authorization')).filter(file => file.endsWith('.mjs')).map(file => `src/services/authorization/${file}`),
   'src/routes/deployment-authorization.mjs',
   'src/repositories/authorization-state.mjs',

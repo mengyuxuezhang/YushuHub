@@ -22,6 +22,26 @@ function responseRecorder() {
   }
 }
 
+test('project saving returns its fixed download link and keeps existing ownership checks', async () => {
+  const { app, routes } = captureRoutes()
+  const project = { id: 'demo-project', ownerUserId: 'owner', latestDownloadFileName: 'demo-latest-x64.exe' }
+  let saves = 0
+  registerAdminBusinessRoutes(app, {
+    findProjectById: async () => project,
+    upsertProject: async input => { saves++; assert.equal(input.latestDownloadFileName, project.latestDownloadFileName); return project },
+  })
+  const handler = routes.find(route => route.method === 'POST' && route.path === '/api/projects').handlers.at(-1)
+  const request = { body: { id: project.id, latestDownloadFileName: project.latestDownloadFileName }, user: { id: 'owner' } }
+  const response = responseRecorder()
+  await handler(request, response)
+  assert.equal(response.statusCode, 200)
+  assert.match(response.body.data.latestDownloadUrl, /\/updates\/ai\/demo-project\/demo-latest-x64\.exe$/)
+  const forbidden = responseRecorder()
+  await handler({ ...request, user: { id: 'other-owner' } }, forbidden)
+  assert.equal(forbidden.statusCode, 403)
+  assert.equal(saves, 1)
+})
+
 test('manual end-user route assigns the account to the authenticated operator', async () => {
   const { app, routes } = captureRoutes()
   let received = null
