@@ -1,3 +1,4 @@
+import { savedConnection } from './connection-config.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { createDeploymentClient, emptyDeploymentState } from './deployment-client.mjs'
@@ -11,11 +12,12 @@ export function authorizationMode(env = process.env) {
   return mode
 }
 export function createAuthorizationRuntime({ root, env = process.env }) {
-  if (authorizationMode(env) === 'legacy') return null
-  const keys = env.AI_LICENSE_PUBLIC_KEYS_FILE ? JSON.parse(fs.readFileSync(env.AI_LICENSE_PUBLIC_KEYS_FILE, 'utf8')) : {}
-  const client = createDeploymentClient({ centerUrl: env.AI_LICENSE_CENTER_URL, instanceId: env.AI_LICENSE_INSTANCE_ID || '',
-    publicUrl: env.AI_ADMIN_PUBLIC_URL || 'https://example.com', publicKeys: keys,
-    store: fileStateStore(path.resolve(root, env.AI_LICENSE_STATE_FILE || 'data/deployment-license.json'), emptyDeploymentState()) })
+  const saved = savedConnection(root, env)
+  if (!saved && authorizationMode(env) === 'legacy') return null
+  const keys = saved?.publicKeys || (env.AI_LICENSE_PUBLIC_KEYS_FILE ? JSON.parse(fs.readFileSync(env.AI_LICENSE_PUBLIC_KEYS_FILE, 'utf8')) : {})
+  const client = createDeploymentClient({ centerUrl: saved?.centerUrl || env.AI_LICENSE_CENTER_URL, instanceId: saved?.instanceId || env.AI_LICENSE_INSTANCE_ID || '',
+    publicUrl: saved?.publicUrl || env.AI_ADMIN_PUBLIC_URL || 'https://example.com', publicKeys: keys,
+    store: fileStateStore(path.resolve(root, saved?.stateFile || env.AI_LICENSE_STATE_FILE || 'data/deployment-license.json'), emptyDeploymentState()) })
   return { client, async license(options = {}) { if (options.force) await client.refresh(true).catch(() => {}); return client.license() },
     start() { const timer = setInterval(() => client.refresh(true).catch(() => console.error('Authorization refresh unavailable')), 60_000); timer.unref(); return () => clearInterval(timer) } }
 }

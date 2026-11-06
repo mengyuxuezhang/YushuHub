@@ -13,6 +13,7 @@ const targets = [
   'src/repositories/project-downloads.mjs',
   ...readdirSync(path.join(repoRoot, 'src/services/authorization')).filter(file => file.endsWith('.mjs')).map(file => `src/services/authorization/${file}`),
   'src/routes/deployment-authorization.mjs',
+  'src/routes/authorization-onboarding.mjs',
   'src/repositories/authorization-state.mjs',
   'src/repositories/authorization-file-state.mjs',
   'scripts/authorization-upgrade-inspect.mjs',

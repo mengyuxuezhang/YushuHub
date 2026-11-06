@@ -1,3 +1,4 @@
+import { applySavedConnection } from '../services/authorization/connection-config.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { repoRoot } from './paths.mjs'
@@ -21,6 +22,7 @@ export function loadLocalEnv() {
 }
 
 loadLocalEnv()
+applySavedConnection(repoRoot)
 
 function baotaFriendlyUpdateBaseUrl(baseUrl, root, channel) {
   const normalized = normalizeHttpUrl(baseUrl)

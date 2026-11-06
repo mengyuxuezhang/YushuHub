@@ -1,3 +1,6 @@
+import { createAuthorizationOnboarding } from '../../src/services/authorization/onboarding.mjs'
+import { registerAuthorizationOnboardingRoutes } from '../../src/routes/authorization-onboarding.mjs'
+import { restartAuthorizationConnection } from '../../src/services/authorization/restart.mjs'
 import { officialAuthorization, officialRequest } from '../../src/services/authorization/official-services.mjs'
 import { findSubmittedCenterBuild, centerSubmissionPatch, recoverUnlinkedCenterBuilds } from '../../src/services/build-submission-recovery.mjs'
 import { buildStatusColumns } from '../../src/services/build-status-view.mjs'
@@ -394,6 +397,10 @@ const getSupplierLicense = options => CENTER_SUPPLIER_MANAGEMENT_ENABLED ? getLe
 authorizationRuntime?.start()
 app.use(licenseBusinessGuard({ license: getSupplierLicense, enabled: Boolean(authorizationRuntime) && !CENTER_SUPPLIER_MANAGEMENT_ENABLED }))
 registerDeploymentAuthorizationRoutes(app, { runtime: authorizationRuntime, database: db })
+registerAuthorizationOnboardingRoutes(app, {
+  service: createAuthorizationOnboarding({ root: repoRoot, legacySupplierId: async () => { const config = await getBuildCenterConfig(); return config.token ? config.supplierId : '' } }), disabled: CENTER_SUPPLIER_MANAGEMENT_ENABLED,
+  restart: publicUrl => restartAuthorizationConnection({ root: repoRoot, workDir: path.join(SELF_UPDATE_WORK_DIR, 'authorization'), runCommand, pm2Bin: SELF_UPDATE_PM2_BIN, configuredName: SELF_UPDATE_PM2_NAME, port: PORT, version: PACKAGE_VERSION, publicUrl }),
+})
 
 async function getAdminVersion() {
   try {
