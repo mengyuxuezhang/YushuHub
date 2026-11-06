@@ -17,8 +17,10 @@ export function officialAuthorization({ centerUrl, database, findSupplier, subje
       const submitted = req.body?.supplierId || req.query?.supplierId || req.headers['x-supplier-id']
       if (submitted && submitted !== claims.sub) throw failure('ORGANIZATION_MISMATCH', '请求与授权主体不符', 403)
       const grant = claims.grant
-      const businessId = Object.hasOwn(subjectBindings, grant.id) ? subjectBindings[grant.id] : grant.id
-      if (businessId !== grant.id && !await findSupplier(businessId)) throw failure('BUSINESS_BINDING_MISSING', '已确认的历史业务身份不存在', 503)
+      const subject = grant.businessId || grant.id
+      if (!/^[A-Za-z0-9_.:-]{1,64}$/.test(subject)) throw failure('INVALID_BUSINESS_ID', '授权业务身份无效', 403)
+      const businessId = Object.hasOwn(subjectBindings, subject) ? subjectBindings[subject] : subject
+      if (businessId !== subject && !await findSupplier(businessId)) throw failure('BUSINESS_BINDING_MISSING', '已确认的历史业务身份不存在', 503)
       await database().query(`INSERT IGNORE INTO ai_center_suppliers (id,name,token_hash,token_preview,status,license_type,organization_id,authorization_version,expires_at,notes)
         VALUES (?,?,?,'','enabled','central',?,?,?,?)`, [businessId, grant.name, `central:${crypto.randomBytes(32).toString('hex')}`, businessId, grant.version, grant.expiresAt ? new Date(grant.expiresAt) : null, '独立授权中心验证的业务关联；不能签发授权'])
       await database().query("UPDATE ai_center_suppliers SET license_type='central',authorization_version=?,expires_at=? WHERE id=?", [grant.version, grant.expiresAt ? new Date(grant.expiresAt) : null, businessId])

@@ -18,6 +18,7 @@ const targets = [
   'src/repositories/authorization-file-state.mjs',
   'scripts/authorization-upgrade-inspect.mjs',
   'scripts/e2e-direct-newapi.mjs',
+  'scripts/test-authorization-recovery-integration.mjs',
   'src/services/model-key-scope.mjs',
   'src/services/model-provider-keys.mjs',
   'src/services/client-project-policy.mjs',

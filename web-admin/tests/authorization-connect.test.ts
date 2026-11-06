@@ -29,3 +29,29 @@ it('activates pasted connection in one action, clears it and offers retry when r
     expect(host.textContent).not.toContain('YUSHU1.fictional')
   } finally { app.unmount() }
 })
+
+it('offers recovery for invalid authorization without claiming the saved connection is usable', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ success: true, data: { configured: true, requiresRestart: false, authorizationStatus: 'invalid', connection: { licenseId: 'deleted-license', publicUrl: 'https://agent.example.test' } } }))
+  const host = document.createElement('div'), app = createApp({ render: () => h(AuthorizationConnect) })
+  app.mount(host)
+  try {
+    await new Promise(resolve => setTimeout(resolve, 0)); await nextTick()
+    expect(host.querySelector('textarea')).not.toBeNull()
+    expect(host.textContent).toContain('重新授权并应用')
+    expect(host.textContent).not.toContain('授权有效，连接已应用')
+    expect(host.textContent).toContain('不会重建或清空经营数据')
+  } finally { app.unmount() }
+})
+
+it('keeps network uncertainty distinct from invalid authorization', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ success: true, data: { configured: true, requiresRestart: false, authorizationStatus: 'unavailable', message: '暂时无法核对授权中心', connection: { licenseId: 'license', publicUrl: 'https://agent.example.test' } } }))
+  const host = document.createElement('div'), app = createApp({ render: () => h(AuthorizationConnect) })
+  app.mount(host)
+  try {
+    await new Promise(resolve => setTimeout(resolve, 0)); await nextTick()
+    expect(host.querySelector('textarea')).toBeNull()
+    expect(host.textContent).not.toContain('授权有效，连接已应用')
+    expect(host.textContent).toContain('暂时无法核对授权中心')
+    expect(host.textContent).toContain('重新核对授权')
+  } finally { app.unmount() }
+})

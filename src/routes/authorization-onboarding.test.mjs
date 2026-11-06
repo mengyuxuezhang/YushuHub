@@ -8,7 +8,7 @@ test('onboarding requires enabled owner even in legacy mode and reports restart 
   let user = null, activated = 0
   setAuthDependencies({ getUserBySession: async () => user })
   const app = express(); app.use(express.json())
-  const service = { state: () => ({ configured: true, connection: { publicUrl: 'https://agent.example.test' } }), activate: async () => { activated++; return { activated: true, requiresRestart: true } } }
+  const service = { status: async () => ({}), state: () => ({ configured: true, connection: { publicUrl: 'https://agent.example.test' } }), activate: async () => { activated++; return { activated: true, requiresRestart: true } } }
   registerAuthorizationOnboardingRoutes(app, { service, restart: async () => { throw Error('unsupported deployment') } })
   app.use((e, _req, res, _next) => res.status(e.statusCode || 500).json({ success: false, code: e.code }))
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve))

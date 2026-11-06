@@ -398,7 +398,7 @@ authorizationRuntime?.start()
 app.use(licenseBusinessGuard({ license: getSupplierLicense, enabled: Boolean(authorizationRuntime) && !CENTER_SUPPLIER_MANAGEMENT_ENABLED }))
 registerDeploymentAuthorizationRoutes(app, { runtime: authorizationRuntime, database: db })
 registerAuthorizationOnboardingRoutes(app, {
-  service: createAuthorizationOnboarding({ root: repoRoot, legacySupplierId: async () => { const config = await getBuildCenterConfig(); return config.token ? config.supplierId : '' } }), disabled: CENTER_SUPPLIER_MANAGEMENT_ENABLED,
+  service: createAuthorizationOnboarding({ root: repoRoot, runtimeClient: authorizationRuntime?.client, legacySupplierId: async () => { const config = await getBuildCenterConfig(); return config.token ? config.supplierId : '' } }), disabled: CENTER_SUPPLIER_MANAGEMENT_ENABLED,
   restart: publicUrl => restartAuthorizationConnection({ root: repoRoot, workDir: path.join(SELF_UPDATE_WORK_DIR, 'authorization'), runCommand, pm2Bin: SELF_UPDATE_PM2_BIN, configuredName: SELF_UPDATE_PM2_NAME, port: PORT, version: PACKAGE_VERSION, publicUrl }),
 })
 

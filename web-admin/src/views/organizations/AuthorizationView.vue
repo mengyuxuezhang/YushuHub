@@ -6,6 +6,8 @@ import { useAuthStore } from '@/stores/auth'
 import { previewFixedText, configureFixedText, type FixedTextPreview } from '@/api/authorization'
 import { toUserMessage } from '@/api/client'
 const { license, loading, error, refresh } = useSupplierLicense(), auth = useAuthStore()
+const connectionRevision = ref(0)
+async function refreshAll() { await refresh(true); connectionRevision.value += 1 }
 const saving = ref(false), message = ref(''), preview = ref<FixedTextPreview | null>(null)
 
 async function inspect() { saving.value = true; try { preview.value = await previewFixedText(); error.value = '' } catch (e) { error.value = toUserMessage(e) } finally { saving.value = false } }
@@ -14,13 +16,13 @@ onMounted(() => refresh())
 </script>
 <template>
   <section class="management-page">
-    <header class="page-heading"><div><span class="eyebrow">Deployment authorization</span><h1>授权与连接</h1><p>授权由独立中心签发，每个代理独立部署和经营。员工权限在账号与岗位中管理。</p></div><button class="secondary-button" :disabled="loading" @click="refresh(true)">刷新状态</button></header>
+    <header class="page-heading"><div><span class="eyebrow">Deployment authorization</span><h1>授权与连接</h1><p>授权由独立中心签发，每个代理独立部署和经营。员工权限在账号与岗位中管理。</p></div><button class="secondary-button" :disabled="loading" @click="refreshAll">刷新状态</button></header>
     <p v-if="error" role="alert">{{ error }}</p><p v-if="message" role="status">{{ message }}</p>
-    <article class="panel-card"><h2>{{ license?.verified ? '授权已验证' : '等待激活或续期' }}</h2><p>经营主体：{{ auth.user?.organizationContext?.organizationId || '尚未取得' }}</p><p>授权ID：{{ license?.id || '尚未绑定' }}</p><p>有效期：{{ license?.expiresAt || '未设置期限' }}</p><p v-if="license?.source !== 'license-center'">当前沿用旧授权，可通过下方接入入口迁入独立中心。</p><p>文本供应商模式：{{ license?.modelMode === 'fixed' ? '固定 OKPA API' : license?.modelMode === 'custom' ? '自定义' : license?.source !== 'license-center' ? '沿用旧服务商配置' : '等待中心激活' }}</p>
+    <article class="panel-card"><h2>{{ license?.verified ? '授权已验证' : '授权未生效' }}</h2><p>经营主体：{{ auth.user?.organizationContext?.organizationId || '尚未取得' }}</p><p>授权ID：{{ license?.id || '尚未绑定' }}</p><p>有效期：{{ license?.expiresAt || '未设置期限' }}</p><p v-if="license?.source !== 'license-center'">当前沿用旧授权，可通过下方接入入口迁入独立中心。</p><p>文本供应商模式：{{ license?.modelMode === 'fixed' ? '固定 OKPA API' : license?.modelMode === 'custom' ? '自定义' : license?.source !== 'license-center' ? '沿用旧服务商配置' : '等待中心激活' }}</p>
 
-      <p>续期沿用原授权，不需要更换激活码。网络宽限受签名及授权有效期限制。</p>
+      <p v-if="license?.verified">续期沿用原授权，不需要更换激活码。网络宽限受签名及授权有效期限制。</p><p v-else>授权失效后可在下方重新接入；如只是连接超时，请先刷新核对。</p>
     </article>
-    <AuthorizationConnect v-if="auth.user?.organizationContext?.isOwner && license?.id !== 'official-center'" />
+    <AuthorizationConnect :key="connectionRevision" v-if="auth.user?.organizationContext?.isOwner && license?.id !== 'official-center'" />
     <article v-if="license?.modelMode === 'fixed' && license.verified" class="panel-card"><h2>固定文本连接</h2><p>https://api.okpa.cn/v1</p><p>在中转站自行充值并创建Key，终端支付与积分仍由本后台管理。音频、生图和独立搜索配置保持原样。</p><a href="https://api.okpa.cn/" target="_blank" rel="noopener noreferrer">打开 OKPA API 充值与Key管理</a>
       <button v-if="auth.can('model_providers.manage')" class="secondary-button" :disabled="saving" @click="inspect">预览文本连接切换</button>
       <div v-if="preview"><p>当前共{{ preview.models.length }}个文本模型。切换保留模型身份和终端售价，原Key不会复制。</p><ul><li v-for="m in preview.models" :key="m.id">{{ m.name }} · {{ m.modelId }}</li></ul>

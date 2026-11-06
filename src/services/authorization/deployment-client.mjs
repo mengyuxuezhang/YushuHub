@@ -5,7 +5,7 @@ export const emptyDeploymentState = () => ({ credential: null, certificate: null
 export function createDeploymentClient({ store, centerUrl, instanceId, publicUrl, publicKeys, fetchImpl = fetch, now = Date.now }) {
   const base = centerUrl && new URL(centerUrl)
   if (base && (base.username || base.password || base.protocol !== 'https:' && !(process.env.NODE_ENV === 'test' && base.hostname === '127.0.0.1'))) throw new Error('License center requires HTTPS')
-  const metadata = g => ({ id: g.id, name: g.name, domain: g.domain, modelMode: g.modelMode, expiresAt: g.expiresAt, version: g.version })
+  const metadata = g => ({ id: g.id, businessId: g.businessId || g.id, name: g.name, domain: g.domain, modelMode: g.modelMode, expiresAt: g.expiresAt, version: g.version })
   let refreshing
   const verify = certificate => {
     const grant = verifyClaims(certificate, { keys: publicKeys, audience: 'deployment', instanceId, now: now() })
@@ -41,12 +41,12 @@ export function createDeploymentClient({ store, centerUrl, instanceId, publicUrl
   }
   return {
     refresh,
-    async activate(code) {
+    async activate(code, previousBinding) {
       if (typeof code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(code)) throw failure('INVALID_CODE', '激活码格式不正确')
       const hash = crypto.createHash('sha256').update(code).digest('hex'), state = await store.read()
       if (state.activations[hash]) { const grant = await this.claims(); if (grant.id !== state.activations[hash]) throw failure('BINDING_MISMATCH', '主体不匹配', 403); return grant }
       if (state.rootId) throw failure('ALREADY_ACTIVATED', '续期沿用原授权，不能通过新码替换主体', 409)
-      const requestId = await store.transaction(s => s.pending[hash] ||= crypto.randomUUID()), result = await request('activate', { code, requestId, instanceId, domain: publicUrl }), grant = verify(result.certificate)
+      const requestId = await store.transaction(s => s.pending[hash] ||= crypto.randomUUID()), result = await request('activate', { code, requestId, instanceId, domain: publicUrl, ...(previousBinding ? { previousBinding } : {}) }), grant = verify(result.certificate)
       if (grant.id !== result.id || typeof result.credential !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(result.credential)) throw failure('INVALID_LICENSE', '激活响应无效', 403)
       await store.transaction(s => { if (s.rootId && s.rootId !== grant.id) throw failure('BINDING_MISMATCH', '主体已绑定', 403); Object.assign(s, { credential: result.credential, certificate: result.certificate, rootId: grant.id, metadata: metadata(grant), checkedAt: now(), rejected: false }); s.activations[hash] = grant.id; delete s.pending[hash] })
       return grant

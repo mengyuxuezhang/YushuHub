@@ -2,6 +2,18 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { officialAuthorization, officialRequest } from './official-services.mjs'
 import { officialServicePolicy } from './resource-access.mjs'
+
+test('reissued authorization resolves the signed original business identity and retains its existing binding', async () => {
+  for (const mapped of [false, true]) {
+    const calls = [], grant = { id: 'replacement', businessId: 'original', name: '示例代理', level: 1, version: 1, capabilities: [] }
+    const expected = mapped ? 'retained-supplier' : 'original'
+    const authorize = officialAuthorization({ centerUrl: 'https://license.example.test', subjectBindings: mapped ? { original: expected } : {}, database: () => ({ query: async (...args) => calls.push(args) }), findSupplier: async id => ({ id }), fetchImpl: async () => Response.json({ success: true, data: { sub: grant.id, rootId: grant.id, grant } }) })
+    const req = { path: '/api/center/source-version', headers: {}, body: { supplierId: 'replacement', businessId: 'forged' } }
+    let error; await authorize(req, {}, e => { error = e })
+    assert.equal(error, undefined); assert.equal(req.centerSupplier.id, expected)
+    assert.equal(calls[0][1][0], expected); assert.equal(req.centerSupplier.licenseGrantId, 'replacement')
+  }
+})
 test('official services verify purpose and trusted subject before creating business associations', async () => {
   const calls=[],claims={sub:'agent',rootId:'agent',grant:{id:'agent',name:'TEST',level:1,version:2,capabilities:[{key:'builds.create',enabled:true}]}}
   const authorize=officialAuthorization({centerUrl:'https://license.example.test',database:()=>({query:async(...args)=>{calls.push(args)}}),findSupplier:async()=>({id:'agent'}),fetchImpl:async(_url,options)=>{assert.equal(options.redirect,'error');assert.equal(JSON.parse(options.body).audience,'official-build');return new Response(JSON.stringify({success:true,data:claims}))}})
