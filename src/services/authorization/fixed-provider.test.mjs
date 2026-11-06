@@ -71,3 +71,19 @@ test('protected client resource reads require the signed distribution capability
   assert.equal((await admitted({...fixed,capabilities:[{key:'curated_skills.distribute',enabled:true}]})).passed,true)
   assert.equal((await admitted({...fixed,verified:false})).status,403)
 })
+
+
+test('invalid licenses preserve update permission filtering and update endpoints but still block unrelated writes', async () => {
+  for (const license of [{ verified: false, status: 'disabled' }, { verified: false, status: 'expired', expired: true }]) {
+    assert.equal(licenseAllowsPermission({ key: 'self_update.manage' }, license), true)
+    assert.equal(licenseAllowsPermission({ key: 'models.manage' }, license), false)
+    const guard = licenseBusinessGuard({ license: async () => license })
+    for (const [method, path, expected] of [['GET','/api/self-update/status',true],['POST','/api/self-update/config',true],['POST','/api/self-update/apply',true],['POST','/api/self-update-other',false],['POST','/api/client/model/v1/chat/completions',false]]) {
+      let passed = false, status
+      const res = { status: value => { status = value; return res }, json: () => {} }
+      await guard({ method, path }, res, () => { passed = true })
+      assert.equal(passed, expected, path)
+      if (!expected) assert.equal(status, 403)
+    }
+  }
+})

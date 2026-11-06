@@ -26,7 +26,7 @@ export function licenseAllowsPermission(permission, license, official = false) {
   if (!permission || RETIRED_CAPABILITIES.has(permission.key)) return false
   if (official) return true
   if (permission.officialCenterOnly) return false
-  const remediation = new Set(['organizations.view', 'authorization.view', 'account_security.manage', 'diagnostics.view', 'platform_settings.manage'])
+  const remediation = new Set(['organizations.view', 'authorization.view', 'account_security.manage', 'diagnostics.view', 'platform_settings.manage', 'self_update.manage'])
   const historical = new Set(['payments.manage', 'credits.manage', 'memberships.manage', 'end_users.manage', 'user_usage.view', 'user_usage.export'])
   if (!license?.verified || license.status !== 'enabled' || license.expired) return remediation.has(permission.key) || historical.has(permission.key)
   return license.capabilities.some(c => c.enabled && c.key === permission.key)
@@ -36,7 +36,7 @@ export function licenseBusinessGuard({ license, enabled = true }) {
   return async (req, res, next) => {
     if (!enabled || !req.path.startsWith('/api/')) return next()
     const read = ['GET', 'HEAD', 'OPTIONS'].includes(req.method)
-    const remediation = /^\/api\/(?:login(?:\/|$)|logout$|me\/password$|authorization(?:\/|$)|payment-notify\/|payment-return\/|client\/auth\/(?:login|login-captcha|logout|password-reset)(?:\/|$))/.test(req.path)
+    const remediation = /^\/api\/(?:login(?:\/|$)|logout$|me\/password$|authorization(?:\/|$)|self-update(?:\/|$)|payment-notify\/|payment-return\/|client\/auth\/(?:login|login-captcha|logout|password-reset)(?:\/|$))/.test(req.path)
     const resourcePermission = clientResourcePermission(req.path)
     if (!resourcePermission && (read || remediation || /^\/api\/client\/model-tasks\/[^/]+\/poll$/.test(req.path))) return next()
     try {
