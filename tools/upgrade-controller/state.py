@@ -6,6 +6,24 @@ import os
 from pathlib import Path
 
 
+def atomic_bytes(path, data):
+    path = Path(path)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + '.next')
+    with temporary.open('wb') as stream:
+        os.chmod(temporary, 0o600)
+        stream.write(data)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+    if os.name == 'posix':
+        fd = os.open(str(path.parent), os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
 def atomic_json(path, body):
     path = Path(path)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)

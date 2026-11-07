@@ -7,6 +7,7 @@ import subprocess
 import time
 import urllib.request
 from pathlib import Path
+from scan import parse_pm2_list, pm2_daemon_available
 
 
 class EngineError(RuntimeError):
@@ -14,6 +15,13 @@ class EngineError(RuntimeError):
 
 
 class Docker:
+    def pm2_processes(self, start_daemon=False):
+        if start_daemon:
+            self.run(['pm2', 'ping'])
+        elif not pm2_daemon_available():
+            return []
+        return parse_pm2_list(self.run(['pm2', 'jlist']))
+
     def run(self, args, timeout=60):
         try:
             environment = dict(os.environ)
@@ -114,7 +122,7 @@ class Docker:
                         raise ValueError('WRONG_RUNNING_IMAGE')
                     self.port_owner(config['port'], name=config['containerName'])
                 else:
-                    processes = json.loads(self.run(['pm2', 'jlist']))
+                    processes = self.pm2_processes(start_daemon=True)
                     selected = [p for p in processes if p.get('pm2_env', {}).get('pm_cwd') == config['appRoot'] and p.get('pm2_env', {}).get('status') == 'online']
                     if len(selected) != 1:
                         raise ValueError('PM2_RECOVERY_PROCESS_MISMATCH')

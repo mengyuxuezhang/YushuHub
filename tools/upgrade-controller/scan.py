@@ -5,6 +5,7 @@ import os
 import platform
 import re
 import shutil
+import socket
 import subprocess
 import urllib.request
 from pathlib import Path
@@ -26,23 +27,65 @@ PATH_KEYS = set(PATH_DEFAULTS) | {'AI_LICENSE_PUBLIC_KEYS_FILE', 'AI_WORKER_IDEN
     'AI_OFFICIAL_SUBJECT_BINDINGS_FILE'}
 
 
-def read_env(root):
+JS_WHITESPACE = '\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'
+
+
+def parse_env_text(text):
+    if '\x00' in text:
+        raise ValueError('ENV_BINARY_VALUES_UNSUPPORTED')
     result = {}
-    for line in (Path(root) / '.env').read_text(encoding='utf-8-sig').splitlines():
-        line = line.strip()
+    for line in text.split('\n'):
+        line = line.strip(JS_WHITESPACE)
         if not line or line.startswith('#') or '=' not in line:
             continue
-        key, value = line.split('=', 1)
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        index = line.index('=')
+        if index <= 0:
+            continue
+        key, value = line[:index].strip(JS_WHITESPACE), line[index + 1:].strip(JS_WHITESPACE)
+        if value and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
         # Match load-local-env.mjs: inherited environment wins, then the first file entry.
-        result.setdefault(key.strip(), value)
+        result.setdefault(key, value)
     return result
+
+
+def read_env(root):
+    # read_bytes avoids Python universal-newline conversion changing literal secret characters.
+    return parse_env_text((Path(root) / '.env').read_bytes().decode('utf-8'))
 
 
 def command(args):
     return subprocess.run(args, capture_output=True, text=True, timeout=20, check=True).stdout
+
+
+def pm2_daemon_available():
+    path = Path(os.environ.get('PM2_HOME') or Path.home() / '.pm2') / 'rpc.sock'
+    try:
+        with socket.socket(socket.AF_UNIX) as client:
+            client.settimeout(.5)
+            client.connect(str(path))
+        return True
+    except (OSError, AttributeError):
+        return False
+
+
+def parse_pm2_list(output):
+    # PM2 may prefix its first jlist with daemon startup banners. Only accept a
+    # complete trailing JSON array with the expected process shape, never log fragments.
+    cleaned = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', output)
+    decoder = json.JSONDecoder()
+    offset = 0
+    for line in cleaned.splitlines(keepends=True):
+        if line.lstrip().startswith('['):
+            candidate = cleaned[offset:].lstrip()
+            try:
+                rows, end = decoder.raw_decode(candidate)
+                if isinstance(rows, list) and not candidate[end:].strip() and all(isinstance(p, dict) and isinstance(p.get('name'), str) and isinstance(p.get('pm2_env'), dict) for p in rows):
+                    return rows
+            except ValueError:
+                pass
+        offset += len(line)
+    raise ValueError('INVALID_PM2_PROCESS_LIST')
 
 
 def database_lock_key(env):
@@ -73,7 +116,9 @@ def inventory(root, pm2_rows=None, runtime_reader=runtime):
     file_env = read_env(root)
     issues = []
     if pm2_rows is None:
-        pm2_rows = json.loads(command(['pm2', 'jlist']))
+        if not pm2_daemon_available():
+            raise ValueError('PM2_DAEMON_NOT_RUNNING')
+        pm2_rows = parse_pm2_list(command(['pm2', 'jlist']))
     matches = [p for p in pm2_rows if Path(p.get('pm2_env', {}).get('pm_cwd', '/')).resolve() == root]
     online = [p for p in matches if p.get('pm2_env', {}).get('status') == 'online']
     if len(online) != 1:

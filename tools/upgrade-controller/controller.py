@@ -13,8 +13,8 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 from engine import Docker, EngineError
-from scan import inventory, read_env, database_lock_key, PATH_DEFAULTS, PATH_KEYS
-from state import Journal, atomic_json, locks
+from scan import inventory, read_env, parse_env_text, database_lock_key, PATH_DEFAULTS, PATH_KEYS
+from state import Journal, atomic_json, atomic_bytes, locks
 
 TERMINAL = {'committed', 'rolled_back', 'rejected'}
 ID = re.compile(r'^[a-z][a-z0-9-]{0,47}$')
@@ -25,11 +25,55 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def read_private_json(path):
+def source_configuration_closure(app_root):
+    root = Path(app_root)
+    raw = (root / '.env').read_bytes()
+    env = parse_env_text(raw.decode('utf-8'))
+    defaults = dict(PATH_DEFAULTS)
+    defaults['AI_PREVIEW_ROOT'] = str(Path(env.get('AI_UPDATE_ROOT') or root / defaults['AI_UPDATE_ROOT']).parent / 'ai-staging')
+    paths, critical = {}, {}
+    for key in sorted(PATH_KEYS):
+        value = env.get(key) or defaults.get(key)
+        if not value:
+            continue
+        path = Path(value)
+        if not path.is_absolute():
+            path = root / path
+        paths[key] = str(path.resolve())
+        if key.endswith(('_PATH', '_FILE')) and key != 'AI_LICENSE_STATE_FILE':
+            critical[str(path)] = digest(path) if path.is_file() else None
+    for name in ('authorization-connection.json', 'legacy-upgrade-mode.json'):
+        path = root / 'data' / name
+        critical[str(path)] = digest(path) if path.is_file() else None
+    return {'envSha256': hashlib.sha256(raw).hexdigest(), 'databaseLockKey': database_lock_key(env),
+            'resolvedPaths': paths, 'criticalFiles': critical}
+
+
+def render_runtime_environment(raw, overrides):
+    # Prefix only intentional path/source overrides. All original lines remain byte-for-byte
+    # intact, so the application's own loader preserves whitespace and literal quote values.
+    prefix = []
+    for key, value in overrides.items():
+        if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key) or '\n' in value or '\r' in value:
+            raise ValueError('ENV_OVERRIDE_FORMAT_REQUIRES_REVIEW')
+        prefix.append(key + '="' + value + '"\n')
+    return ''.join(prefix).encode('utf-8') + raw
+
+
+def private_json_snapshot(path):
     path = Path(path)
-    if path.is_symlink() or (os.name == 'posix' and (path.stat().st_uid != 0 or path.stat().st_mode & 0o022)):
+    if path.is_symlink():
         raise ValueError('CONFIG_MUST_BE_ROOT_OWNED_AND_NOT_WRITABLE_BY_OTHERS')
-    return json.loads(path.read_text())
+    with path.open('rb') as stream:
+        status = os.fstat(stream.fileno())
+        if os.name == 'posix' and (status.st_uid != 0 or status.st_mode & 0o022):
+            raise ValueError('CONFIG_MUST_BE_ROOT_OWNED_AND_NOT_WRITABLE_BY_OTHERS')
+        raw = stream.read()
+    return json.loads(raw), hashlib.sha256(raw).hexdigest()
+
+
+def read_private_json(path):
+    return private_json_snapshot(path)[0]
 
 
 def mounted_roots(root, scan):
@@ -71,7 +115,8 @@ class Controller:
     def config(self, instance):
         if not ID.fullmatch(instance):
             raise ValueError('INVALID_INSTANCE_ID')
-        cfg = read_private_json(self.config_root / 'instances' / (instance + '.json'))
+        cfg, source_hash = private_json_snapshot(self.config_root / 'instances' / (instance + '.json'))
+        cfg['_registrationSha256'] = source_hash
         if cfg.get('instanceId') != instance:
             raise ValueError('INSTANCE_ID_MISMATCH')
         root = Path(cfg['appRoot'])
@@ -99,7 +144,8 @@ class Controller:
     def release(self, name):
         if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9.-]{0,79}', name):
             raise ValueError('INVALID_RELEASE_ID')
-        release = read_private_json(self.config_root / 'releases' / (name + '.json'))
+        release, source_hash = private_json_snapshot(self.config_root / 'releases' / (name + '.json'))
+        release['_descriptorSha256'] = source_hash
         if not IMAGE.fullmatch(release.get('image', '')):
             raise ValueError('IMMUTABLE_IMAGE_REFERENCE_REQUIRED')
         for key in ('htmlSha256', 'schemaSha256', 'migrationSha256'):
@@ -111,6 +157,9 @@ class Controller:
 
     def plan(self, instance, release_name):
         cfg, target = self.config(instance), self.release(release_name)
+        closure = source_configuration_closure(cfg['appRoot'])
+        registration_hash = cfg.pop('_registrationSha256')
+        release_hash = target.pop('_descriptorSha256')
         state = Path(cfg['stateDir'])
         try:
             current = json.loads((state / 'current.json').read_text())
@@ -118,6 +167,8 @@ class Controller:
             current = None
         if current:
             scan = current['inventory']
+            if scan.get('appRoot', cfg['appRoot']) != cfg['appRoot'] or scan['port'] != cfg['port']:
+                raise ValueError('REGISTERED_INSTANCE_BINDING_CHANGED_REQUIRES_REVIEW')
             old = current['release']
             if not old.get('migrationSha256'):
                 old = dict(old, **self.engine.image_contract(old['image']))
@@ -137,7 +188,11 @@ class Controller:
         cfg['expectedIdentityHash'] = authorization['identityHash']
         if current and current.get('identityHash') and current['identityHash'] != authorization['identityHash']:
             raise ValueError('AUTHORIZATION_IDENTITY_CHANGED_REQUIRES_REVIEW')
-        scan['sourceEnvSha256'] = digest(Path(cfg['appRoot']) / '.env')
+        scan['sourceEnvSha256'] = closure['envSha256']
+        if closure != source_configuration_closure(cfg['appRoot']):
+            raise ValueError('SOURCE_CONFIGURATION_CHANGED_DURING_PLAN')
+        if closure['databaseLockKey'] != scan['databaseLockKey']:
+            raise ValueError('SOURCE_DATABASE_CHANGED_DURING_PLAN')
         if int(cfg['port']) != scan['port']:
             raise ValueError('REGISTERED_PORT_CHANGED')
         if cfg.get('databaseExclusive') is not True:
@@ -180,12 +235,41 @@ class Controller:
             raise ValueError('PENDING_TRANSACTION_REQUIRES_RECOVER')
         return {'format': 1, 'instanceId': instance, 'releaseId': release_name, 'config': cfg,
                 'inventory': scan, 'old': old, 'target': target, 'oldMode': 'docker' if current else 'pm2',
-                'authorization': authorization, 'previousCurrent': current, 'mountRoots': [str(p) for p in roots]}
+                'authorization': authorization, 'configurationClosure': closure, 'registrationSha256': registration_hash,
+                'releaseDescriptorSha256': release_hash, 'previousCurrent': current, 'mountRoots': [str(p) for p in roots]}
+
+    def validate_plan_inputs(self, plan, check_identity=True):
+        cfg = plan['config']
+        if source_configuration_closure(cfg['appRoot']) != plan['configurationClosure']:
+            raise ValueError('SOURCE_CONFIGURATION_CHANGED_REPLAN_REQUIRED')
+        if digest(self.config_root / 'instances' / (plan['instanceId'] + '.json')) != plan['registrationSha256']:
+            raise ValueError('INSTANCE_REGISTRATION_CHANGED_REPLAN_REQUIRED')
+        if digest(self.config_root / 'releases' / (plan['releaseId'] + '.json')) != plan['releaseDescriptorSha256']:
+            raise ValueError('RELEASE_CONTRACT_CHANGED_REPLAN_REQUIRED')
+        if check_identity:
+            proof = self.engine.authorization_probe(cfg, use_container=plan['oldMode'] == 'docker')
+            if proof['identityHash'] != plan['authorization']['identityHash']:
+                raise ValueError('AUTHORIZATION_CHANGED_REPLAN_REQUIRED')
+
+    def capture_configuration(self, plan, operation_id):
+        self.validate_plan_inputs(plan)
+        raw = (Path(plan['config']['appRoot']) / '.env').read_bytes()
+        if hashlib.sha256(raw).hexdigest() != plan['configurationClosure']['envSha256']:
+            raise ValueError('SOURCE_CONFIGURATION_CHANGED_REPLAN_REQUIRED')
+        directory = Path(plan['config']['stateDir']) / 'snapshots' / operation_id
+        atomic_bytes(directory / '.env', raw)
+        plan['sourceEnvSnapshotDir'] = str(directory)
+
+    def snapshot_environment(self, plan):
+        path = Path(plan.get('sourceEnvSnapshotDir', '')) / '.env'
+        if not plan.get('sourceEnvSnapshotDir') or digest(path) != plan['configurationClosure']['envSha256']:
+            raise ValueError('VERIFIED_CONFIGURATION_SNAPSHOT_REQUIRED')
+        return path.read_bytes(), read_env(path.parent)
 
     def preflight(self, plan):
         cfg = plan['config']
         self.engine.available()
-        processes = json.loads(self.engine.run(['pm2', 'jlist'])) if shutil.which('pm2') else []
+        processes = self.engine.pm2_processes() if shutil.which('pm2') else []
         for process in processes:
             meta = process.get('pm2_env', {})
             other_root = Path(meta.get('pm_cwd', '/')).resolve()
@@ -253,7 +337,9 @@ class Controller:
         parent = self.root if self.root.exists() else self.root.parent
         if shutil.disk_usage(parent).free < max(1024 ** 3, size * 2 + int(plan.get('authorization', {}).get('databaseBytes', 0)) * 3):
             raise ValueError('INSUFFICIENT_DISK_FOR_BACKUP_AND_RECOVERY')
-        env = read_env(cfg['appRoot'])
+        _, env = self.snapshot_environment(plan)
+        if any('\n' in env.get(key, '') or '\r' in env.get(key, '') for key in ('AI_DB_HOST', 'AI_DB_USER', 'AI_DB_PASSWORD', 'AI_DB_PORT')):
+            raise ValueError('DATABASE_CREDENTIAL_FORMAT_REQUIRES_REVIEW')
         if (env.get('AI_DB_HOST') or '127.0.0.1').lower() not in ('127.0.0.1', 'localhost', '::1'):
             raise ValueError('REMOTE_OR_SHARED_DATABASE_REQUIRES_SEPARATE_PLAN')
         mode = env.get('AI_AUTHORIZATION_MODE')
@@ -266,7 +352,7 @@ class Controller:
         executable = cfg.get('mysqldump', '/www/server/mysql/bin/mysqldump')
         if not Path(executable).is_file():
             raise ValueError('MYSQLDUMP_UNAVAILABLE')
-        env = read_env(cfg['appRoot'])
+        _, env = self.snapshot_environment(plan)
         database = env.get('AI_DB_NAME', 'agent_ai')
         if not re.fullmatch(r'[A-Za-z0-9_]+', database):
             raise ValueError('DATABASE_NAME_REQUIRES_REVIEW')
@@ -303,7 +389,7 @@ class Controller:
             for index, path in enumerate(plan['mountRoots']):
                 if Path(path).exists():
                     archive.add(path, arcname='mount-' + str(index), recursive=True)
-            archive.add(Path(cfg['appRoot']) / '.env', arcname='original.env')
+            archive.add(Path(plan['sourceEnvSnapshotDir']) / '.env', arcname='original.env')
         os.chmod(backup / 'files.tar.gz', 0o600)
         with (backup / 'files.tar.gz').open('rb') as stream:
             os.fsync(stream.fileno())
@@ -331,27 +417,23 @@ class Controller:
         cfg = plan['config']
         directory = Path(cfg['stateDir'])
         # Load secrets via the application's existing dotenv reader, never into Docker inspect Env.
-        env = read_env(cfg['appRoot'])
+        raw, env = self.snapshot_environment(plan)
+        overrides = {}
         root = Path(cfg['appRoot'])
         for entry in plan['inventory']['paths']:
             key, path = entry['key'], Path(entry['path'])
             try:
                 relative = path.relative_to(root / 'data')
-                env[key] = str(Path('/app/data') / relative)
+                overrides[key] = str(Path('/app/data') / relative)
             except ValueError:
-                env[key] = str(path)
-        if not env.get('AI_PREVIEW_ROOT'):
-            env['AI_PREVIEW_ROOT'] = str(Path(env['AI_UPDATE_ROOT']).parent / 'ai-staging')
+                overrides[key] = str(path)
         for key in ('AI_ADMIN_UPDATE_MANIFEST_URL', 'AI_SOURCE_VERSION_URL'):
             if key in env:
-                env[key] = env[key].replace('http://8.147.134.68/agent/', 'https://updates.okpa.cn/agent/')
+                migrated = env[key].replace('http://8.147.134.68/agent/', 'https://updates.okpa.cn/agent/')
+                if migrated != env[key]:
+                    overrides[key] = migrated
         config_file = directory / 'runtime.env'
-        with config_file.open('w') as stream:
-            os.chmod(config_file, 0o600)
-            for key, value in env.items():
-                if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key) or '\n' in value or '\r' in value:
-                    raise ValueError('ENV_FORMAT_REQUIRES_REVIEW')
-                stream.write(key + '=' + value + '\n')
+        atomic_bytes(config_file, render_runtime_environment(raw, overrides))
         os.chown(config_file, 1000, 1000)
         mounts = []
         for path in plan['mountRoots']:
@@ -372,7 +454,7 @@ class Controller:
         return path
 
     def identify_pm2(self, plan):
-        rows = json.loads(self.engine.run(['pm2', 'jlist']))
+        rows = self.engine.pm2_processes()
         old = [p for p in plan['inventory']['pm2'] if p['status'] == 'online']
         matches = [p for p in rows if len(old) == 1 and p.get('pid') == old[0]['pid'] and
                    Path(p.get('pm2_env', {}).get('pm_cwd', '/')).resolve() == Path(plan['config']['appRoot']).resolve()]
@@ -422,7 +504,7 @@ class Controller:
             atomic_json(path, remaining)
 
     def resume_pm2(self, plan):
-        rows = json.loads(self.engine.run(['pm2', 'jlist']))
+        rows = self.engine.pm2_processes(start_daemon=True)
         matches = [p for p in rows if p.get('pm2_env', {}).get('pm_cwd') == plan['config']['appRoot']]
         if len(matches) > 1:
             raise ValueError('PM2_RECOVERY_TARGET_AMBIGUOUS')
@@ -444,9 +526,17 @@ class Controller:
 
     def restore(self, plan, record, journal):
         cfg = plan['config']
+        if not plan.get('sourceEnvSnapshotDir') or not plan.get('configurationClosure'):
+            raise ValueError('LEGACY_JOURNAL_WITHOUT_SNAPSHOT_REQUIRES_REVIEW')
+        self.snapshot_environment(plan)
         journal.save(record, 'rolling_back')
         # If this call is uncertain, stop here: starting old writer could create dual writers.
         self.engine.available()
+        if plan['oldMode'] == 'pm2':
+            # Bootstrap and parse PM2 before taking the healthy candidate offline.
+            self.engine.pm2_processes(start_daemon=True)
+            if digest(Path(cfg['appRoot']) / '.env') != plan['configurationClosure']['envSha256']:
+                raise ValueError('SOURCE_CONFIGURATION_CHANGED_RECOVERY_REQUIRES_REVIEW')
         container = self.engine.container(cfg['containerName'])
         if container:
             self.engine.compose(Path(cfg['stateDir']) / 'compose.json', 'stop')
@@ -518,7 +608,9 @@ class Controller:
                     raise ValueError('OPERATION_ID_REUSED_WITH_DIFFERENT_RELEASE')
                 return {'operationId': operation_id, 'stage': previous['stage']}
             plan = self.plan(instance, release_name)
+            cfg = plan['config']
             with locks(self.root, ['database:' + plan['inventory']['databaseLockKey']]):
+                self.capture_configuration(plan, operation_id)
                 self.preflight(plan)
                 record = {'operationId': operation_id, 'plan': plan}
                 journal.save(record, 'pulling')
@@ -532,6 +624,7 @@ class Controller:
                         self.engine.inspect_image(plan['old']['image'])
                     # Recheck resources immediately before stopping, after image extraction.
                     self.preflight(plan)
+                    self.validate_plan_inputs(plan)
                     if plan['oldMode'] == 'pm2':
                         self.identify_pm2(plan)
                     journal.save(record, 'draining')
@@ -541,6 +634,7 @@ class Controller:
                     self.engine.port_is_free(cfg['port'])
                     journal.save(record, 'stopped')
                     self.backup_and_prepare(plan, record, journal)
+                    self.validate_plan_inputs(plan, check_identity=False)
                     compose = self.compose_file(plan, plan['target'])
                     journal.save(record, 'starting')
                     self.engine.compose(compose, 'up')

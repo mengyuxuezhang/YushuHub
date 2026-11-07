@@ -22,6 +22,9 @@ class FakeEngine:
         if self.unknown:
             raise EngineError('COMMAND_OUTCOME_UNKNOWN')
 
+    def pm2_processes(self, start_daemon=False):
+        return json.loads(self.run(['pm2', 'jlist']))
+
     def port_owner(self, port, **kwargs):
         pass
 
@@ -93,12 +96,14 @@ class ControllerTest(unittest.TestCase):
         self.engine.app_root = str(self.app)
         self.engine.contract = self.release
         self.control = Controller(self.base / 'state', self.base / 'config', self.engine)
-        atomic_json(self.base / 'config/instances/fixture.json', {'instanceId': 'fixture', 'appRoot': str(self.app), 'port': 7079, 'databaseExclusive': True, 'databaseLockKey':'same-database'})
+        from scan import database_lock_key, read_env
+        db_key = database_lock_key(read_env(self.app))
+        atomic_json(self.base / 'config/instances/fixture.json', {'instanceId': 'fixture', 'appRoot': str(self.app), 'port': 7079, 'databaseExclusive': True, 'databaseLockKey':db_key})
         atomic_json(self.base / 'config/releases/same.json', self.release)
         from scan import PATH_DEFAULTS
         paths = [{'key': k, 'path': str(self.app / v), 'exists': (self.app / v).exists()} for k, v in PATH_DEFAULTS.items()]
         self.scan = {'issues': [], 'pm2': [{'name': 'fixture', 'pid': os.getpid(), 'status': 'online'}],
-            'runningVersion': '1.9.66', 'port': 7079, 'paths': paths, 'databaseLockKey': 'same-database',
+            'runningVersion': '1.9.66', 'port': 7079, 'paths': paths, 'databaseLockKey': db_key,
             'authorizationMode': 'legacy-marker', 'savedAuthorization': False}
         self.addCleanup(patch.stopall)
         patch('controller.inventory', return_value=self.scan).start()
@@ -227,6 +232,35 @@ class ControllerTest(unittest.TestCase):
         atomic_json(dump, [other])
         self.control.edit_pm2_autostart(plan, restore=True)
         self.assertEqual(json.loads(dump.read_text()), [other, target])
+
+    def test_env_drift_during_pull_aborts_before_stopping_old_writer(self):
+        original = self.engine.inspect_image
+        def drift(ref, pull=False):
+            result = original(ref, pull)
+            if pull:
+                with (self.app / '.env').open('a') as stream:
+                    stream.write('AI_DB_NAME=unregistered_drift_database\n')
+            return result
+        with patch.object(self.engine, 'inspect_image', side_effect=drift):
+            with self.assertRaisesRegex(RuntimeError, 'REJECTED'):
+                self.control.apply('fixture', 'same', 'drift-during-pull')
+        self.assertNotIn('pm2:stop', self.engine.events)
+        self.assertIn('unregistered_drift_database', (self.app / '.env').read_text())
+        self.assertEqual(self.journal().read()['error'], 'SOURCE_CONFIGURATION_CHANGED_REPLAN_REQUIRED')
+
+    def test_verified_snapshot_is_used_even_if_original_file_later_changes(self):
+        plan = self.control.plan('fixture', 'same')
+        self.control.capture_configuration(plan, 'snapshot-fixture')
+        original = (self.app / '.env').read_bytes()
+        with (self.app / '.env').open('a') as stream:
+            stream.write('AI_DB_NAME=unreviewed_later_change\n')
+        raw, env = self.control.snapshot_environment(plan)
+        self.assertEqual(raw, original)
+        self.assertNotEqual(env.get('AI_DB_NAME'), 'unreviewed_later_change')
+        self.control.compose_file(plan, self.release)
+        runtime = (Path(plan['config']['stateDir']) / 'runtime.env').read_bytes()
+        self.assertNotIn(b'unreviewed_later_change', runtime)
+        self.assertIn(b'unreviewed_later_change', (self.app / '.env').read_bytes())
 
 
 if __name__ == '__main__':
