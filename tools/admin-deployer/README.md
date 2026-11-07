@@ -27,7 +27,7 @@ npm install
 npm run build:exe
 ```
 
-产物为 `dist/Agent-AI-Admin-Deployer-v1.2.2.exe`。EXE 内置 Node.js 运行时及所需依赖，目标 Windows 电脑无需安装 Node.js；双击后会启动仅监听 `127.0.0.1` 的本地管理页面。默认从 `47821` 开始自动选择空闲端口，因此可与已经运行的开发版或其他发版工具实例共存。打包使用 `@yao-pkg/pkg` Enhanced SEA 模式，以正确支持本项目的 ESM、顶层 `await`、内置资源和子进程 CLI 调度。
+当前内部预发布产物为 `dist/Agent-AI-Admin-Deployer-v1.2.3-docker.1.exe`，尚未正式发布。EXE 内置 Node.js 运行时及所需依赖，目标 Windows 电脑无需安装 Node.js；双击后会启动仅监听 `127.0.0.1` 的本地管理页面。默认从 `47821` 开始自动选择空闲端口，因此可与已经运行的开发版或其他发版工具实例共存。打包使用 `@yao-pkg/pkg` Enhanced SEA 模式，以正确支持本项目的 ESM、顶层 `await`、内置资源和子进程 CLI 调度。
 
 ## 宝塔服务器本地版
 

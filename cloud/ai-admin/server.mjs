@@ -30,7 +30,7 @@ import { repoRoot, APP_LOG_DIR, APP_LOG_FILE, LEGACY_UPLOAD_DIR, UPLOAD_DIR, PUB
 import {
   PORT, HOST, ADMIN_USER, ADMIN_PASSWORD, SUPER_ADMIN_ID, SUPER_ADMIN_USERNAME, BUILD_MODE, WORKER_TOKEN, WORKER_PRIORITY, WORKER_DISABLED,
   PUBLIC_UPDATE_BASE_URL, PUBLIC_PREVIEW_BASE_URL, PUBLIC_ADMIN_BASE_URL, SOURCE_VERSION_URL,
-  WINDOWS_ICON_MIN_SIZE, SELF_UPDATE_MANIFEST_URL, SELF_UPDATE_PM2_NAME, SELF_UPDATE_PM2_BIN, SELF_UPDATE_NPM_BIN, SELF_UPDATE_RESTART_DELAY_MS,
+  WINDOWS_ICON_MIN_SIZE, SELF_UPDATE_MANIFEST_URL, SELF_UPDATE_PM2_NAME, SELF_UPDATE_PM2_BIN,
   BUILD_CENTER_URL, BUILD_CENTER_TOKEN, BUILD_CENTER_SUPPLIER_ID, BUILD_CENTER_PUBLIC_URL, CENTER_SUPPLIER_MANAGEMENT_ENABLED,
   BRAND_ASSET_IMAGE_BED_UPLOAD_URL, PACKAGE_VERSION, ADMIN_SESSION_COOKIE,
   DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME,
@@ -44,8 +44,9 @@ import { normalizeHttpUrl, normalizeOssEndpoint, trimSlashes, normalizeArtifactS
 import { normalizeSecureBuildCenterUrl } from '../../src/utils/build-center-url.mjs'
 import { canonicalizePublicUploadUrl } from '../../src/utils/public-url.mjs'
 import { migrateOfficialUpdateDatabaseSettings, migrateOfficialUpdateEnvFile } from '../../src/services/official-update-source-migration.mjs'
-import { readSelfUpdateRestartStatus, resolveCurrentPm2Process, scheduleVerifiedSelfRestart } from '../../src/services/self-update-runtime.mjs'
+import { readSelfUpdateRestartStatus } from '../../src/services/self-update-runtime.mjs'
 import { isContainerDeployment, getControllerUpdateStatus, submitControllerUpgrade } from '../../src/services/upgrade-controller-client.mjs'
+import { readPm2UpgradeStatus, schedulePm2Upgrade } from '../../src/services/pm2-upgrade-client.mjs'
 import { imageUsageEvents } from '../../src/services/media-billing.mjs'
 import { mergeReleaseHistory, readReleaseHistory, readAdminReleaseHistory } from '../../src/services/release-history.mjs'
 import { cleanupFailedBuildStorage } from '../../src/services/storage-retention.mjs'
@@ -58,7 +59,7 @@ import { parseJson, parseLimit, parseFlag, parseCreditAmount, numberOrNull, pick
 import { alternateHttpProtocolUrl, fetchText, fetchJson, readCookie } from '../../src/utils/http.mjs'
 import { writeAppLog, tailTextFile, appendSelfUpdateLog, readSelfUpdateLog } from '../../src/utils/log.mjs'
 import { redactPublicBuildLog } from '../../src/utils/build-log-redaction.mjs'
-import { downloadFile, sha256File, copyDir, removeIfExists, runCommand, icoContainsSize, mimeFromAssetPath } from '../../src/utils/fs.mjs'
+import { downloadFile, sha256File, runCommand, icoContainsSize, mimeFromAssetPath } from '../../src/utils/fs.mjs'
 import {
   setAuthDependencies,
   canAccessProject,
@@ -573,7 +574,10 @@ async function getSelfUpdateStatus({ fullHistory = false } = {}) {
   const diskVersion = await getAdminVersion()
   const manifestUrl = await getConfiguredSelfUpdateManifestUrl()
   const restartStatus = await readSelfUpdateRestartStatus(SELF_UPDATE_WORK_DIR)
+  const upgradeTask = await readPm2UpgradeStatus(repoRoot)
   const status = {
+    deploymentMode: 'pm2', upgradeTask,
+    inProgress: Boolean(upgradeTask && !['committed', 'rolled_back', 'rejected', 'failed', 'needs_attention'].includes(upgradeTask.stage)),
     enabled: Boolean(manifestUrl),
     configured: Boolean(manifestUrl),
     currentVersion: runningVersion,
@@ -593,8 +597,9 @@ async function getSelfUpdateStatus({ fullHistory = false } = {}) {
   if (!manifestUrl) return status
   const officialHistory = /^https?:\/\/(?:updates\.okpa\.cn|8\.147\.134\.68)\/agent\/ai-admin\/latest\.json$/.test(manifestUrl)
     ? readReleaseHistory(path.join(repoRoot, 'docs', 'UPDATE_HISTORY.json')) : []
-  const rawManifest = await fetchJson(manifestUrl)
-  const manifest = validateManifest(rawManifest, officialHistory)
+  let rawManifest, manifest
+  try { rawManifest = await fetchJson(manifestUrl); manifest = validateManifest(rawManifest, officialHistory) }
+  catch { return { ...status, sourceWarning: '更新源暂不可用，请稍后重新检测；已提交任务可继续查看状态' } }
   status.latestVersion = manifest.version
   status.updateAvailable = compareVersions(manifest.version, runningVersion) > 0
   status.releaseNotes = manifest.releaseNotes
@@ -610,134 +615,29 @@ async function applySelfUpdate() {
   selfUpdateInProgress = true
   try {
     return await performSelfUpdate()
-  } catch (error) {
+  } finally {
     selfUpdateInProgress = false
-    throw error
   }
 }
 
 async function performSelfUpdate() {
   const manifestUrl = await getConfiguredSelfUpdateManifestUrl()
   if (!manifestUrl) throw new Error('未配置 AI_ADMIN_UPDATE_MANIFEST_URL')
-  await fsp.mkdir(SELF_UPDATE_WORK_DIR, { recursive: true })
-  await appendSelfUpdateLog('Checking update manifest...')
   const manifest = validateManifest(await fetchJson(manifestUrl))
-  const currentVersion = PACKAGE_VERSION
-  const diskVersion = await getAdminVersion()
-  if (compareVersions(manifest.version, currentVersion) <= 0) {
-    throw new Error(`当前已是最新版本：${currentVersion}`)
-  }
-
-  const pm2Target = await resolveCurrentPm2Process({
-    runCommand,
-    pm2Bin: SELF_UPDATE_PM2_BIN,
-    configuredName: SELF_UPDATE_PM2_NAME,
-    repoRoot,
-  })
-  await appendSelfUpdateLog(`PM2 instance verified: ${pm2Target.name} pid=${pm2Target.pid} cwd=${pm2Target.cwd}`)
-
-  if (diskVersion === manifest.version) {
-    await appendSelfUpdateLog(`Files already contain ${manifest.version}; retrying the verified process restart`)
-    const restartStatus = await scheduleVerifiedSelfRestart({
-      repoRoot,
-      workDir: SELF_UPDATE_WORK_DIR,
-      pm2Bin: SELF_UPDATE_PM2_BIN,
-      pm2Name: pm2Target.name,
-      previousPid: pm2Target.pid,
-      port: PORT,
-      expectedVersion: manifest.version,
-      delayMs: SELF_UPDATE_RESTART_DELAY_MS,
-      publicUrl: PUBLIC_ADMIN_BASE_URL,
-    })
-    return {
-      currentVersion,
-      runningVersion: currentVersion,
-      diskVersion,
-      latestVersion: manifest.version,
-      updateAvailable: true,
-      restartStatus,
-      message: 'Application files are current; a verified PM2 restart has been scheduled.',
-    }
-  }
-
-  const runId = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
-  const runDir = path.join(SELF_UPDATE_WORK_DIR, runId)
+  if (compareVersions(manifest.version, PACKAGE_VERSION) <= 0) throw new Error('当前已是更新源提供的最新版本')
+  const runDir = path.join(SELF_UPDATE_WORK_DIR, crypto.randomUUID())
   const zipPath = path.join(runDir, 'update.zip')
-  const extractDir = path.join(runDir, 'extract')
-  const backupDir = path.join(SELF_UPDATE_WORK_DIR, 'backups', `backup-${currentVersion || 'unknown'}-${runId}`)
-  await fsp.mkdir(runDir, { recursive: true })
+  await fsp.mkdir(runDir, { recursive: true, mode: 0o700 })
   try {
-  await appendSelfUpdateLog(`Downloading ${manifest.zipUrl}`)
-  const bytes = await downloadFile(manifest.zipUrl, zipPath)
-  await appendSelfUpdateLog(`Downloaded ${bytes} bytes`)
-  const actualSha256 = await sha256File(zipPath)
-  if (actualSha256 !== manifest.sha256) {
-    throw new Error(`sha256 校验失败：expected ${manifest.sha256}, got ${actualSha256}`)
-  }
-  await appendSelfUpdateLog('sha256 verified')
-
-  await fsp.mkdir(extractDir, { recursive: true })
-  await runCommand('unzip', ['-q', zipPath, '-d', extractDir])
-  const extractedPackage = JSON.parse(await fsp.readFile(path.join(extractDir, 'package.json'), 'utf-8'))
-  if (extractedPackage.name !== 'agent-ai-admin') {
-    throw new Error('更新包 package.json 不属于 agent-ai-admin')
-  }
-  if (String(extractedPackage.version || '') !== manifest.version) {
-    throw new Error(`更新包版本 ${extractedPackage.version || '-'} 与清单版本 ${manifest.version} 不一致`)
-  }
-
-  await appendSelfUpdateLog(`Backing up current app to ${backupDir}`)
-  await fsp.mkdir(backupDir, { recursive: true })
-  // Back up application code only; custom work directories must never copy into themselves.
-  for (const name of ['cloud', 'src', 'web', 'docs', 'scripts', 'package.json', 'package-lock.json', '.env.example', '.gitignore', 'install.php']) {
-    const source = path.join(repoRoot, name)
-    const info = await fsp.lstat(source).catch(() => null)
-    if (!info || info.isSymbolicLink()) continue
-    if (info.isDirectory()) await copyDir(source, path.join(backupDir, name), { skipNames: new Set(['node_modules', 'uploads', 'data', '.git', 'logs']) })
-    else if (info.isFile()) await fsp.copyFile(source, path.join(backupDir, name))
-  }
-
-  await appendSelfUpdateLog('Replacing application files...')
-  for (const name of ['cloud', 'src', 'web', 'docs', 'scripts', 'package.json', 'package-lock.json', '.env.example', '.gitignore', 'install.php']) {
-    await removeIfExists(path.join(repoRoot, name))
-  }
-  await copyDir(extractDir, repoRoot)
-
-  await appendSelfUpdateLog('Installing production dependencies...')
-  const npmEnv = path.isAbsolute(SELF_UPDATE_NPM_BIN)
-    ? { PATH: `${path.dirname(SELF_UPDATE_NPM_BIN)}${path.delimiter}${process.env.PATH || ''}` }
-    : {}
-  await runCommand(SELF_UPDATE_NPM_BIN, ['install', '--omit=dev'], { env: npmEnv })
-
-  await appendSelfUpdateLog(`Update applied: ${currentVersion} -> ${manifest.version}`)
-  await appendSelfUpdateLog(`Scheduling verified PM2 restart: ${pm2Target.name}`)
-  const restartStatus = await scheduleVerifiedSelfRestart({
-    repoRoot,
-    workDir: SELF_UPDATE_WORK_DIR,
-    pm2Bin: SELF_UPDATE_PM2_BIN,
-    pm2Name: pm2Target.name,
-    previousPid: pm2Target.pid,
-    port: PORT,
-    expectedVersion: manifest.version,
-    delayMs: SELF_UPDATE_RESTART_DELAY_MS,
-    publicUrl: PUBLIC_ADMIN_BASE_URL,
-  })
-
-  return {
-    currentVersion,
-    runningVersion: currentVersion,
-    diskVersion: manifest.version,
-    latestVersion: manifest.version,
-    updateAvailable: true,
-    fromVersion: currentVersion,
-    toVersion: manifest.version,
-    backupDir,
-    restartApp: pm2Target.name,
-    restartStatus,
-    message: 'Files installed; PM2 restart and frontend verification are in progress.',
-  }
+    await appendSelfUpdateLog('正在下载并校验升级包；现有服务继续运行')
+    await downloadFile(manifest.zipUrl, zipPath)
+    await fsp.chmod(zipPath, 0o600)
+    if (await sha256File(zipPath) !== manifest.sha256) throw new Error('升级包SHA-256与更新清单不一致')
+    const task = await schedulePm2Upgrade({ repoRoot, archiveFile: zipPath, sha256: manifest.sha256, expectedVersion: manifest.version })
+    return { ...task, currentVersion: PACKAGE_VERSION, runningVersion: PACKAGE_VERSION, diskVersion: PACKAGE_VERSION,
+      latestVersion: manifest.version, updateAvailable: true }
   } finally {
-    await fsp.rm(runDir, { recursive: true, force: true }).catch((error) => appendSelfUpdateLog(`Temporary update cleanup failed: ${error.message}`))
+    await fsp.rm(runDir, { recursive: true, force: true })
   }
 }
 
@@ -6770,7 +6670,7 @@ registerSystemRoutes(app, {
   saveSelfUpdateManifestUrl,
   applySelfUpdate,
   submitSelfUpdateRecovery: action => {
-    if (!isContainerDeployment()) throw new Error('请使用独立部署工具恢复此PM2部署')
+    if (!isContainerDeployment()) return schedulePm2Upgrade({ repoRoot, action })
     return submitControllerUpgrade({ runningVersion: PACKAGE_VERSION, action })
   },
   getPlatformSettings,

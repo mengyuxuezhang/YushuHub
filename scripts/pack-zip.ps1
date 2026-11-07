@@ -96,6 +96,8 @@ Get-ChildItem -LiteralPath $root -Force | Where-Object {
 }
 
 $stageDocs = Join-Path $stage "docs"
+node (Join-Path $root 'scripts/prepare-upgrade-bundle.mjs') --output (Join-Path $stage 'scripts/admin-upgrade')
+if ($LASTEXITCODE -ne 0) { throw 'Failed to prepare the standalone upgrade bundle' }
 New-Item -ItemType Directory -Force $stageDocs | Out-Null
 foreach ($doc in $publicDocs) {
   $sourceDoc = Join-Path (Join-Path $root "docs") $doc

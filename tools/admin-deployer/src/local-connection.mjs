@@ -21,6 +21,7 @@ function localStream(command) {
 
 function localSftp() {
   return {
+    end() {},
     readFile(file, callback) {
       fs.readFile(file, callback)
     },

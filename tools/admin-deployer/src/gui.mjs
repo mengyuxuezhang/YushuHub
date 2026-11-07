@@ -127,8 +127,12 @@ async function downloadPackage(input, operationId, res, cleanup) {
   let response = await fetch(packageUrl)
   if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}`)
   const isManifest = new URL(packageUrl).pathname.toLowerCase().endsWith('.json') || response.headers.get('content-type')?.includes('application/json')
+  let expectedSha256 = '', expectedVersion = ''
   if (isManifest) {
     const manifest = await response.json()
+    expectedSha256 = String(manifest.sha256 || manifest.current?.sha256 || '').toLowerCase()
+    expectedVersion = String(manifest.version || manifest.current?.version || '').replace(/^v/i, '')
+    if (!/^[a-f0-9]{64}$/.test(expectedSha256) || !/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(expectedVersion)) throw new Error('在线清单缺少有效SHA-256或版本号，已停止下载')
     const candidate = manifest.url || manifest.current?.url || manifest.packageUrl
     if (!candidate) throw new Error('更新清单中没有可用安装包地址')
     packageUrl = new URL(candidate, packageUrl).toString()
@@ -139,10 +143,11 @@ async function downloadPackage(input, operationId, res, cleanup) {
   if (declaredSize > maxPackageBytes) throw new Error('在线安装包超过 300 MB 限制')
   const buffer = Buffer.from(await response.arrayBuffer())
   if (!buffer.length || buffer.length > maxPackageBytes) throw new Error('在线安装包为空或超过 300 MB 限制')
+  if (expectedSha256 && crypto.createHash('sha256').update(buffer).digest('hex') !== expectedSha256) throw new Error('下载包SHA-256与在线清单不一致')
   const packagePath = path.join(runtimeRoot, `.gui-package-${operationId}.zip`)
   await fs.writeFile(packagePath, buffer, { mode: 0o600 })
   trackFile(packagePath, cleanup)
-  return { packagePath, message: `已下载安装包：${packageUrl}` }
+  return { packagePath, expectedSha256, expectedVersion, message: '已下载安装包并完成清单摘要校验' }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -189,6 +194,7 @@ const server = http.createServer(async (req, res) => {
     const packagePath = packageResult.packagePath
     const args = [input.action, '--config', configPath]
     if (packagePath) args.push('--package', packagePath)
+    if (packageResult.expectedSha256) args.push('--expected-sha256', packageResult.expectedSha256, '--expected-version', packageResult.expectedVersion)
     if (['fresh-install', 'db-check', 'admin-build-check', 'configure-proxy'].includes(input.action)) {
       const installConfigPath = path.join(runtimeRoot, `.gui-install-${operationId}.json`)
       await fs.writeFile(installConfigPath, JSON.stringify(input), { mode: 0o600 })

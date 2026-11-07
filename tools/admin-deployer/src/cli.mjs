@@ -10,6 +10,7 @@ import { createLocalConnection } from './local-connection.mjs'
 import { compareVersions, latestVersionFromManifest } from './versioning.mjs'
 import { parseSelectedPm2, selectUpgradePm2Script, verifyAdminRuntimeScript } from './runtime-verification.mjs'
 import { deploymentProbeScript, controllerCommand } from './controller-routing.mjs'
+import { runLegacyUpgrade } from './pm2-upgrade.mjs'
 
 function arg(name) { const i = process.argv.indexOf(name); return i >= 0 ? String(process.argv[i + 1] || '') : '' }
 function required(value, name) { if (!value) throw new Error(`Missing ${name}`); return value }
@@ -64,15 +65,15 @@ function exec(conn, command) {
 function sftp(conn) { return new Promise((resolve, reject) => conn.sftp((err, value) => err ? reject(err) : resolve(value))) }
 async function readRemoteFile(conn, remote) {
   const client = await sftp(conn)
-  return new Promise((resolve, reject) => client.readFile(remote, (error, data) => error ? reject(error) : resolve(data.toString('utf8'))))
+  return new Promise((resolve, reject) => client.readFile(remote, (error, data) => error ? reject(error) : resolve(data.toString('utf8')))).finally(() => client.end())
 }
 async function writeRemoteFile(conn, remote, content) {
   const client = await sftp(conn)
-  return new Promise((resolve, reject) => client.writeFile(remote, content, { mode: 0o600 }, (error) => error ? reject(error) : resolve()))
+  return new Promise((resolve, reject) => client.writeFile(remote, content, { mode: 0o600 }, (error) => error ? reject(error) : resolve())).finally(() => client.end())
 }
 async function upload(conn, local, remote) {
   const client = await sftp(conn)
-  await new Promise((resolve, reject) => client.fastPut(local, remote, err => err ? reject(err) : resolve()))
+  await new Promise((resolve, reject) => client.fastPut(local, remote, err => err ? reject(err) : resolve())).finally(() => client.end())
 }
 function shellQuote(value) { return `'${String(value).replaceAll("'", "'\\''")}'` }
 
@@ -262,56 +263,11 @@ async function adminBuildCheck(cfg, input = {}) {
 }
 
 async function deploy(cfg, packagePath, mode) {
-  const buffer = await fs.readFile(packagePath)
-  const hash = sha256(buffer)
   const conn = await connect(cfg)
-  let run = ''
-  let remoteZip = ''
   try {
-    await resolveAdminPort(conn, cfg)
-    const selectedPm2 = await resolveUpgradePm2(conn, cfg)
-    run = `/tmp/agent-ai-admin-deploy-${Date.now()}`
-    remoteZip = `${run}.zip`
-    await exec(conn, `set -e; mkdir -p ${shellQuote(run)}; test -d ${shellQuote(cfg.appDir)} || mkdir -p ${shellQuote(cfg.appDir)}`)
-    await upload(conn, packagePath, remoteZip)
-    console.log('1/5 正在校验并解压升级包...')
-    const version = (await exec(conn, `set -e; echo ${shellQuote(`${hash}  ${remoteZip}`)} | sha256sum -c -; rm -rf ${shellQuote(run)}/extract; mkdir -p ${shellQuote(run)}/extract; unzip -q ${shellQuote(remoteZip)} -d ${shellQuote(run)}/extract; test "$(node -p ${shellQuote(`require(${JSON.stringify(path.posix.join(run, 'extract/package.json'))}).name`)})" = agent-ai-admin; node -p ${shellQuote(`require(${JSON.stringify(path.posix.join(run, 'extract/package.json'))}).version`)}`)).trim().split(/\r?\n/).pop()
-    if (!version || version === 'undefined') throw new Error('升级包缺少有效版本号')
-    console.log(`2/5 检测到版本 ${version}，正在安装文件...`)
-    await exec(conn, `set -e; mkdir -p ${shellQuote(cfg.appDir)}/releases; rm -rf ${shellQuote(cfg.appDir)}/releases/${shellQuote(version)}; mv ${shellQuote(run)}/extract ${shellQuote(cfg.appDir)}/releases/${shellQuote(version)}`)
-    console.log('3/5 正在安装生产依赖...')
-    console.log('4/5 正在重启 PM2 并检查服务...')
-    // 只有新 PID 持有目标端口并正确提供本版本 HTML/JS/CSS 时才报告成功。
-    const healthCmd =
-      `set -e; cd ${shellQuote(cfg.appDir)}; ` +
-      `cp -a .env .env.deployer-backup 2>/dev/null || true; ` +
-      `cp -a releases/${shellQuote(version)}/. ./; ` +
-      `npm install --omit=dev --no-audit --no-fund; ` +
-      `pm2 restart ${shellQuote(cfg.pm2Name)} --update-env || pm2 start cloud/ai-admin/server.mjs --name ${shellQuote(cfg.pm2Name)} --cwd ${shellQuote(cfg.appDir)} --interpreter node --update-env; ` +
-      `if ${verifiedAdminRuntime(cfg, version, selectedPm2.pid)}; then ` +
-        `printf 'running_version=%s\\n' ${shellQuote(version)}; ` +
-      `else ` +
-        `echo 'health check failed; rolling back' >&2; ` +
-        `PREV=$(find releases -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null | grep -vx ${shellQuote(version)} | sort -V | tail -1); ` +
-        `if [ -n "$PREV" ] && [ -d "releases/$PREV" ]; then ` +
-          `cp -a "releases/$PREV/." ./; ` +
-          `npm install --omit=dev --no-audit --no-fund; ` +
-          `pm2 restart ${shellQuote(cfg.pm2Name)} --update-env || pm2 start cloud/ai-admin/server.mjs --name ${shellQuote(cfg.pm2Name)} --cwd ${shellQuote(cfg.appDir)} --interpreter node --update-env; ` +
-          `sleep 3; ` +
-          `printf 'rolled_back_to=%s\\n' "$PREV"; ` +
-        `else ` +
-          `echo 'no previous release available for rollback' >&2; ` +
-        `fi; ` +
-        `exit 1; ` +
-      `fi`
-    const health = await exec(conn, healthCmd)
-    console.log(`5/5 ${mode === 'install' ? '安装' : '升级'}成功：版本 ${version}\nsha256=${hash}\n${health.trim()}`)
-  } finally {
-    if (run) {
-      try { await exec(conn, `rm -rf -- ${shellQuote(run)} ${shellQuote(remoteZip)}`) } catch {}
-    }
-    conn.end()
-  }
+    await runLegacyUpgrade({ conn, exec, upload, writeFile: writeRemoteFile, appRoot: cfg.appDir,
+      packagePath, expectedSha256: arg('--expected-sha256'), expectedVersion: arg('--expected-version') })
+  } finally { conn.end() }
 }
 
 async function freshInstall(cfg, packagePath, install) {
@@ -342,6 +298,7 @@ async function freshInstall(cfg, packagePath, install) {
     await exec(conn, `set -e; mkdir -p ${shellQuote(run)} ${shellQuote(cfg.appDir)}`); await upload(conn, packagePath, remoteZip)
     const version = (await exec(conn, `set -e; echo ${shellQuote(`${hash}  ${remoteZip}`)} | sha256sum -c -; rm -rf ${shellQuote(run)}/extract; mkdir -p ${shellQuote(run)}/extract; unzip -q ${shellQuote(remoteZip)} -d ${shellQuote(run)}/extract; test "$(node -p ${shellQuote(`require(${JSON.stringify(path.posix.join(run, 'extract/package.json'))}).name`)})" = agent-ai-admin; node -p ${shellQuote(`require(${JSON.stringify(path.posix.join(run, 'extract/package.json'))}).version`)}`)).trim().split(/\r?\n/).pop()
     if (!version || version === 'undefined') throw new Error('安装包缺少有效版本号')
+    if (arg('--expected-version') && version !== arg('--expected-version')) throw new Error('安装包内版本与在线清单不一致')
     await exec(conn, `set -e; mkdir -p ${shellQuote(cfg.appDir)}/releases; rm -rf ${shellQuote(cfg.appDir)}/releases/${shellQuote(version)}; mv ${shellQuote(run)}/extract ${shellQuote(cfg.appDir)}/releases/${shellQuote(version)}; cp -a ${shellQuote(cfg.appDir)}/releases/${shellQuote(version)}/. ${shellQuote(cfg.appDir)}/`)
     const encoded = Buffer.from(envText).toString('base64')
     // 数据库口令通过临时环境文件注入，避免出现在远端命令行/进程列表中
@@ -381,17 +338,6 @@ async function configureProxy(cfg, input) {
   try {
     await resolveAdminPort(conn, cfg)
     console.log(`宝塔反向代理配置成功\n${await configureBaoTaProxy(conn, cfg, input)}`)
-  } finally { conn.end() }
-}
-async function rollback(cfg) {
-  const requested = arg('--version')
-  const conn = await connect(cfg)
-  try {
-    await resolveAdminPort(conn, cfg)
-    const selectedPm2 = await resolveUpgradePm2(conn, cfg)
-    const target = (await exec(conn, `set -e; cd ${shellQuote(cfg.appDir)}; test -d releases; versions=$(find releases -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V); target=${shellQuote(requested)}; if [ -z "$target" ]; then target=$(printf '%s\n' "$versions" | tail -2 | head -1); fi; test -n "$target"; test -d "releases/$target"; printf '%s' "$target"`)).trim()
-    const result = await exec(conn, `set -e; cd ${shellQuote(cfg.appDir)}; cp -a .env .env.deployer-backup 2>/dev/null || true; cp -a releases/${shellQuote(target)}/. ./; npm install --omit=dev --no-audit --no-fund; pm2 restart ${shellQuote(cfg.pm2Name)} --update-env || pm2 start cloud/ai-admin/server.mjs --name ${shellQuote(cfg.pm2Name)} --cwd ${shellQuote(cfg.appDir)} --interpreter node --update-env; ${verifiedAdminRuntime(cfg, target, selectedPm2.pid)}; printf 'rollback_version=%s\n' ${shellQuote(target)}`)
-    console.log(`Rollback complete\n${result.trim()}`)
   } finally { conn.end() }
 }
 async function diagnose(cfg) {
@@ -458,11 +404,15 @@ async function main() {
         console.log(output)
         if (command === 'version-check') {
           const info = JSON.parse(output)
-          console.log(`current_version=${info.currentVersion || 'unknown'}\nlatest_version=${info.latestVersion || 'unknown'}\nupdate_available=${compareVersions(info.latestVersion || '0.0.0', info.currentVersion || '0.0.0') > 0}\nruntime_availability=${info.runtimeAvailability}`)
+          const running = info.runtimeAvailability === 'running'
+          console.log(`current_version=${running ? info.currentVersion || 'unknown' : 'unknown'}\nlast_verified_version=${info.currentVersion || 'unknown'}\nlatest_version=${info.latestVersion || 'unknown'}\nupdate_available=${running && compareVersions(info.latestVersion || '0.0.0', info.currentVersion || '0.0.0') > 0}\nruntime_availability=${info.runtimeAvailability}`)
         }
         return
       }
-      if (['recover', 'status'].includes(command)) throw new Error('此实例尚未纳入独立控制器，请使用诊断功能检查PM2状态')
+      if (['recover', 'status', 'rollback'].includes(command)) {
+        if (arg('--version')) throw new Error('回退使用最近已提交任务的精确备份，不接受猜测历史版本')
+        return await runLegacyUpgrade({ conn, exec, upload, writeFile: writeRemoteFile, appRoot: cfg.appDir, action: command })
+      }
     } finally { conn.end() }
   }
   const operationInput = arg('--install-config') ? JSON.parse(await fs.readFile(arg('--install-config'), 'utf8')) : {}

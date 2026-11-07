@@ -280,7 +280,8 @@ class Controller:
 
     def preflight(self, plan):
         cfg = plan['config']
-        self.engine.available()
+        if plan.get('targetMode') != 'pm2-zip':
+            self.engine.available()
         if cfg.get('webControlEnabled') is True:
             self.controller_socket_directory(plan['instanceId'])
         # A missing CLI is safe only when the daemon probe establishes absence.
@@ -312,9 +313,10 @@ class Controller:
                 '--property=ActiveState,Environment'], capture_output=True, text=True, timeout=10)
             if 'ActiveState=active' in result.stdout and ('AI_ADMIN_APP_DIR=' + cfg['appRoot']) in result.stdout:
                 raise ValueError('TARGET_LEGACY_SUPERVISOR_REQUIRES_RETIREMENT')
-        compose_version = self.engine.run(['docker', 'compose', 'version', '--short']).strip().lstrip('v')
-        if tuple(int(p) for p in compose_version.split('.')[:2]) < (2, 30):
-            raise ValueError('COMPOSE_2_30_OR_NEWER_REQUIRED')
+        if plan.get('targetMode') != 'pm2-zip':
+            compose_version = self.engine.run(['docker', 'compose', 'version', '--short']).strip().lstrip('v')
+            if tuple(int(p) for p in compose_version.split('.')[:2]) < (2, 30):
+                raise ValueError('COMPOSE_2_30_OR_NEWER_REQUIRED')
         # Upper bound memory reservation; no OOM trial to discover whether it fits.
         rss = 0
         if plan['oldMode'] == 'pm2':

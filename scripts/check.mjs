@@ -8,6 +8,10 @@ const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, '..')
 
 const targets = [
+  'src/services/upgrade-controller-client.mjs',
+  'src/services/upgrade-controller-client.test.mjs',
+  'src/services/pm2-upgrade-client.mjs',
+  'scripts/prepare-upgrade-bundle.mjs',
   'src/services/project-downloads.mjs',
   'src/routes/project-downloads.mjs',
   'src/repositories/project-downloads.mjs',
