@@ -283,7 +283,9 @@ class Controller:
         self.engine.available()
         if cfg.get('webControlEnabled') is True:
             self.controller_socket_directory(plan['instanceId'])
-        processes = self.engine.pm2_processes() if shutil.which('pm2') else []
+        # A missing CLI is safe only when the daemon probe establishes absence.
+        # A running/unreachable daemon with no CLI must block admission as unknown.
+        processes = self.engine.pm2_processes()
         for process in processes:
             meta = process.get('pm2_env', {})
             other_root = Path(meta.get('pm_cwd', '/')).resolve()
