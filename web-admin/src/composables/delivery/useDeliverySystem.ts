@@ -119,7 +119,8 @@ export function useDeliverySystem(section: DeliverySection) {
       if (section === "diagnostics")
         diagnostics.value = await api.getDiagnostics();
     } catch (e) {
-      feedback.notify(toUserMessage(e), "error");
+      if (silent && section === 'updates') updateStatus.value = { ...updateStatus.value, connectionWarning: '服务暂未连接，任务可能仍在进行。恢复连接后将继续检测；持续不可用时请使用独立部署工具查看或恢复。' };
+      else feedback.notify(toUserMessage(e), "error");
     } finally {
       pendingLoads -= 1;
       if (!silent) loading.value = false;
@@ -351,7 +352,9 @@ export function useDeliverySystem(section: DeliverySection) {
   async function applyUpdate() {
     const ok = await feedback.confirm({
       title: `升级管理端到 v${updateStatus.value.latestVersion || "最新版本"}？`,
-      message: "此操作会替换服务器代码并重启服务。测试环境也必须先确认回滚点，自动验收不会执行此操作。",
+      message: updateStatus.value.deploymentMode === 'docker'
+        ? "将预先准备版本并在短维护窗口中切换服务。验证通过后才会显示完成；失败会尝试恢复原版本，经营数据继续保留。请先安排好维护时间。"
+        : "此操作会替换服务器代码并重启服务，请先确认已有可用备份并安排维护时间。",
       confirmText: "确认升级并重启",
       tone: "danger",
     });
@@ -366,6 +369,20 @@ export function useDeliverySystem(section: DeliverySection) {
       saving.value = false;
     }
   }
+  async function recoverUpdate(action: 'recover' | 'rollback') {
+    const ok = await feedback.confirm({
+      title: action === 'rollback' ? '回退到上一个运行版本？' : '恢复中断的升级任务？',
+      message: '服务会短暂中断，保留当前经营数据。任务结果需要在服务恢复后重新检测。',
+      confirmText: action === 'rollback' ? '确认回退' : '确认恢复', tone: 'danger',
+    });
+    if (!ok) return;
+    saving.value = true;
+    try {
+      updateStatus.value = await api.recoverSelfUpdate(action);
+      feedback.notify('恢复任务已提交，请等待服务恢复并核对结果', 'success');
+    } catch (e) { feedback.notify(toUserMessage(e), 'error'); }
+    finally { saving.value = false; }
+  }
   onMounted(() => {
     if (section === "security")
       Object.assign(form, {
@@ -375,7 +392,7 @@ export function useDeliverySystem(section: DeliverySection) {
       });
     else {
       load();
-      if (["projects", "builds"].includes(section)) refreshTimer = window.setInterval(() => load(true), 5000);
+      if (["projects", "builds", "updates"].includes(section)) refreshTimer = window.setInterval(() => load(true), 5000);
     }
   });
   onUnmounted(() => { if (refreshTimer) window.clearInterval(refreshTimer); });
@@ -429,6 +446,7 @@ export function useDeliverySystem(section: DeliverySection) {
     saveUpdateSource,
     checkUpdate,
     applyUpdate,
+    recoverUpdate,
     exportDiagnostics,
   };
 }

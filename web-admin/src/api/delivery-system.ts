@@ -65,5 +65,6 @@ export const getSelfUpdateStatus = (fullHistory = false) => api<any>(`/api/self-
 export const saveSelfUpdateSource = (manifestUrl: string) =>
   api<any>("/api/self-update/config", json({ manifestUrl }));
 export const applySelfUpdate = () => api<any>("/api/self-update/apply", json({}));
+export const recoverSelfUpdate = (action: 'recover' | 'rollback') => api<any>(`/api/self-update/${action}`, json({}));
 export const changePassword = (oldPassword: string, newPassword: string) =>
   api<any>("/api/me/password", json({ oldPassword, newPassword }));

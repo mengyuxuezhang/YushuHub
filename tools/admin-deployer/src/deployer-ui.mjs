@@ -17,7 +17,7 @@ function clientApp(derivePm2Name) {
   const statusTexts = [...document.querySelectorAll('[data-status]')]
   const actionButtons = [...document.querySelectorAll('[data-action]')]
   const resultDialog = document.querySelector('#testResultDialog')
-  const testActions = new Set(['ssh-check', 'db-check', 'admin-build-check', 'check', 'version-check', 'configure-proxy'])
+  const testActions = new Set(['ssh-check', 'db-check', 'admin-build-check', 'check', 'version-check', 'status', 'diagnose', 'configure-proxy'])
 
   function setStatus(message, tone = '') {
     for (const item of statusTexts) {
@@ -328,7 +328,7 @@ export function renderPage({ serverLocalMode = false } = {}) {
             <label class="field"><span class="field-label">新管理员密码</span><input class="input" name="newPassword" type="password" minlength="8" autocomplete="new-password"></label>
           </div></section>
         </form>
-        <div class="operation-bar"><div class="operations"><button type="button" class="button" data-action="upgrade">开始升级</button><button type="button" class="button secondary" data-action="rollback">回滚版本</button><button type="button" class="button secondary" data-action="diagnose">运行诊断</button><button type="button" class="button secondary" data-action="install-supervisor">安装自愈服务</button><button type="button" class="button danger" data-action="reset-password">重置密码</button></div><span class="status" data-status>等待操作</span></div>
+        <div class="operation-bar"><div class="operations"><button type="button" class="button" data-action="upgrade">开始升级</button><button type="button" class="button secondary" data-action="rollback">回退版本</button><button type="button" class="button secondary" data-action="recover">恢复中断任务</button><button type="button" class="button secondary" data-action="status">查看升级任务</button><button type="button" class="button secondary" data-action="diagnose">运行诊断</button><button type="button" class="button secondary" data-action="install-supervisor">安装自愈服务</button><button type="button" class="button danger" data-action="reset-password">重置密码</button></div><span class="status" data-status>等待操作</span></div>
       </section>
       <pre class="console" id="log">部署工具已就绪，等待操作...</pre>
     </main>

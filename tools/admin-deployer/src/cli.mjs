@@ -9,6 +9,7 @@ import mysql from 'mysql2/promise'
 import { createLocalConnection } from './local-connection.mjs'
 import { compareVersions, latestVersionFromManifest } from './versioning.mjs'
 import { parseSelectedPm2, selectUpgradePm2Script, verifyAdminRuntimeScript } from './runtime-verification.mjs'
+import { deploymentProbeScript, controllerCommand } from './controller-routing.mjs'
 
 function arg(name) { const i = process.argv.indexOf(name); return i >= 0 ? String(process.argv[i + 1] || '') : '' }
 function required(value, name) { if (!value) throw new Error(`Missing ${name}`); return value }
@@ -443,6 +444,27 @@ async function versionCheck(cfg) {
 
 async function main() {
   const command = process.argv[2]; const cfg = await config()
+  if (['deployment-info', 'upgrade', 'install', 'fresh-install', 'rollback', 'recover', 'status', 'diagnose', 'version-check', 'reset-password', 'install-supervisor'].includes(command)) {
+    const conn = await connect(cfg)
+    try {
+      const deployment = JSON.parse(await exec(conn, deploymentProbeScript(cfg.appDir)))
+      if (command === 'deployment-info') { console.log(JSON.stringify(deployment)); return }
+      if (deployment.mode === 'docker-controller') {
+        const actions = { upgrade: 'upgrade', rollback: 'rollback', recover: 'recover', status: 'info', diagnose: 'info', 'version-check': 'info' }
+        const action = actions[command]
+        if (!action) throw new Error('此实例已由独立容器控制器管理，请使用控制器执行维护，禁止覆盖ZIP或启动PM2守护')
+        if (arg('--package') || arg('--version')) throw new Error('容器实例使用已审核的固定版本和前一状态，不接受ZIP或任意版本参数')
+        const output = await exec(conn, controllerCommand(deployment.instanceId, action))
+        console.log(output)
+        if (command === 'version-check') {
+          const info = JSON.parse(output)
+          console.log(`current_version=${info.currentVersion || 'unknown'}\nlatest_version=${info.latestVersion || 'unknown'}\nupdate_available=${compareVersions(info.latestVersion || '0.0.0', info.currentVersion || '0.0.0') > 0}\nruntime_availability=${info.runtimeAvailability}`)
+        }
+        return
+      }
+      if (['recover', 'status'].includes(command)) throw new Error('此实例尚未纳入独立控制器，请使用诊断功能检查PM2状态')
+    } finally { conn.end() }
+  }
   const operationInput = arg('--install-config') ? JSON.parse(await fs.readFile(arg('--install-config'), 'utf8')) : {}
   if (command === 'ssh-check') return sshCheck(cfg)
   if (command === 'db-check') return dbCheck(cfg, operationInput)

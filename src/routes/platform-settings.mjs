@@ -13,6 +13,7 @@ export function registerSystemRoutes(app, deps) {
     getSelfUpdateStatus,
     saveSelfUpdateManifestUrl,
     applySelfUpdate,
+    submitSelfUpdateRecovery,
     getPlatformSettings,
     getPlatformSettingsForDisplay,
     sanitizePlatformSettings,
@@ -63,6 +64,17 @@ export function registerSystemRoutes(app, deps) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err), data: { lastLog: await readSelfUpdateLog() } })
     }
   })
+
+  for (const action of ['recover', 'rollback']) {
+    app.post(`/api/self-update/${action}`, requireAuth, requireAdmin, requirePermission('self_update.manage', '系统更新'), async (_req, res) => {
+      try {
+        if (!submitSelfUpdateRecovery) throw new Error('此部署不支持独立恢复，请使用部署工具检查')
+        res.json({ success: true, data: await submitSelfUpdateRecovery(action) })
+      } catch (err) {
+        res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
+      }
+    })
+  }
 
   app.get('/api/platform-settings', requireAuth, async (_req, res, next) => {
     try {

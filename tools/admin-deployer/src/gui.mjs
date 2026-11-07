@@ -99,6 +99,17 @@ function runCli(args, res, cleanup) {
   child.on('close', (code) => finish(code ?? 1))
 }
 
+function probeDeployment(configPath) {
+  const args = ['deployment-info', '--config', configPath]
+  return new Promise((resolve, reject) => execFile(process.execPath, packaged ? args : [cli, ...args], {
+    cwd: runtimeRoot, timeout: 30000, maxBuffer: 32768,
+    env: { ...process.env, FORCE_COLOR: '0', AGENT_ADMIN_DEPLOYER_INTERNAL_CLI: '1' },
+  }, (error, stdout, stderr) => {
+    if (error) return reject(new Error(String(stderr || '无法识别实例部署方式，请检查连接和实例登记').trim()))
+    try { resolve(JSON.parse(stdout)) } catch { reject(new Error('部署方式响应无效，已停止操作')) }
+  }))
+}
+
 async function downloadPackage(input, operationId, res, cleanup) {
   if (input.packageData) {
     const buffer = Buffer.from(input.packageData, 'base64')
@@ -171,7 +182,9 @@ const server = http.createServer(async (req, res) => {
     await fs.writeFile(configPath, JSON.stringify(cfg), { mode: 0o600 })
     trackFile(configPath, cleanup)
 
-    const needsPackage = input.action === 'fresh-install' || input.action === 'upgrade'
+    const deployment = ['fresh-install', 'upgrade', 'rollback', 'recover', 'status', 'diagnose', 'version-check'].includes(input.action) ? await probeDeployment(configPath) : null
+    if (input.action === 'fresh-install' && deployment?.mode === 'docker-controller') throw new Error('此目录已由独立升级控制器管理，请使用升级或恢复功能')
+    const needsPackage = input.action === 'fresh-install' || input.action === 'upgrade' && deployment?.mode !== 'docker-controller'
     const packageResult = needsPackage ? await downloadPackage(input, operationId, res, cleanup) : { packagePath: '', message: '' }
     const packagePath = packageResult.packagePath
     const args = [input.action, '--config', configPath]
@@ -182,8 +195,8 @@ const server = http.createServer(async (req, res) => {
       trackFile(installConfigPath, cleanup)
       args.push('--install-config', installConfigPath)
     }
-    if (input.version) args.push('--version', input.version)
-    if (input.action === 'version-check') args.push('--manifest-url', input.packageUrl || 'https://updates.okpa.cn/agent/ai-admin/latest.json')
+    if (input.version && deployment?.mode !== 'docker-controller') args.push('--version', input.version)
+    if (input.action === 'version-check' && deployment?.mode !== 'docker-controller') args.push('--manifest-url', input.packageUrl || 'https://updates.okpa.cn/agent/ai-admin/latest.json')
     if (input.action === 'reset-password') args.push('--user', input.user || 'admin', '--password', input.newPassword)
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' })
     if (packageResult.message) res.write(`${packageResult.message}\n`)

@@ -20,3 +20,20 @@ test('expired-license update recovery retains login, admin and role permission c
   allowed = true
   assert.equal((await request()).status, 200); assert.equal(applied, 1)
 })
+
+test('independent rollback and recovery retain admin permission checks with expired authorization', async t => {
+  let user = null, allowed = false
+  const actions = []
+  setAuthDependencies({ getUserBySession: async () => user, getEffectivePermissionKeys: async () => allowed ? ['self_update.manage'] : [], permissionByKey: () => ({ name: '系统更新' }) })
+  const app = express(); app.use(express.json()); app.use(licenseBusinessGuard({ license: async () => ({ verified: false }) }))
+  registerSystemRoutes(app, { submitSelfUpdateRecovery: async action => { actions.push(action); return { inProgress: true } } })
+  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve)); t.after(() => new Promise(resolve => server.close(resolve)))
+  for (const action of ['recover', 'rollback']) {
+    const request = () => fetch(`http://127.0.0.1:${server.address().port}/api/self-update/${action}`, { method: 'POST' })
+    user = null; allowed = false; assert.equal((await request()).status, 401)
+    user = { id: 'fictional-admin', role: 'agent' }; allowed = true; assert.equal((await request()).status, 403)
+    user.role = 'admin'; allowed = false; assert.equal((await request()).status, 403)
+    allowed = true; assert.equal((await request()).status, 200)
+  }
+  assert.deepEqual(actions, ['recover', 'rollback'])
+})

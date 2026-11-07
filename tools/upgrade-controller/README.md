@@ -77,3 +77,27 @@ yushuhub-upgrade recover --instance example --apply   # 中断任务恢复，不
 ```
 
 CLI错误不输出命令stderr、数据库密码或证书。备份、恢复定义与完整journal是受控运维材料，不能提交公开Git。测试夹具只允许新建的disposable DB及专用Docker卷，不能用客户库执行故障注入。
+
+## 网页入口与独立服务
+
+安装程序同时安装systemd模板，但不会自动启动或重启服务。实例登记完成后，由管理员启用`systemctl enable --now yushuhub-upgrade@<实例ID>`，并在登记文件设置`webControlEnabled: true`。这会将该实例专用目录`/run/yushuhub-upgrade/<实例ID>`只读挂到业务容器；目录由root管理，其中socket仅UID1000可连接。目录挂载允许控制器重启后新建socket，业务容器无需重新创建。停服前检查socket已就绪。
+
+网页保留现有登录、管理员和`self_update.manage`权限检查，固定请求本实例的status、upgrade、rollback或recover。不能传入命令、路径、镜像或任意版本。网页任务提交后返回accepted；只有控制器验证通过并提交journal才显示完成。页面每五秒检测，连接中断期间提示等待或使用独立工具，不将HTTP断开当作升级失败或成功。
+
+独立工具不依赖业务HTTP或此socket，直接经SSH运行root CLI。切换开始前写入root控制的`.yushuhub-deployment.json`标记；工具核对实例登记与目录，随后使用控制器，禁止覆盖ZIP、安装PM2自愈守护或猜测历史版本回退。回退到原PM2并验证后移除标记。可在业务完全离线时执行：
+
+```sh
+yushuhub-upgrade info --instance example
+yushuhub-upgrade recover --instance example --apply
+yushuhub-upgrade rollback --instance example --apply
+```
+
+现有PM2/ZIP升级路径仍需单独加固与互斥验收；本节不表示该路径已经获得和容器控制器相同的恢复保证。真实旧版本镜像不包含新增网页入口，首次迁移和恢复需要独立工具。
+
+## 已签名版本发现
+
+实例可直接设置root审核的`desiredRelease`，或设置`catalogUrl`及`catalogPublicKeys`（keyId到root控制公钥文件的映射）。清单必须使用HTTPS，默认不允许HTTP；测试仅可通过明确的`allowLoopbackCatalogForTests`允许本地回环HTTP。控制器使用现有OpenSSL CLI核验独立更新密钥的RSA-PSS-SHA256签名，要求3072或4096位RSA、32字节salt；此密钥与业务授权中心的Ed25519证书完全独立。
+
+明文payload结构为`{"format":1,"generation":1,"latest":"已审核版本ID","releases":[版本合同]}`，每项合同额外含`id`。维护者离线执行`node sign-catalog.mjs --input payload.json --key protected.pem --key-id KEY_ID --output catalog.json`生成封装；私钥不得进入仓库、镜像或客户机。本工具不会发布或上传。控制器先验签再登记固定合同，拒绝generation回退、同generation冲突及已有版本ID合同被替换；完整登记由内核锁串行化。清单不可用时可使用最近已验证缓存，状态明确给出提示；没有已验证缓存时拒绝升级。
+
+正式清单、公钥分发与镜像发布仍是独立发布步骤，当前开发分支未执行这些动作。

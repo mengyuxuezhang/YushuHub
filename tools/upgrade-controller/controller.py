@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -266,9 +267,22 @@ class Controller:
             raise ValueError('VERIFIED_CONFIGURATION_SNAPSHOT_REQUIRED')
         return path.read_bytes(), read_env(path.parent)
 
+    def deployment_marker(self, plan, remove=False):
+        path = Path(plan['config']['appRoot']) / '.yushuhub-deployment.json'
+        expected = {'format': 1, 'mode': 'docker-controller', 'instanceId': plan['instanceId']}
+        if path.exists() or path.is_symlink():
+            if read_private_json(path) != expected:
+                raise ValueError('DEPLOYMENT_MARKER_CONFLICT_REQUIRES_REVIEW')
+        if remove:
+            path.unlink(missing_ok=True)
+        else:
+            atomic_json(path, expected)
+
     def preflight(self, plan):
         cfg = plan['config']
         self.engine.available()
+        if cfg.get('webControlEnabled') is True:
+            self.controller_socket_directory(plan['instanceId'])
         processes = self.engine.pm2_processes() if shutil.which('pm2') else []
         for process in processes:
             meta = process.get('pm2_env', {})
@@ -413,6 +427,15 @@ class Controller:
         for path, _, _ in ownership:
             os.chown(path, 1000, 1000, follow_symlinks=False)
 
+    def controller_socket_directory(self, instance):
+        directory = Path('/run/yushuhub-upgrade') / instance
+        path = directory / 'control.sock'
+        if directory.is_symlink() or not path.exists() or not stat.S_ISSOCK(path.lstat().st_mode):
+            raise ValueError('INSTANCE_CONTROLLER_SOCKET_NOT_READY')
+        if directory.stat().st_uid != 0 or directory.stat().st_mode & 0o022 or path.stat().st_uid != 1000 or stat.S_IMODE(path.stat().st_mode) != 0o600:
+            raise ValueError('INSTANCE_CONTROLLER_SOCKET_PERMISSIONS_INVALID')
+        return directory
+
     def compose_file(self, plan, release):
         cfg = plan['config']
         directory = Path(cfg['stateDir'])
@@ -440,10 +463,16 @@ class Controller:
             target = '/app/data' if Path(path) == root / 'data' else '/app/logs' if Path(path) == root / 'logs' else path
             mounts.append({'type': 'bind', 'source': path, 'target': target, 'bind': {'create_host_path': False}})
         mounts.append({'type': 'bind', 'source': str(config_file), 'target': '/app/.env', 'read_only': True})
+        environment = {'AI_ADMIN_DEPLOYMENT_MODE': 'docker', 'AI_ADMIN_HOST': '127.0.0.1', 'AI_ADMIN_PORT': str(cfg['port'])}
+        if cfg.get('webControlEnabled') is True:
+            socket_directory = self.controller_socket_directory(plan['instanceId'])
+            mounts.append({'type': 'bind', 'source': str(socket_directory), 'target': '/run/yushuhub-upgrade', 'read_only': True,
+                           'bind': {'create_host_path': False}})
+            environment.update(AI_ADMIN_UPGRADE_INSTANCE_ID=plan['instanceId'], AI_ADMIN_UPGRADE_SOCKET='/run/yushuhub-upgrade/control.sock')
         body = {'name': 'yushuhub-' + plan['instanceId'], 'services': {'app': {
             'image': release['image'], 'platform': 'linux/amd64', 'container_name': cfg['containerName'],
             'network_mode': 'host', 'user': '1000:1000', 'init': True,
-            'environment': {'AI_ADMIN_DEPLOYMENT_MODE': 'docker', 'AI_ADMIN_HOST': '127.0.0.1', 'AI_ADMIN_PORT': str(cfg['port'])},
+            'environment': environment,
             'volumes': mounts, 'restart': 'unless-stopped', 'stop_grace_period': '45s',
             'mem_limit': str(cfg.get('memoryMiB', 256)) + 'm', 'pids_limit': 128, 'cpus': 1,
             'read_only': True, 'tmpfs': ['/tmp:size=64m,mode=1777'],
@@ -556,6 +585,8 @@ class Controller:
         else:
             atomic_json(Path(cfg['stateDir']) / 'current.json', plan.get('previousCurrent') or {'release': plan['old'], 'inventory': plan['inventory']})
         journal.save(record, 'rolled_back')
+        if plan['oldMode'] == 'pm2':
+            self.deployment_marker(plan, remove=True)
 
     def recover(self, instance, rollback_committed=False):
         cfg = self.config(instance)
@@ -612,6 +643,7 @@ class Controller:
             with locks(self.root, ['database:' + plan['inventory']['databaseLockKey']]):
                 self.capture_configuration(plan, operation_id)
                 self.preflight(plan)
+                self.deployment_marker(plan)
                 record = {'operationId': operation_id, 'plan': plan}
                 journal.save(record, 'pulling')
                 stopped = False
@@ -665,32 +697,48 @@ class Controller:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['scan', 'plan', 'upgrade', 'status', 'recover', 'rollback'])
+    parser.add_argument('command', choices=['scan', 'plan', 'upgrade', 'status', 'info', 'recover', 'rollback', 'serve'])
     parser.add_argument('--app-root')
     parser.add_argument('--instance')
     parser.add_argument('--release')
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--operation-id')
     args = parser.parse_args()
-    if args.apply and args.command in ('upgrade', 'recover', 'rollback') and os.geteuid() != 0:
+    if (args.command == 'serve' or args.apply and args.command in ('upgrade', 'recover', 'rollback')) and os.geteuid() != 0:
         raise ValueError('ROOT_CONTROLLER_REQUIRED')
     control = Controller()
-    if args.command == 'scan':
+    if args.command == 'serve':
+        from service import serve_instance
+        serve_instance(control, args.instance)
+    elif args.command == 'scan':
         print(json.dumps(inventory(args.app_root), ensure_ascii=False, indent=2))
     elif args.command == 'status':
         cfg = control.config(args.instance)
         record = Journal(cfg['stateDir']).read()
         print(json.dumps({k: v for k, v in (record or {}).items() if k != 'plan'}, ensure_ascii=False, indent=2))
+    elif args.command == 'info':
+        from service import public_status
+        print(json.dumps(public_status(control, args.instance), ensure_ascii=False))
     elif args.command in ('recover', 'rollback'):
         if not args.apply:
             print(json.dumps({'action': args.command, 'instanceId': args.instance, 'applyRequired': True}))
         else:
             print(json.dumps(control.recover(args.instance, rollback_committed=args.command == 'rollback')))
     elif args.command == 'plan' or not args.apply:
+        if not args.release:
+            from catalog import refresh_catalog
+            args.release, _ = refresh_catalog(control, control.config(args.instance))
+            if not args.release:
+                raise ValueError('NO_APPROVED_RELEASE')
         print(json.dumps(control.plan(args.instance, args.release), ensure_ascii=False, indent=2))
     else:
         if os.geteuid() != 0:
             raise ValueError('ROOT_CONTROLLER_REQUIRED')
+        if not args.release:
+            from catalog import refresh_catalog
+            args.release, _ = refresh_catalog(control, control.config(args.instance))
+            if not args.release:
+                raise ValueError('NO_APPROVED_RELEASE')
         print(json.dumps(control.apply(args.instance, args.release, args.operation_id)))
 
 

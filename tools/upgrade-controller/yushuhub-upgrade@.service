@@ -1,0 +1,20 @@
+[Unit]
+Description=YushuHub upgrade controller for %i
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+UMask=0077
+ExecStart=/usr/local/sbin/yushuhub-upgrade serve --instance %i
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=90
+# The controller needs the host Docker API, PM2 and registered data paths.
+# Business containers receive only their instance socket, never docker.sock.
+
+[Install]
+WantedBy=multi-user.target

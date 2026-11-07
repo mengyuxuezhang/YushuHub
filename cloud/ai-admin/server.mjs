@@ -45,6 +45,7 @@ import { normalizeSecureBuildCenterUrl } from '../../src/utils/build-center-url.
 import { canonicalizePublicUploadUrl } from '../../src/utils/public-url.mjs'
 import { migrateOfficialUpdateDatabaseSettings, migrateOfficialUpdateEnvFile } from '../../src/services/official-update-source-migration.mjs'
 import { readSelfUpdateRestartStatus, resolveCurrentPm2Process, scheduleVerifiedSelfRestart } from '../../src/services/self-update-runtime.mjs'
+import { isContainerDeployment, getControllerUpdateStatus, submitControllerUpgrade } from '../../src/services/upgrade-controller-client.mjs'
 import { imageUsageEvents } from '../../src/services/media-billing.mjs'
 import { mergeReleaseHistory, readReleaseHistory, readAdminReleaseHistory } from '../../src/services/release-history.mjs'
 import { cleanupFailedBuildStorage } from '../../src/services/storage-retention.mjs'
@@ -567,6 +568,7 @@ function validateManifest(manifest, fallbackHistory = []) {
 }
 
 async function getSelfUpdateStatus({ fullHistory = false } = {}) {
+  if (isContainerDeployment()) return getControllerUpdateStatus({ runningVersion: PACKAGE_VERSION })
   const runningVersion = PACKAGE_VERSION
   const diskVersion = await getAdminVersion()
   const manifestUrl = await getConfiguredSelfUpdateManifestUrl()
@@ -603,6 +605,7 @@ async function getSelfUpdateStatus({ fullHistory = false } = {}) {
 
 let selfUpdateInProgress = false
 async function applySelfUpdate() {
+  if (isContainerDeployment()) return submitControllerUpgrade({ runningVersion: PACKAGE_VERSION })
   if (selfUpdateInProgress) throw new Error('管理端升级正在进行，请等待重启验证完成')
   selfUpdateInProgress = true
   try {
@@ -4693,6 +4696,7 @@ async function getConfiguredSelfUpdateManifestUrl() {
 }
 
 async function saveSelfUpdateManifestUrl(input) {
+  if (isContainerDeployment()) throw new Error('容器更新源由独立部署工具管理，请联系管理员修改已签名的版本清单')
   const manifestUrl = String(input?.manifestUrl || '').trim()
   if (manifestUrl && !/^https?:\/\//i.test(manifestUrl)) {
     throw new Error('更新源必须是 http 或 https 地址')
@@ -6765,6 +6769,10 @@ registerSystemRoutes(app, {
   getSelfUpdateStatus,
   saveSelfUpdateManifestUrl,
   applySelfUpdate,
+  submitSelfUpdateRecovery: action => {
+    if (!isContainerDeployment()) throw new Error('请使用独立部署工具恢复此PM2部署')
+    return submitControllerUpgrade({ runningVersion: PACKAGE_VERSION, action })
+  },
   getPlatformSettings,
   getPlatformSettingsForDisplay,
   sanitizePlatformSettings,
