@@ -1,6 +1,7 @@
 """Run ONLY inside the dedicated lab controller container, on its new named volume."""
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -14,7 +15,7 @@ root = Path(sys.argv[1])
 instance = sys.argv[2] if len(sys.argv) > 2 else 'fixture'
 db_port = sys.argv[3] if len(sys.argv) > 3 else '17087'
 app_port = int(sys.argv[4]) if len(sys.argv) > 4 else 17089
-if instance not in ('fixture', 'fixture57'):
+if not re.fullmatch(r'fixture[a-z0-9-]{0,32}', instance):
     raise SystemExit('Disposable instance ID required')
 if not str(root).startswith('/var/lib/docker/volumes/yushu-controller-e2e-') or root.name != '_data':
     raise SystemExit('Dedicated disposable volume required')
