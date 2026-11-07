@@ -59,14 +59,28 @@ def command(args):
 
 
 def pm2_daemon_available():
-    path = Path(os.environ.get('PM2_HOME') or Path.home() / '.pm2') / 'rpc.sock'
+    home = Path(os.environ.get('PM2_HOME') or Path.home() / '.pm2')
+    path = home / 'rpc.sock'
     try:
         with socket.socket(socket.AF_UNIX) as client:
             client.settimeout(.5)
             client.connect(str(path))
         return True
+    except (FileNotFoundError, ConnectionRefusedError):
+        # Only a missing/refused endpoint plus no live daemon is evidence of absence.
+        # Timeouts, denied access and other errors must never become an empty jlist.
+        try:
+            pid = int((home / 'pm2.pid').read_text().strip())
+            if pid <= 0:
+                raise ValueError('PM2_DAEMON_STATE_UNKNOWN')
+            os.kill(pid, 0)
+        except (FileNotFoundError, ProcessLookupError):
+            return False
+        except (OSError, ValueError):
+            raise ValueError('PM2_DAEMON_STATE_UNKNOWN') from None
+        raise ValueError('PM2_DAEMON_STATE_UNKNOWN')
     except (OSError, AttributeError):
-        return False
+        raise ValueError('PM2_DAEMON_STATE_UNKNOWN') from None
 
 
 def parse_pm2_list(output):
