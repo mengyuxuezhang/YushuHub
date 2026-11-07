@@ -85,6 +85,14 @@ class InventoryTest(unittest.TestCase):
         self.assertNotIn('DO_NOT_EXPORT_UNKNOWN_MODE', json.dumps(result))
         self.assertFalse(result['readyForPlan'])
 
+    def test_explicit_center_without_identity_or_with_only_url_cannot_bypass_review(self):
+        for extra in ('', 'AI_LICENSE_CENTER_URL=https://fixture.invalid\n'):
+            with self.subTest(extraConfigured=bool(extra)):
+                (self.root / '.env').write_text('AI_AUTHORIZATION_MODE=center\n' + extra)
+                result = self.scan()
+                self.assertIn('CENTER_AUTHORIZATION_REQUIRES_RUNTIME_VALIDATION', result['issues'])
+                self.assertFalse(result['readyForPlan'])
+
 
 if __name__ == '__main__':
     unittest.main()

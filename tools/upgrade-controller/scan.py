@@ -148,6 +148,10 @@ def inventory(root, pm2_rows=None, runtime_reader=runtime):
         mode = 'legacy-marker' if marker_valid and not env.get('AI_LICENSE_CENTER_URL') and not env.get('AI_LICENSE_PUBLIC_KEYS_FILE') else 'requires-review'
     if mode == 'requires-review':
         issues.append('AUTHORIZATION_MODE_REQUIRES_REVIEW')
+    if mode == 'center':
+        # Version-only runtime-info is not an authorization attestation. This stage has
+        # no trusted runtime verifier, even when a URL or public-key file is present.
+        issues.append('CENTER_AUTHORIZATION_REQUIRES_RUNTIME_VALIDATION')
     if platform.system() != 'Linux' or platform.machine() not in ('x86_64', 'AMD64'):
         issues.append('UNSUPPORTED_HOST_PLATFORM')
     disk = shutil.disk_usage(root)
