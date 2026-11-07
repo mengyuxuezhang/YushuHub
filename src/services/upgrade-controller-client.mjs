@@ -3,7 +3,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { compareSemanticVersions } from '../utils/version.mjs'
 
-const ACTIVE = new Set(['accepted', 'requested', 'pulling', 'prepared', 'draining', 'stopped', 'starting', 'verifying', 'rolling_back'])
+const ACTIVE = new Set(['accepted', 'running', 'requested', 'pulling', 'prepared', 'draining', 'stopped', 'starting', 'verifying', 'rolling_back'])
 export const isContainerDeployment = (env = process.env) => env.AI_ADMIN_DEPLOYMENT_MODE === 'docker'
 
 export function controllerRequest(endpoint, { method = 'GET', operationId, env = process.env } = {}) {
@@ -56,5 +56,5 @@ export async function submitControllerUpgrade({ runningVersion, action = 'upgrad
   const status = await getControllerUpdateStatus({ runningVersion, env, request })
   const result = await request('/v1/' + action, { method: 'POST', env })
   return { ...status,
-    inProgress: true, upgradeTask: { ...result }, message: '升级任务已提交，服务将短暂中断，请在恢复后核对任务结果' }
+    inProgress: ACTIVE.has(result.stage), upgradeTask: { ...result }, message: '升级任务已提交，服务将短暂中断，请在恢复后核对任务结果' }
 }

@@ -22,3 +22,14 @@ test('submission is scoped to fixed controller endpoints and does not invoke a Z
   assert.equal(isContainerDeployment({ AI_ADMIN_DEPLOYMENT_MODE: 'docker' }), true)
   assert.equal(isContainerDeployment({}), false)
 })
+
+test('replayed terminal receipt is not presented as a newly active task', async () => {
+  const request = async endpoint => endpoint === '/v1/status'
+    ? { configured: true, transaction: { stage: 'committed' } }
+    : { operationId: 'replayed', stage: 'rolled_back' }
+  const value = await submitControllerUpgrade({ runningVersion: '1.9.68', action: 'rollback', request })
+  assert.equal(value.inProgress, false)
+  assert.equal(value.upgradeTask.stage, 'rolled_back')
+  const running = await getControllerUpdateStatus({ runningVersion: '1.9.68', request: async () => ({ transaction: { stage: 'running' } }) })
+  assert.equal(running.inProgress, true)
+})

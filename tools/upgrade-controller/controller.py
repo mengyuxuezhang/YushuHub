@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from engine import Docker, EngineError
 from scan import inventory, read_env, parse_env_text, database_lock_key, PATH_DEFAULTS, PATH_KEYS
-from state import Journal, atomic_json, atomic_bytes, locks
+from state import Journal, atomic_json, atomic_bytes, locks, execute_request, latest_record
 
 TERMINAL = {'committed', 'rolled_back', 'rejected'}
 ID = re.compile(r'^[a-z][a-z0-9-]{0,47}$')
@@ -592,111 +592,117 @@ class Controller:
         if plan['oldMode'] == 'pm2':
             self.deployment_marker(plan, remove=True)
 
-    def recover(self, instance, rollback_committed=False):
+    def recover(self, instance, rollback_committed=False, operation_id=None):
         cfg = self.config(instance)
+        operation_id = operation_id or str(uuid.uuid4())
         with locks(self.root, ['host-cutover', 'instance:' + instance]):
-            journal = Journal(cfg['stateDir'])
-            record = journal.read()
-            if not record:
-                raise ValueError('NO_TRANSACTION_TO_RECOVER')
-            if rollback_committed:
-                if record['stage'] not in TERMINAL:
-                    raise ValueError('PENDING_TRANSACTION_REQUIRES_RECOVER')
-                current_file = Path(cfg['stateDir']) / 'current.json'
-                current = json.loads(current_file.read_text()) if current_file.exists() else {}
-                operation = current.get('committedOperationId')
-                if operation:
-                    record = json.loads((Path(cfg['stateDir']) / 'operations' / (operation + '.json')).read_text())
-            if record['stage'] in ('rejected', 'rolled_back'):
-                return {'stage': record['stage'], 'operationId': record['operationId']}
-            if record['stage'] == 'committed' and not rollback_committed:
-                return {'stage': 'committed', 'operationId': record['operationId']}
-            plan = record['plan']
-            with locks(self.root, ['database:' + plan['inventory']['databaseLockKey']]):
-                if record['stage'] == 'pulling':
-                    # No writer was stopped at this stage; verify old service, don't touch it.
-                    self.engine.verify(cfg, plan['old'], require_container=plan['oldMode'] == 'docker')
-                    journal.save(record, 'rejected', error='INTERRUPTED_BEFORE_CUTOVER')
-                else:
-                    try:
-                        self.restore(plan, record, journal)
-                    except Exception:
-                        journal.save(record, 'needs_attention', error='RECOVERY_INCOMPLETE')
-                        raise RuntimeError('RECOVERY_NEEDS_ATTENTION') from None
+            return execute_request(cfg['stateDir'], operation_id, {'action': 'rollback' if rollback_committed else 'recover'}, lambda: self._recover_locked(instance, rollback_committed))
+
+    def _recover_locked(self, instance, rollback_committed):
+        cfg = self.config(instance)
+        journal = Journal(cfg['stateDir'])
+        record = journal.read()
+        if not record:
+            raise ValueError('NO_TRANSACTION_TO_RECOVER')
+        if rollback_committed:
+            if record['stage'] not in TERMINAL:
+                raise ValueError('PENDING_TRANSACTION_REQUIRES_RECOVER')
+            current_file = Path(cfg['stateDir']) / 'current.json'
+            current = json.loads(current_file.read_text()) if current_file.exists() else {}
+            operation = current.get('committedOperationId')
+            if operation:
+                record = json.loads((Path(cfg['stateDir']) / 'operations' / (operation + '.json')).read_text())
+        if record['stage'] in ('rejected', 'rolled_back'):
             return {'stage': record['stage'], 'operationId': record['operationId']}
+        if record['stage'] == 'committed' and not rollback_committed:
+            return {'stage': 'committed', 'operationId': record['operationId']}
+        plan = record['plan']
+        with locks(self.root, ['database:' + plan['inventory']['databaseLockKey']]):
+            if record['stage'] == 'pulling':
+                # No writer was stopped at this stage; verify old service, don't touch it.
+                self.engine.verify(cfg, plan['old'], require_container=plan['oldMode'] == 'docker')
+                journal.save(record, 'rejected', error='INTERRUPTED_BEFORE_CUTOVER')
+            else:
+                try:
+                    self.restore(plan, record, journal)
+                except Exception:
+                    journal.save(record, 'needs_attention', error='RECOVERY_INCOMPLETE')
+                    raise RuntimeError('RECOVERY_NEEDS_ATTENTION') from None
+        return {'stage': record['stage'], 'operationId': record['operationId']}
 
     def apply(self, instance, release_name, operation_id=None):
         cfg = self.config(instance)
-        state = Path(cfg['stateDir'])
         operation_id = operation_id or str(uuid.uuid4())
-        if not re.fullmatch(r'[A-Za-z0-9-]{1,80}', operation_id):
-            raise ValueError('INVALID_OPERATION_ID')
-        # Root-wide serialization also protects shared host memory and aliased DB locators.
         with locks(self.root, ['host-cutover', 'instance:' + instance]):
-            journal = Journal(state)
-            previous = journal.read()
-            receipt = state / 'operations' / (operation_id + '.json')
-            if receipt.exists() and (not previous or previous.get('operationId') != operation_id):
-                previous = json.loads(receipt.read_text())
-            if previous and previous.get('operationId') == operation_id:
-                if previous['plan']['releaseId'] != release_name:
-                    raise ValueError('OPERATION_ID_REUSED_WITH_DIFFERENT_RELEASE')
-                return {'operationId': operation_id, 'stage': previous['stage']}
-            plan = self.plan(instance, release_name)
-            cfg = plan['config']
-            with locks(self.root, ['database:' + plan['inventory']['databaseLockKey']]):
-                self.capture_configuration(plan, operation_id)
+            return execute_request(cfg['stateDir'], operation_id, {'action': 'upgrade', 'releaseId': release_name}, lambda: self._apply_locked(instance, release_name, operation_id))
+
+    def _apply_locked(self, instance, release_name, operation_id):
+        cfg = self.config(instance)
+        state = Path(cfg['stateDir'])
+        journal = Journal(state)
+        previous = journal.read()
+        receipt = state / 'operations' / (operation_id + '.json')
+        if receipt.exists() and (not previous or previous.get('operationId') != operation_id):
+            previous = json.loads(receipt.read_text())
+        if previous and previous.get('operationId') == operation_id:
+            if previous['plan']['releaseId'] != release_name:
+                raise ValueError('OPERATION_ID_REUSED_WITH_DIFFERENT_RELEASE')
+            return {'operationId': operation_id, 'stage': previous['stage']}
+        plan = self.plan(instance, release_name)
+        cfg = plan['config']
+        with locks(self.root, ['database:' + plan['inventory']['databaseLockKey']]):
+            self.capture_configuration(plan, operation_id)
+            self.preflight(plan)
+            self.deployment_marker(plan)
+            record = {'operationId': operation_id, 'plan': plan}
+            journal.save(record, 'pulling')
+            stopped = False
+            try:
+                self.engine.inspect_image(plan['target']['image'], pull=True)
+                actual = self.engine.image_contract(plan['target']['image'])
+                if any(actual.get(k) != plan['target'][k] for k in ('version', 'schemaSha256', 'migrationSha256', 'htmlSha256')):
+                    raise ValueError('IMAGE_RELEASE_CONTRACT_MISMATCH')
+                if plan['oldMode'] == 'docker':
+                    self.engine.inspect_image(plan['old']['image'])
+                # Recheck resources immediately before stopping, after image extraction.
                 self.preflight(plan)
-                self.deployment_marker(plan)
-                record = {'operationId': operation_id, 'plan': plan}
-                journal.save(record, 'pulling')
-                stopped = False
-                try:
-                    self.engine.inspect_image(plan['target']['image'], pull=True)
-                    actual = self.engine.image_contract(plan['target']['image'])
-                    if any(actual.get(k) != plan['target'][k] for k in ('version', 'schemaSha256', 'migrationSha256', 'htmlSha256')):
-                        raise ValueError('IMAGE_RELEASE_CONTRACT_MISMATCH')
-                    if plan['oldMode'] == 'docker':
-                        self.engine.inspect_image(plan['old']['image'])
-                    # Recheck resources immediately before stopping, after image extraction.
-                    self.preflight(plan)
-                    self.validate_plan_inputs(plan)
-                    if plan['oldMode'] == 'pm2':
-                        self.identify_pm2(plan)
-                    journal.save(record, 'draining')
-                    # Mark uncertainty before stop; recovery must inspect actual processes.
-                    stopped = True
-                    self.stop_old(plan)
-                    self.engine.port_is_free(cfg['port'])
-                    journal.save(record, 'stopped')
-                    self.backup_and_prepare(plan, record, journal)
-                    self.validate_plan_inputs(plan, check_identity=False)
-                    compose = self.compose_file(plan, plan['target'])
-                    journal.save(record, 'starting')
-                    self.engine.compose(compose, 'up')
-                    journal.save(record, 'verifying')
-                    self.engine.verify(cfg, plan['target'])
-                    if plan['oldMode'] == 'pm2':
-                        # Remove the stopped entry so a later unrelated `pm2 save` cannot
-                        # reintroduce the old writer at host boot. Resume definition is retained.
-                        self.engine.pm2(cfg['appRoot'], 'delete', plan['pm2Id'])
-                    current = {'release': plan['target'], 'inventory': plan['inventory'], 'committedOperationId': operation_id,
-                               'identityHash': plan['authorization']['identityHash']}
-                    atomic_json(state / 'current.json', current)
-                    journal.save(record, 'committed')
-                except Exception as error:
-                    code = str(error) if isinstance(error, (ValueError, EngineError)) else type(error).__name__
-                    if not stopped:
-                        journal.save(record, 'rejected', error=code)
-                    else:
-                        try:
-                            self.restore(plan, record, journal)
-                            record['error'] = code
-                            journal.save(record, 'rolled_back')
-                        except Exception:
-                            journal.save(record, 'needs_attention', error=code)
-                    raise RuntimeError('UPGRADE_' + record['stage'].upper()) from None
-                return {'operationId': operation_id, 'stage': record['stage'], 'version': plan['target']['version']}
+                self.validate_plan_inputs(plan)
+                if plan['oldMode'] == 'pm2':
+                    self.identify_pm2(plan)
+                journal.save(record, 'draining')
+                # Mark uncertainty before stop; recovery must inspect actual processes.
+                stopped = True
+                self.stop_old(plan)
+                self.engine.port_is_free(cfg['port'])
+                journal.save(record, 'stopped')
+                self.backup_and_prepare(plan, record, journal)
+                self.validate_plan_inputs(plan, check_identity=False)
+                compose = self.compose_file(plan, plan['target'])
+                journal.save(record, 'starting')
+                self.engine.compose(compose, 'up')
+                journal.save(record, 'verifying')
+                self.engine.verify(cfg, plan['target'])
+                if plan['oldMode'] == 'pm2':
+                    # Remove the stopped entry so a later unrelated `pm2 save` cannot
+                    # reintroduce the old writer at host boot. Resume definition is retained.
+                    self.engine.pm2(cfg['appRoot'], 'delete', plan['pm2Id'])
+                current = {'release': plan['target'], 'inventory': plan['inventory'], 'committedOperationId': operation_id,
+                           'identityHash': plan['authorization']['identityHash']}
+                atomic_json(state / 'current.json', current)
+                journal.save(record, 'committed')
+            except Exception as error:
+                code = str(error) if isinstance(error, (ValueError, EngineError)) else type(error).__name__
+                if not stopped:
+                    journal.save(record, 'rejected', error=code)
+                else:
+                    try:
+                        self.restore(plan, record, journal)
+                        record['error'] = code
+                        journal.save(record, 'rolled_back')
+                    except Exception:
+                        journal.save(record, 'needs_attention', error=code)
+                raise RuntimeError('UPGRADE_' + record['stage'].upper()) from None
+            return {'operationId': operation_id, 'stage': record['stage'], 'version': plan['target']['version']}
 
 
 def main():
@@ -718,7 +724,7 @@ def main():
         print(json.dumps(inventory(args.app_root), ensure_ascii=False, indent=2))
     elif args.command == 'status':
         cfg = control.config(args.instance)
-        record = Journal(cfg['stateDir']).read()
+        record = latest_record(Journal(cfg['stateDir']).read(), json.loads((Path(cfg['stateDir']) / 'last-request.json').read_text()) if (Path(cfg['stateDir']) / 'last-request.json').exists() else {})
         print(json.dumps({k: v for k, v in (record or {}).items() if k != 'plan'}, ensure_ascii=False, indent=2))
     elif args.command == 'info':
         from service import public_status
@@ -727,7 +733,7 @@ def main():
         if not args.apply:
             print(json.dumps({'action': args.command, 'instanceId': args.instance, 'applyRequired': True}))
         else:
-            print(json.dumps(control.recover(args.instance, rollback_committed=args.command == 'rollback')))
+            print(json.dumps(control.recover(args.instance, rollback_committed=args.command == 'rollback', operation_id=args.operation_id)))
     elif args.command == 'plan' or not args.apply:
         if not args.release:
             from catalog import refresh_catalog

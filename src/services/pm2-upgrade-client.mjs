@@ -10,9 +10,16 @@ const TERMINAL = new Set(['committed', 'rolled_back', 'rejected', 'failed'])
 const directory = repoRoot => path.join(ROOT, 'pm2', crypto.createHash('sha256').update(repoRoot).digest('hex'))
 async function json(file) { try { return JSON.parse(await fs.readFile(file, 'utf8')) } catch (error) { if (['ENOENT', 'EACCES'].includes(error.code)) return null; throw error } }
 
+export function selectPm2UpgradeRecord(record, request) {
+  const newerRequest = request && (Number.isSafeInteger(request.eventSequence) && Number.isSafeInteger(record?.eventSequence)
+    ? request.eventSequence > record.eventSequence
+    : Boolean(request.updatedAt && request.updatedAt > (record?.updatedAt || '')))
+  return request && (!record || TERMINAL.has(record.stage) && newerRequest) ? request : record
+}
+
 export async function readPm2UpgradeStatus(repoRoot) {
   const state = directory(repoRoot), record = await json(path.join(state, 'transaction.json')), request = await json(path.join(state, 'last-request.json'))
-  const selected = request && request.operationId !== record?.operationId && (!record || TERMINAL.has(record.stage)) ? request : record
+  const selected = selectPm2UpgradeRecord(record, request)
   if (!selected) return null
   const result = Object.fromEntries(['operationId', 'stage', 'updatedAt', 'error'].filter(key => selected[key] !== undefined).map(key => [key, selected[key]]))
   if (result.error && !/^[A-Z][A-Z0-9_]{0,120}$/.test(result.error)) result.error = 'ZIP_UPGRADE_FAILED'

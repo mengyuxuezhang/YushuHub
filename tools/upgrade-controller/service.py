@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 from catalog import refresh_catalog
 from controller import Controller, TERMINAL
-from state import Journal, atomic_json, locks
+from state import Journal, locks, latest_record, request_file, reserve_request, request_result, save_request
 
 
 def public_status(control, instance):
@@ -31,8 +31,7 @@ def public_status(control, instance):
             availability = 'running' if container and container['State']['Running'] and container['Config']['Image'] == current.get('image') else 'stopped-or-different'
         except Exception:
             availability = 'unknown'
-    if request and request.get('operationId') != record.get('operationId') and (not record or record.get('stage') in TERMINAL):
-        record = request
+    record = latest_record(record, request)
     transaction = {key: record.get(key) for key in ('operationId', 'stage', 'updatedAt', 'error') if key in record}
     if transaction.get('error') and not re.fullmatch(r'[A-Z][A-Z0-9_]{0,120}', transaction['error']):
         transaction['error'] = 'CONTROLLER_OPERATION_FAILED'
@@ -104,9 +103,12 @@ def _serve_instance(control, instance, socket_path=None, stop_event=None):
                 journal.save(pending, 'needs_attention', error='CONTROLLER_RESTART_INTERRUPTED_OPERATION')
             request_path = Path(cfg['stateDir']) / 'last-request.json'
             request = json.loads(request_path.read_text()) if request_path.exists() else {}
-            if request.get('stage') == 'accepted' and request.get('operationId') != (pending or {}).get('operationId'):
+            if request.get('stage') == 'running':
+                request.update(stage='needs_attention', error='REQUEST_OUTCOME_REQUIRES_RECOVERY')
+                save_request(cfg['stateDir'], request, publish=False)
+            elif request.get('stage') == 'accepted' and request.get('operationId') != (pending or {}).get('operationId'):
                 request.update(stage='failed', error='CONTROLLER_RESTART_BEFORE_OPERATION_STARTED')
-                atomic_json(request_path, request)
+                save_request(cfg['stateDir'], request, publish=False)
     except RuntimeError:
         # A CLI operation is still alive and holds the shared kernel lock.
         pass
@@ -154,32 +156,43 @@ def _serve_instance(control, instance, socket_path=None, stop_event=None):
                 operation = payload.get('operationId') or str(uuid.uuid4())
                 if not isinstance(operation, str) or not re.fullmatch(r'[A-Za-z0-9-]{1,80}', operation):
                     return self.reply(400, {'error': 'INVALID_OPERATION_ID'})
+                action = self.path.rsplit('/', 1)[1]
+                existing_file = request_file(cfg['stateDir'], operation)
+                if existing_file.exists():
+                    existing = json.loads(existing_file.read_text())
+                    if existing['intent']['action'] != action:
+                        return self.reply(409, {'error': 'OPERATION_ID_REUSED_WITH_DIFFERENT_INTENT'})
+                    return self.reply(200, request_result(existing))
                 if not active.acquire(blocking=False):
                     return self.reply(409, {'error': 'UPGRADE_ALREADY_RUNNING'})
                 try:
                     desired, _ = refresh_catalog(control, control.config(instance))
-                    if self.path == '/v1/upgrade' and not desired:
+                    if action == 'upgrade' and not desired:
                         raise ValueError('NO_APPROVED_RELEASE')
-                    request = {'operationId': operation, 'stage': 'accepted', 'action': self.path.rsplit('/', 1)[1]}
-                    atomic_json(Path(cfg['stateDir']) / 'last-request.json', request)
+                    intent = {'action': action}
+                    if action == 'upgrade':
+                        intent['releaseId'] = desired
+                    request = reserve_request(cfg['stateDir'], operation, intent)
                 except Exception:
                     active.release()
                     raise
 
-                def worker(action):
+                def worker():
                     try:
                         if action == 'upgrade':
-                            result = control.apply(instance, desired, operation)
+                            control.apply(instance, desired, operation)
                         else:
-                            result = control.recover(instance, rollback_committed=action == 'rollback')
-                        request.update(stage=result['stage'])
+                            control.recover(instance, rollback_committed=action == 'rollback', operation_id=operation)
                     except Exception as error:
-                        code = str(error)
-                        request.update(stage='failed', error=code if re.fullmatch(r'[A-Z][A-Z0-9_]{0,120}', code) else 'CONTROLLER_OPERATION_FAILED')
+                        # Errors before the controller obtains its host lock also need a receipt.
+                        current = json.loads(request_file(cfg['stateDir'], operation).read_text())
+                        if current['stage'] == 'accepted':
+                            code = str(error)
+                            current.update(stage='failed', error=code if re.fullmatch(r'[A-Z][A-Z0-9_]{0,120}', code) else 'CONTROLLER_OPERATION_FAILED')
+                            save_request(cfg['stateDir'], current)
                     finally:
-                        atomic_json(Path(cfg['stateDir']) / 'last-request.json', request)
                         active.release()
-                threading.Thread(target=worker, args=(request['action'],), daemon=False).start()
+                threading.Thread(target=worker, daemon=False).start()
                 self.reply(202, {'operationId': operation, 'stage': 'accepted'})
             except Exception:
                 self.reply(400, {'error': 'CONTROLLER_REQUEST_REJECTED'})

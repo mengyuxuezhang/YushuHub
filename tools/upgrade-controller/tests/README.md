@@ -7,6 +7,14 @@ python3 -B -m unittest discover -s tools/upgrade-controller -p 'test_*.py' -v
 node --test tools/upgrade-controller/tests/authorization-probe.test.mjs tools/upgrade-controller/tests/runtime-contract.test.mjs
 ```
 
+`test_requests.py`覆盖 HTTP/UDS 与 CLI 共用的持久请求收据。每实例请求 ID
+绑定动作和版本合同；相同 ID 重试返回原结果，换动作或合同拒绝。
+`rollback`/`recover` CLI 同样支持 `--operation-id`。请求记录与升级事务分开，
+恢复结果的 `targetOperationId` 指向原升级事务，`operationId` 为本次请求 ID。
+进程中断后结果不确定的原请求只返回 `needs_attention`，不会重新选择当前上一版；
+管理员应检查状态后，用新的请求 ID 显式恢复。状态先保留进行中的事务，再按 root
+持久事件序列比较终态与请求；旧版无序列记录仅使用已有时间，缺时间的旧请求不遮盖事务。
+
 授权测试使用临时生成的Ed25519材料及虚构状态，只验证本地签名/缓存/身份检查，不连真实中心；DB驱动为单元夹具替身。真实DB覆盖由下面的隔离演练执行，不能把替身测试当DB验收。
 
 真实链路测试使用`lab.Dockerfile`构建的**控制器宿主夹具**，与非root业务镜像分开。它需要本机Docker socket、host network；严格端口归属测试还需host PID和SYS_PTRACE。此权限仅用于隔离控制器夹具，业务镜像不挂socket、不加这些能力。

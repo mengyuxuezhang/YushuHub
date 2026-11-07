@@ -18,7 +18,7 @@ from pathlib import Path
 from controller import Controller, TERMINAL, source_configuration_closure, digest, mounted_roots, read_private_json, available_memory
 from engine import Docker, EngineError
 from scan import inventory, read_env
-from state import Journal, atomic_json, atomic_bytes, locks
+from state import Journal, atomic_json, atomic_bytes, locks, execute_request, latest_record, reserve_request, request_result, find_request, save_request
 
 ENTRIES = ('cloud', 'src', 'web', 'docs', 'scripts', 'package.json', 'package-lock.json',
            '.env.example', '.gitignore', 'install.php', 'LICENSE', 'node_modules')
@@ -262,87 +262,95 @@ class Pm2ZipController(Controller):
 
     def apply_zip(self, request):
         app_root = request['appRoot']
-        directory = self.directory(app_root)
-        operation = request.get('operationId') or str(uuid.uuid4())
-        if not re.fullmatch(r'[A-Za-z0-9-]{1,80}', operation):
-            raise ValueError('INVALID_OPERATION_ID')
+        request = dict(request, operationId=request.get('operationId') or str(uuid.uuid4()))
+        operation_id = request['operationId']
         with locks(self.root, ['host-cutover', 'pm2:' + app_root]):
-            journal = Journal(directory)
-            prior = journal.read()
-            receipt = directory / 'operations' / (operation + '.json')
-            if receipt.exists():
-                previous = read_private_json(receipt)
-                if previous.get('archiveSha256') != request.get('sha256') or previous.get('expectedVersion') != request.get('expectedVersion'):
-                    raise ValueError('OPERATION_ID_REUSED_WITH_DIFFERENT_RELEASE')
-                return {'operationId': operation, 'stage': previous['stage']}
-            if prior and prior['stage'] not in TERMINAL:
-                raise ValueError('PENDING_TRANSACTION_REQUIRES_RECOVER')
-            plan = self.prepare_plan(request, directory, operation)
-            with locks(self.root, ['database:' + plan['inventory']['databaseLockKey']]):
-                self.preflight(plan)
-                record = {'operationId': operation, 'plan': plan, 'archiveSha256': request.get('sha256'), 'expectedVersion': request.get('expectedVersion')}
-                journal.save(record, 'preparing')
-                stopped = False
-                try:
-                    self.stage_package(request, record, journal)
-                    self.preflight(plan)
-                    self.validate_source(plan)
-                    self.identify_pm2(plan)
-                    journal.save(record, 'draining')
-                    stopped = True
-                    self.engine.pm2(app_root, 'stop', plan['pm2Id'])
-                    self.engine.port_is_free(plan['config']['port'])
-                    journal.save(record, 'stopped')
-                    self.backup(plan, record, journal)
-                    self.validate_source(plan, identity=False)
-                    journal.save(record, 'replacing')
-                    candidate = Path(plan['candidateDir'])
-                    replace_entries(candidate, Path(app_root), [name for name in ENTRIES if (candidate / name).exists()])
-                    journal.save(record, 'starting')
-                    self.resume_pm2(plan)
-                    journal.save(record, 'verifying')
-                    self.engine.verify(plan['config'], plan['target'], require_container=False)
-                    atomic_json(directory / 'current.json', {'committedOperationId': operation})
-                    journal.save(record, 'committed')
-                except Exception as error:
-                    code = str(error) if isinstance(error, (ValueError, EngineError)) else type(error).__name__
-                    if not stopped:
-                        journal.save(record, 'rejected', error=code)
-                    else:
-                        try:
-                            self.restore_zip(plan, record, journal)
-                            journal.save(record, 'rolled_back', error=code)
-                        except Exception:
-                            journal.save(record, 'needs_attention', error=code)
-                    raise RuntimeError('ZIP_UPGRADE_' + record['stage'].upper()) from None
-                return {'operationId': operation, 'stage': 'committed', 'version': plan['target']['version']}
+            return execute_request(self.directory(app_root), operation_id, {'action': 'upgrade', 'archiveSha256': request.get('sha256'), 'expectedVersion': request.get('expectedVersion')}, lambda: self._apply_zip_locked(request))
 
-    def recover_zip(self, app_root, rollback=False):
+    def _apply_zip_locked(self, request):
+        app_root = request['appRoot']
         directory = self.directory(app_root)
-        with locks(self.root, ['host-cutover', 'pm2:' + app_root]):
-            journal = Journal(directory)
-            record = journal.read()
-            if not record:
-                raise ValueError('NO_TRANSACTION_TO_RECOVER')
-            if rollback:
-                if record['stage'] not in TERMINAL:
-                    raise ValueError('PENDING_TRANSACTION_REQUIRES_RECOVER')
-                current = read_private_json(directory / 'current.json')
-                record = read_private_json(directory / 'operations' / (current['committedOperationId'] + '.json'))
-            if record['stage'] in ('rolled_back', 'rejected') or record['stage'] == 'committed' and not rollback:
-                return {'stage': record['stage'], 'operationId': record['operationId']}
-            plan = record['plan']
-            with locks(self.root, ['database:' + plan['inventory']['databaseLockKey']]):
-                try:
-                    if record['stage'] in ('preparing', 'preparing_dependencies'):
-                        self.engine.verify(plan['config'], plan['old'], require_container=False)
-                        journal.save(record, 'rejected', error='INTERRUPTED_BEFORE_CUTOVER')
-                    else:
+        operation = request['operationId']
+        journal = Journal(directory)
+        prior = journal.read()
+        receipt = directory / 'operations' / (operation + '.json')
+        if receipt.exists():
+            previous = read_private_json(receipt)
+            if previous.get('archiveSha256') != request.get('sha256') or previous.get('expectedVersion') != request.get('expectedVersion'):
+                raise ValueError('OPERATION_ID_REUSED_WITH_DIFFERENT_RELEASE')
+            return {'operationId': operation, 'stage': previous['stage']}
+        if prior and prior['stage'] not in TERMINAL:
+            raise ValueError('PENDING_TRANSACTION_REQUIRES_RECOVER')
+        plan = self.prepare_plan(request, directory, operation)
+        with locks(self.root, ['database:' + plan['inventory']['databaseLockKey']]):
+            self.preflight(plan)
+            record = {'operationId': operation, 'plan': plan, 'archiveSha256': request.get('sha256'), 'expectedVersion': request.get('expectedVersion')}
+            journal.save(record, 'preparing')
+            stopped = False
+            try:
+                self.stage_package(request, record, journal)
+                self.preflight(plan)
+                self.validate_source(plan)
+                self.identify_pm2(plan)
+                journal.save(record, 'draining')
+                stopped = True
+                self.engine.pm2(app_root, 'stop', plan['pm2Id'])
+                self.engine.port_is_free(plan['config']['port'])
+                journal.save(record, 'stopped')
+                self.backup(plan, record, journal)
+                self.validate_source(plan, identity=False)
+                journal.save(record, 'replacing')
+                candidate = Path(plan['candidateDir'])
+                replace_entries(candidate, Path(app_root), [name for name in ENTRIES if (candidate / name).exists()])
+                journal.save(record, 'starting')
+                self.resume_pm2(plan)
+                journal.save(record, 'verifying')
+                self.engine.verify(plan['config'], plan['target'], require_container=False)
+                atomic_json(directory / 'current.json', {'committedOperationId': operation})
+                journal.save(record, 'committed')
+            except Exception as error:
+                code = str(error) if isinstance(error, (ValueError, EngineError)) else type(error).__name__
+                if not stopped:
+                    journal.save(record, 'rejected', error=code)
+                else:
+                    try:
                         self.restore_zip(plan, record, journal)
-                except Exception:
-                    journal.save(record, 'needs_attention', error='RECOVERY_INCOMPLETE')
-                    raise RuntimeError('RECOVERY_NEEDS_ATTENTION') from None
+                        journal.save(record, 'rolled_back', error=code)
+                    except Exception:
+                        journal.save(record, 'needs_attention', error=code)
+                raise RuntimeError('ZIP_UPGRADE_' + record['stage'].upper()) from None
+            return {'operationId': operation, 'stage': 'committed', 'version': plan['target']['version']}
+
+    def recover_zip(self, app_root, rollback=False, operation_id=None):
+        operation_id = operation_id or str(uuid.uuid4())
+        with locks(self.root, ['host-cutover', 'pm2:' + app_root]):
+            return execute_request(self.directory(app_root), operation_id, {'action': 'rollback' if rollback else 'recover'}, lambda: self._recover_zip_locked(app_root, rollback))
+
+    def _recover_zip_locked(self, app_root, rollback):
+        directory = self.directory(app_root)
+        journal = Journal(directory)
+        record = journal.read()
+        if not record:
+            raise ValueError('NO_TRANSACTION_TO_RECOVER')
+        if rollback:
+            if record['stage'] not in TERMINAL:
+                raise ValueError('PENDING_TRANSACTION_REQUIRES_RECOVER')
+            current = read_private_json(directory / 'current.json')
+            record = read_private_json(directory / 'operations' / (current['committedOperationId'] + '.json'))
+        if record['stage'] in ('rolled_back', 'rejected') or record['stage'] == 'committed' and not rollback:
             return {'stage': record['stage'], 'operationId': record['operationId']}
+        plan = record['plan']
+        with locks(self.root, ['database:' + plan['inventory']['databaseLockKey']]):
+            try:
+                if record['stage'] in ('preparing', 'preparing_dependencies'):
+                    self.engine.verify(plan['config'], plan['old'], require_container=False)
+                    journal.save(record, 'rejected', error='INTERRUPTED_BEFORE_CUTOVER')
+                else:
+                    self.restore_zip(plan, record, journal)
+            except Exception:
+                journal.save(record, 'needs_attention', error='RECOVERY_INCOMPLETE')
+                raise RuntimeError('RECOVERY_NEEDS_ATTENTION') from None
+        return {'stage': record['stage'], 'operationId': record['operationId']}
 
 
 def public_record(control, app_root):
@@ -350,8 +358,7 @@ def public_record(control, app_root):
     record = Journal(directory).read() or {}
     request_path = directory / 'last-request.json'
     request = read_private_json(request_path) if request_path.exists() else {}
-    if request and request.get('operationId') != record.get('operationId') and (not record or record['stage'] in TERMINAL):
-        record = request
+    record = latest_record(record, request)
     body = {key: record[key] for key in ('stage', 'operationId', 'updatedAt', 'error') if key in record}
     if body.get('error') and not re.fullmatch(r'[A-Z][A-Z0-9_]{0,120}', body['error']):
         body['error'] = 'ZIP_UPGRADE_FAILED'
@@ -377,8 +384,12 @@ def main():
     if not re.fullmatch(r'[A-Za-z0-9-]{1,80}', request['operationId']):
         raise ValueError('INVALID_OPERATION_ID')
     request_path = control.directory(request['appRoot']) / 'last-request.json'
-    status = {'stage': 'accepted', 'operationId': request['operationId']}
-    atomic_json(request_path, status)
+    intent = {'action': args.action}
+    if args.action == 'upgrade':
+        intent.update(archiveSha256=request.get('sha256'), expectedVersion=request.get('expectedVersion'))
+    status = reserve_request(control.directory(request['appRoot']), request['operationId'], intent)
+    if status['stage'] != 'accepted':
+        print(json.dumps(request_result(status))); return
     if args.detach:
         child = os.fork()
         if child:
@@ -394,14 +405,15 @@ def main():
             os.dup2(fd, stream)
         os.close(fd)
     try:
-        result = control.apply_zip(request) if args.action == 'upgrade' else control.recover_zip(request['appRoot'], args.action == 'rollback')
+        result = control.apply_zip(request) if args.action == 'upgrade' else control.recover_zip(request['appRoot'], args.action == 'rollback', request['operationId'])
         status.update(stage=result['stage'])
     except Exception as error:
         code = str(error)
-        status.update(stage='failed', error=code if re.fullmatch(r'[A-Z][A-Z0-9_]{0,120}', code) else 'ZIP_UPGRADE_FAILED')
+        current = find_request(control.directory(request['appRoot']), request['operationId'], intent)
+        if current and current['stage'] == 'accepted':
+            current.update(stage='failed', error=code if re.fullmatch(r'[A-Z][A-Z0-9_]{0,120}', code) else 'ZIP_UPGRADE_FAILED')
+            save_request(control.directory(request['appRoot']), current)
         raise
-    finally:
-        atomic_json(request_path, status)
     if not args.detach:
         print(json.dumps(result))
 
