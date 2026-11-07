@@ -185,7 +185,8 @@ class Controller:
     def preflight(self, plan):
         cfg = plan['config']
         self.engine.available()
-        for process in json.loads(self.engine.run(['pm2', 'jlist'])):
+        processes = json.loads(self.engine.run(['pm2', 'jlist'])) if shutil.which('pm2') else []
+        for process in processes:
             meta = process.get('pm2_env', {})
             other_root = Path(meta.get('pm_cwd', '/')).resolve()
             if meta.get('status') != 'online' or other_root == Path(cfg['appRoot']):
