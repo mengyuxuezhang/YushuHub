@@ -1,6 +1,6 @@
 # 独立升级控制器（开发中）
 
-当前阶段仅提供只读扫描及镜像构建合同。尚未实现切换、回退、按钮和工具适配，不能作为完整升级工具发布。
+开发阶段已提供只读扫描、镜像合同及独立CLI的迁移/升级/回退/恢复。后台按钮和独立部署工具尚未适配，尚未正式发布；以固定候选的独立QA结果和部署验收为准。
 
 服务器扫描（Python 3.8+标准库，无npm依赖）：
 
@@ -23,4 +23,55 @@ node packaging/container/prepare-context.mjs /controlled/release.zip /controlled
 docker build --platform linux/amd64 --build-arg SOURCE_REVISION=VERIFIED_COMMIT -f packaging/container/Dockerfile -t yushuhub:VERSION /controlled/new-context
 ```
 
-后续控制器将明确记录外置DB、数据路径、身份与兼容版本合同；健康检查和restart策略均不表示自动回退能力。
+## 当前控制器合同
+
+- 仅Linux amd64、root管理的PM2 fork实例、本机独占MySQL；实测旧版范围先限真实1.9.66及受验1.9.68。外部路径、代码/控制器目录重叠、路径别名、未知符号链接、非root PM2、远程或共享DB需单独计划，不能直接强制跳过。
+- 原MySQL与宝塔Nginx继续使用，不迁库、不升级MySQL、不开放数据库公网。业务容器采用Linux host network，**明确共享宿主网络命名空间**，监听127.0.0.1原端口；容器内DB的127.0.0.1在此模式有意指向宿主。本模式网络隔离较bridge弱，不能混用bridge地址解释。
+- root登记实例和版本，网页调用方未来只能选择登记项，不能传命令、路径或Compose。Docker固定本机Unix socket，忽略调用环境中的远端Docker context；业务容器没有docker.sock。
+- 版本必须为image@sha256，声明支持来源、HTML指纹、schema指纹、迁移导入闭包/启动步骤指纹及`migrationPolicy=same-schema`。相同hash是必要条件，不代替维护者对业务格式兼容的审阅；未受验版本对不可自动放行。
+- 静态scan对center模式继续保持review；CLI plan仅在现有签名、公钥、实例、域名、时效/缓存状态经**只读运行时证明**后消解这些review项，不调用激活、refresh或写入授权状态。legacy沿用现有模式和原DB身份。身份变化或原.env变化要求重新审核，不重建身份。
+- root状态目录记录当前镜像、前一精确配置、任务journal和历史幂等回执；内核文件锁按主机切换、实例和数据库互斥。控制器退出后锁自动释放，非终态任务必须recover，不能假定已经停止或已经成功。
+- 在切换前预拉并校验镜像、复查资源；失败时旧服务继续运行。默认应用限额256MiB，加128MiB宿主余量；可经实测登记更合适的限额（最低128MiB，宿主余量最低96MiB）。计算实际可释放RSS或容器使用量，不把完整限额当成可用内存；磁盘需覆盖数据文件备份、数据库估算及恢复余量。
+- 明确短维护窗口，停止旧写实例并确认端口释放后，生成MySQL一致性dump、运行文件和.env备份，再调整登记数据目录所有权给UID1000，启动只读根文件系统的非root容器；数据、日志及发布目录独立bind挂载。该阶段保持单写，原始代码与数据库持续保留。
+- PM2只移除本目标在dump.pm2及其bak中的行，保留其他实例；保存原定义。新容器验证通过后删除本目标的旧live PM2记录，防以后pm2 save重新引入。回退停止新容器，恢复原目标定义与其自启记录。已知旧watchdog活跃时先阻断，不擅自停其他服务。
+- 验证实际容器引用、端口所属PID、严格runtime-info版本、HTML及JS/CSS、DB连通/表结构、授权身份，连续三次稳定才提交。healthcheck/restart策略不代表回退。daemon不明或停止候选不确定时，不启动旧写实例，保留needs_attention。
+- 回退保留**同一DB和同一数据目录**，不自动恢复旧dump覆盖新增经营数据。目录所有权调整保留在UID1000，原root PM2仍可读写；新文件不会被历史权限快照删除。数据库灾难恢复是另一个受控流程。
+
+## 安装与登记
+
+先审阅固定提交，在受控主机执行：
+
+```sh
+bash install-controller.sh             # 只显示安装计划
+bash install-controller.sh --apply     # 安装root CLI，无npm安装，不自动登记/切换
+```
+
+依赖：Python3.8+、本机Docker、Compose2.30+、Node（只用于存量PM2验证）、ss及已有mysqldump。镜像依赖在构建机安装；业务目标升级不执行npm install。
+
+root在`/etc/yushuhub-upgrade/instances/示例实例.json`登记，文件root所有且不可被组/其他用户写入。实例ID用小写字母、数字、短横线：
+
+```json
+{"instanceId":"example","appRoot":"/srv/example-admin","port":7077,"memoryMiB":256,"hostReserveMiB":128,"databaseExclusive":true,"databaseLockKey":"扫描输出的真实散列","mysqldump":"/usr/bin/mysqldump"}
+```
+
+`databaseExclusive`是维护者核对真实DB归属后的明确声明，不是工具自动发现全部外部写入者的保证。已知同机其他PM2管理端使用同一DB、登记路径/DB重叠均应阻断；跨主机共享DB不在首批支持范围。
+
+版本文件放`/etc/yushuhub-upgrade/releases/<版本项>.json`，合同由`runtime-contract.mjs`对真实旧版/镜像读取产生。发布管理员核验来源及digest后登记：
+
+```json
+{"version":"1.9.66","image":"registry.example.invalid/yushuhub@sha256:填写64位真实摘要","platform":"linux/amd64","supportedFrom":["1.9.66"],"migrationPolicy":"same-schema","htmlSha256":"真实摘要","schemaSha256":"真实摘要","migrationSha256":"真实摘要"}
+```
+
+示例占位值不能执行；不可把检测到的任意新镜像自行标成same-schema。初次迁移目标必须与实际运行版一致。
+
+```sh
+yushuhub-upgrade scan --app-root /srv/example-admin
+yushuhub-upgrade plan --instance example --release verified-version
+yushuhub-upgrade upgrade --instance example --release verified-version             # 仍只输出计划
+yushuhub-upgrade upgrade --instance example --release verified-version --operation-id approved-task-1 --apply
+yushuhub-upgrade status --instance example
+yushuhub-upgrade rollback --instance example --apply  # 最近已提交运行版的精确前一状态
+yushuhub-upgrade recover --instance example --apply   # 中断任务恢复，不能和rollback混为一谈
+```
+
+CLI错误不输出命令stderr、数据库密码或证书。备份、恢复定义与完整journal是受控运维材料，不能提交公开Git。测试夹具只允许新建的disposable DB及专用Docker卷，不能用客户库执行故障注入。

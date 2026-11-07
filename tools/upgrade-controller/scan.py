@@ -45,6 +45,18 @@ def command(args):
     return subprocess.run(args, capture_output=True, text=True, timeout=20, check=True).stdout
 
 
+def database_lock_key(env):
+    host = (env.get('AI_DB_HOST') or '127.0.0.1').lower()
+    try:
+        port = int(env.get('AI_DB_PORT') or '3306')
+    except (ValueError, TypeError):
+        raise ValueError('INVALID_DATABASE_PORT') from None
+    if not 1 <= port <= 65535:
+        raise ValueError('INVALID_DATABASE_PORT')
+    locator = ['127.0.0.1' if host in ('localhost', '::1') else host, str(port), env.get('AI_DB_NAME') or 'agent_ai']
+    return hashlib.sha256(json.dumps(locator).encode()).hexdigest()
+
+
 def runtime(port):
     with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/runtime-info', timeout=5) as response:
         data = json.load(response)
@@ -91,7 +103,10 @@ def inventory(root, pm2_rows=None, runtime_reader=runtime):
     if overrides:
         # Report effective paths/DB accurately but block conversion until these values can be preserved.
         issues.append('PM2_ENV_DIFFERS_FROM_ENV_FILE')
-    port = int(env.get('AI_ADMIN_PORT', '7077'))
+    try:
+        port = int(env.get('AI_ADMIN_PORT', '7077'))
+    except (ValueError, TypeError):
+        raise ValueError('INVALID_PORT') from None
     if not 1 <= port <= 65535:
         raise ValueError('INVALID_PORT')
     running = {}
@@ -123,9 +138,7 @@ def inventory(root, pm2_rows=None, runtime_reader=runtime):
     if legacy_upload.exists() and any(legacy_upload.iterdir()):
         issues.append('LEGACY_UPLOADS_REQUIRE_MAPPING')
     # Hash only the database locator; credentials never leave this process.
-    host = env.get('AI_DB_HOST', '127.0.0.1').lower()
-    db_locator = ['127.0.0.1' if host in ('localhost', '::1') else host, env.get('AI_DB_PORT', '3306'), env.get('AI_DB_NAME', 'agent_ai')]
-    db_key = hashlib.sha256(json.dumps(db_locator).encode()).hexdigest()
+    db_key = database_lock_key(env)
     mode = env.get('AI_AUTHORIZATION_MODE')
     if mode and mode not in ('center', 'legacy'):
         issues.append('INVALID_AUTHORIZATION_MODE')
