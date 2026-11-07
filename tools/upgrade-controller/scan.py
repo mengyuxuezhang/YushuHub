@@ -1,0 +1,129 @@
+"""Read-only, standard-library inventory. Never exports environment values or credentials."""
+import hashlib
+import json
+import os
+import platform
+import re
+import shutil
+import subprocess
+import urllib.request
+from pathlib import Path
+
+PATH_DEFAULTS = {
+    'AI_UPLOAD_DIR': 'data/uploads', 'AI_UPDATE_ROOT': 'release/published-ai',
+    'AI_PREVIEW_ROOT': 'release/ai-staging', 'AI_ADMIN_UPDATE_WORK_DIR': 'data/self-update',
+    'AI_CURATED_SKILL_ROOT': 'data/curated-skills',
+    'AI_CURATED_SKILL_KEK_PATH': 'data/curated-skill-market.key',
+    'AI_CURATED_SKILL_SIGNING_PRIVATE_PATH': 'data/curated-skill-signing-private.pem',
+    'AI_CURATED_SKILL_SIGNING_PUBLIC_PATH': 'data/curated-skill-signing-public.pem',
+    'AI_CUSTOM_HOMEPAGE_ROOT': 'data/custom-homepage',
+    'AI_MODEL_CREDENTIAL_KEY_PATH': 'data/model-credentials.key',
+    'AI_VOICE_ARTIFACT_ROOT': 'data/voice-artifacts',
+    'AI_PAYMENT_SECRET_FILE': 'data/payment-secret.key',
+    'AI_LICENSE_STATE_FILE': 'data/deployment-license.json',
+}
+PATH_KEYS = set(PATH_DEFAULTS) | {'AI_LICENSE_PUBLIC_KEYS_FILE', 'AI_WORKER_IDENTITIES_FILE',
+    'AI_OFFICIAL_SUBJECT_BINDINGS_FILE'}
+
+
+def read_env(root):
+    result = {}
+    for line in (Path(root) / '.env').read_text(encoding='utf-8-sig').splitlines():
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        result[key.strip()] = value
+    return result
+
+
+def command(args):
+    return subprocess.run(args, capture_output=True, text=True, timeout=20, check=True).stdout
+
+
+def runtime(port):
+    with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/runtime-info', timeout=5) as response:
+        data = json.load(response)
+    if data.get('success') is not True or not data.get('data', {}).get('version'):
+        raise ValueError('runtime endpoint missing version')
+    return data['data']
+
+
+def inventory(root, pm2_rows=None, runtime_reader=runtime):
+    root = Path(root).resolve(strict=True)
+    package = json.loads((root / 'package.json').read_text(encoding='utf-8-sig'))
+    if package.get('name') != 'agent-ai-admin':
+        raise ValueError('NOT_ADMIN_INSTANCE')
+    env = read_env(root)
+    port = int(env.get('AI_ADMIN_PORT', '7077'))
+    if not 1 <= port <= 65535:
+        raise ValueError('INVALID_PORT')
+    issues = []
+    if pm2_rows is None:
+        pm2_rows = json.loads(command(['pm2', 'jlist']))
+    matches = [p for p in pm2_rows if Path(p.get('pm2_env', {}).get('pm_cwd', '/')).resolve() == root]
+    online = [p for p in matches if p.get('pm2_env', {}).get('status') == 'online']
+    if len(online) != 1:
+        issues.append('EXPECTED_ONE_ONLINE_PM2_PROCESS')
+    running = {}
+    try:
+        running = runtime_reader(port)
+        if running.get('version') != package['version']:
+            issues.append('DISK_RUNTIME_VERSION_MISMATCH')
+    except Exception:
+        issues.append('RUNTIME_INFO_UNAVAILABLE')
+    paths = []
+    defaults = dict(PATH_DEFAULTS)
+    defaults['AI_PREVIEW_ROOT'] = str(Path(env.get('AI_UPDATE_ROOT') or root / defaults['AI_UPDATE_ROOT']).parent / 'ai-staging')
+    for key in sorted(PATH_KEYS):
+        value = env.get(key) or defaults.get(key)
+        if not value:
+            continue
+        item = Path(value)
+        if not item.is_absolute():
+            item = root / item
+        resolved = item.resolve()
+        paths.append({'key': key, 'path': str(resolved), 'exists': resolved.exists(), 'symlink': item.is_symlink(),
+                      'external': os.path.commonpath([str(resolved), str(root)]) != str(root)})
+        if key.endswith(('_FILE', '_PATH')) and env.get(key) and not resolved.exists():
+            issues.append('CONFIGURED_FILE_MISSING:' + key)
+    unknown = sorted(key for key, value in env.items() if value and re.match(r'^AI_.*_(?:PATH|FILE|DIR|ROOT)$', key) and key not in PATH_KEYS)
+    if unknown:
+        issues.append('UNREVIEWED_PATH_CONFIGURATION')
+    legacy_upload = root / 'cloud/ai-admin/uploads'
+    if legacy_upload.exists() and any(legacy_upload.iterdir()):
+        issues.append('LEGACY_UPLOADS_REQUIRE_MAPPING')
+    # Hash only the database locator; credentials never leave this process.
+    db_locator = [env.get('AI_DB_HOST', '127.0.0.1'), env.get('AI_DB_PORT', '3306'), env.get('AI_DB_NAME', 'agent_ai')]
+    db_key = hashlib.sha256(json.dumps(db_locator).encode()).hexdigest()
+    effective_env = online[0].get('pm2_env', {}) if len(online) == 1 else {}
+    overrides = sorted(key for key, value in env.items() if key.startswith('AI_') and key in effective_env and str(effective_env[key]) != value)
+    if overrides:
+        issues.append('PM2_ENV_DIFFERS_FROM_ENV_FILE')
+    if platform.system() != 'Linux' or platform.machine() not in ('x86_64', 'AMD64'):
+        issues.append('UNSUPPORTED_HOST_PLATFORM')
+    disk = shutil.disk_usage(root)
+    return {'format': 1, 'appRoot': str(root), 'diskVersion': package['version'],
+        'runningVersion': running.get('version'), 'runtimeInstanceId': running.get('instanceId'), 'port': port,
+        'pm2': [{'name': p['name'], 'pid': p.get('pid'), 'status': p['pm2_env'].get('status'),
+                 'interpreter': p['pm2_env'].get('exec_interpreter')} for p in matches],
+        'databaseLockKey': db_key, 'authorizationMode': env.get('AI_AUTHORIZATION_MODE') or ('legacy-marker' if (root / 'data/legacy-upgrade-mode.json').exists() else 'requires-review'),
+        'savedAuthorization': (root / 'data/authorization-connection.json').exists(),
+        'paths': paths, 'unreviewedPathKeys': unknown, 'pm2OverrideKeys': overrides,
+        'diskFreeBytes': disk.free, 'issues': sorted(set(issues)), 'readyForPlan': not issues}
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--app-root', required=True)
+    args = parser.parse_args()
+    try:
+        print(json.dumps(inventory(args.app_root), ensure_ascii=False, indent=2))
+    except Exception as error:
+        # Exceptions from PM2/HTTP/files may contain secrets; expose the type only.
+        print(json.dumps({'error': 'SCAN_FAILED', 'type': type(error).__name__}))
+        raise SystemExit(1)
