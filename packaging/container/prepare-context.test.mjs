@@ -19,7 +19,7 @@ function fixture(extra = {}) {
 test('accepts only the explicit runtime projection and never copies development scripts', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'admin-context-'))
   t.after(() => fs.rm(root, { recursive: true, force: true }))
-  await fs.writeFile(path.join(root, 'input.zip'), fixture({ 'scripts/smoke-test-frontend.mjs': 'export {}' }))
+  await fs.writeFile(path.join(root, 'input.zip'), fixture({ 'scripts/smoke-test-frontend.mjs': 'export {}', '.github/workflows/check.yml': 'name: fixture' }))
   await prepareContext(path.join(root, 'input.zip'), path.join(root, 'context'))
   await assert.rejects(fs.stat(path.join(root, 'context/scripts/smoke-test-frontend.mjs')))
   assert.equal((await fs.readFile(path.join(root, 'context/package.json'), 'utf8')).includes('agent-ai-admin'), true)

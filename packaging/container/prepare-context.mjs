@@ -35,7 +35,7 @@ function rejectSensitiveEntry(entry) {
   const segments = name.split('/')
   if (segments.some(part => /^(?:data|logs|uploads|node_modules|local-update|\.git)$/i.test(part))
     || (name !== '.env.example' && segments.some(part => part.startsWith('.env')))
-    || (segments.length > 1 && segments.some(part => part.startsWith('.')))
+    || (/^(?:cloud|src|web|scripts|docs)\//.test(name) && segments.some(part => part.startsWith('.')))
     || /\.(?:pem|key|p12|pfx|jks|sqlite|sqlite3|db|sql|bak)$/i.test(name)
     || /(?:^|\/)(?:credentials?|secrets?|passwords?|private[-_]keys?)(?:[._/-]|$)/i.test(name)) {
     throw new Error('Sensitive or persistent file is forbidden in image input')
