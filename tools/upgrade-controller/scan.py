@@ -36,7 +36,8 @@ def read_env(root):
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
-        result[key.strip()] = value
+        # Match load-local-env.mjs: inherited environment wins, then the first file entry.
+        result.setdefault(key.strip(), value)
     return result
 
 
@@ -57,10 +58,7 @@ def inventory(root, pm2_rows=None, runtime_reader=runtime):
     package = json.loads((root / 'package.json').read_text(encoding='utf-8-sig'))
     if package.get('name') != 'agent-ai-admin':
         raise ValueError('NOT_ADMIN_INSTANCE')
-    env = read_env(root)
-    port = int(env.get('AI_ADMIN_PORT', '7077'))
-    if not 1 <= port <= 65535:
-        raise ValueError('INVALID_PORT')
+    file_env = read_env(root)
     issues = []
     if pm2_rows is None:
         pm2_rows = json.loads(command(['pm2', 'jlist']))
@@ -68,6 +66,34 @@ def inventory(root, pm2_rows=None, runtime_reader=runtime):
     online = [p for p in matches if p.get('pm2_env', {}).get('status') == 'online']
     if len(online) != 1:
         issues.append('EXPECTED_ONE_ONLINE_PM2_PROCESS')
+    inherited = {}
+    selected = online[0].get('pm2_env', {}) if len(online) == 1 else {}
+    nested = selected.get('env', {})
+    if not isinstance(nested, dict):
+        issues.append('INVALID_PM2_ENVIRONMENT')
+        nested = {}
+    for key, value in nested.items():
+        if key.startswith('AI_'):
+            if not isinstance(value, str):
+                issues.append('INVALID_PM2_ENVIRONMENT')
+            else:
+                inherited[key] = value
+    for key, value in selected.items():
+        if key.startswith('AI_'):
+            if not isinstance(value, str):
+                issues.append('INVALID_PM2_ENVIRONMENT')
+                continue
+            if key in inherited and inherited[key] != value:
+                issues.append('AMBIGUOUS_PM2_ENVIRONMENT')
+            inherited[key] = value
+    env = dict(file_env, **inherited)
+    overrides = sorted(key for key in inherited if key not in file_env or inherited[key] != file_env[key])
+    if overrides:
+        # Report effective paths/DB accurately but block conversion until these values can be preserved.
+        issues.append('PM2_ENV_DIFFERS_FROM_ENV_FILE')
+    port = int(env.get('AI_ADMIN_PORT', '7077'))
+    if not 1 <= port <= 65535:
+        raise ValueError('INVALID_PORT')
     running = {}
     try:
         running = runtime_reader(port)
@@ -97,12 +123,31 @@ def inventory(root, pm2_rows=None, runtime_reader=runtime):
     if legacy_upload.exists() and any(legacy_upload.iterdir()):
         issues.append('LEGACY_UPLOADS_REQUIRE_MAPPING')
     # Hash only the database locator; credentials never leave this process.
-    db_locator = [env.get('AI_DB_HOST', '127.0.0.1'), env.get('AI_DB_PORT', '3306'), env.get('AI_DB_NAME', 'agent_ai')]
+    host = env.get('AI_DB_HOST', '127.0.0.1').lower()
+    db_locator = ['127.0.0.1' if host in ('localhost', '::1') else host, env.get('AI_DB_PORT', '3306'), env.get('AI_DB_NAME', 'agent_ai')]
     db_key = hashlib.sha256(json.dumps(db_locator).encode()).hexdigest()
-    effective_env = online[0].get('pm2_env', {}) if len(online) == 1 else {}
-    overrides = sorted(key for key, value in env.items() if key.startswith('AI_') and key in effective_env and str(effective_env[key]) != value)
-    if overrides:
-        issues.append('PM2_ENV_DIFFERS_FROM_ENV_FILE')
+    mode = env.get('AI_AUTHORIZATION_MODE')
+    if mode and mode not in ('center', 'legacy'):
+        issues.append('INVALID_AUTHORIZATION_MODE')
+        mode = 'invalid'
+    marker = root / 'data/legacy-upgrade-mode.json'
+    marker_valid = False
+    if marker.exists():
+        try:
+            record = json.loads(marker.read_text())
+            marker_valid = isinstance(record, dict) and record.get('format') == 1 and record.get('mode') == 'legacy-upgrade'
+        except (OSError, ValueError):
+            pass
+        if not marker_valid:
+            issues.append('INVALID_LEGACY_AUTHORIZATION_MARKER')
+    saved = root / 'data/authorization-connection.json'
+    if saved.exists():
+        # Existence alone cannot attest Ed25519 keys, trusted center or certificate state.
+        issues.append('SAVED_AUTHORIZATION_REQUIRES_RUNTIME_VALIDATION')
+    if not mode:
+        mode = 'legacy-marker' if marker_valid and not env.get('AI_LICENSE_CENTER_URL') and not env.get('AI_LICENSE_PUBLIC_KEYS_FILE') else 'requires-review'
+    if mode == 'requires-review':
+        issues.append('AUTHORIZATION_MODE_REQUIRES_REVIEW')
     if platform.system() != 'Linux' or platform.machine() not in ('x86_64', 'AMD64'):
         issues.append('UNSUPPORTED_HOST_PLATFORM')
     disk = shutil.disk_usage(root)
@@ -110,8 +155,8 @@ def inventory(root, pm2_rows=None, runtime_reader=runtime):
         'runningVersion': running.get('version'), 'runtimeInstanceId': running.get('instanceId'), 'port': port,
         'pm2': [{'name': p['name'], 'pid': p.get('pid'), 'status': p['pm2_env'].get('status'),
                  'interpreter': p['pm2_env'].get('exec_interpreter')} for p in matches],
-        'databaseLockKey': db_key, 'authorizationMode': env.get('AI_AUTHORIZATION_MODE') or ('legacy-marker' if (root / 'data/legacy-upgrade-mode.json').exists() else 'requires-review'),
-        'savedAuthorization': (root / 'data/authorization-connection.json').exists(),
+        'databaseLockKey': db_key, 'authorizationMode': mode,
+        'savedAuthorization': saved.exists(),
         'paths': paths, 'unreviewedPathKeys': unknown, 'pm2OverrideKeys': overrides,
         'diskFreeBytes': disk.free, 'issues': sorted(set(issues)), 'readyForPlan': not issues}
 

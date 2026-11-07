@@ -12,7 +12,7 @@ class InventoryTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
         (self.root / 'package.json').write_text(json.dumps({'name': 'agent-ai-admin', 'version': '1.9.66'}))
-        (self.root / '.env').write_text('AI_DB_PASSWORD=DO_NOT_EXPORT\nAI_ADMIN_PORT=7079\n')
+        (self.root / '.env').write_text('AI_DB_PASSWORD=DO_NOT_EXPORT\nAI_ADMIN_PORT=7079\nAI_AUTHORIZATION_MODE=legacy\n')
         self.rows = [{'name': 'fixture', 'pid': 5, 'pm2_env': {'pm_cwd': str(self.root), 'status': 'online'}}]
 
     def scan(self, **kwargs):
@@ -49,6 +49,41 @@ class InventoryTest(unittest.TestCase):
         with (self.root / '.env').open('a') as stream:
             stream.write('AI_DB_NAME=other\n')
         self.assertNotEqual(first, self.scan()['databaseLockKey'])
+
+    def test_first_dotenv_value_wins_and_pm2_only_values_are_not_omitted(self):
+        from scan import read_env
+        with (self.root / '.env').open('a') as stream:
+            stream.write('AI_DB_NAME=first_db\nAI_DB_NAME=last_db\n')
+        self.assertEqual(read_env(self.root)['AI_DB_NAME'], 'first_db')
+        original = self.scan()['databaseLockKey']
+        self.rows[0]['pm2_env'].update(AI_DB_NAME='pm2_actual', AI_UPLOAD_DIR=str(self.root.parent / 'external-fixture'))
+        result = self.scan()
+        self.assertNotEqual(original, result['databaseLockKey'])
+        self.assertIn('AI_UPLOAD_DIR', result['pm2OverrideKeys'])
+        upload = next(p for p in result['paths'] if p['key'] == 'AI_UPLOAD_DIR')
+        self.assertTrue(upload['external'])
+        self.assertFalse(result['readyForPlan'])
+
+    def test_nested_pm2_environment_is_effective_and_conflicts_block(self):
+        self.rows[0]['pm2_env']['env'] = {'AI_DB_NAME': 'nested_fixture'}
+        first = self.scan()['databaseLockKey']
+        self.rows[0]['pm2_env']['AI_DB_NAME'] = 'flat_fixture'
+        result = self.scan()
+        self.assertNotEqual(first, result['databaseLockKey'])
+        self.assertIn('AMBIGUOUS_PM2_ENVIRONMENT', result['issues'])
+
+    def test_corrupt_marker_and_unknown_mode_are_blocked_and_redacted(self):
+        (self.root / 'data').mkdir()
+        (self.root / 'data/legacy-upgrade-mode.json').write_text('NOT_JSON')
+        with (self.root / '.env').open('a') as stream:
+            # Remove the valid first occurrence to exercise an unknown effective mode.
+            pass
+        (self.root / '.env').write_text('AI_AUTHORIZATION_MODE=DO_NOT_EXPORT_UNKNOWN_MODE\n')
+        result = self.scan()
+        self.assertEqual(result['authorizationMode'], 'invalid')
+        self.assertIn('INVALID_LEGACY_AUTHORIZATION_MARKER', result['issues'])
+        self.assertNotIn('DO_NOT_EXPORT_UNKNOWN_MODE', json.dumps(result))
+        self.assertFalse(result['readyForPlan'])
 
 
 if __name__ == '__main__':
