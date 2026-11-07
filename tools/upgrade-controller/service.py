@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 from catalog import refresh_catalog
 from controller import Controller, TERMINAL
-from state import Journal, locks, latest_record, request_file, reserve_request, request_result, save_request
+from state import Journal, locks, latest_record, request_file, reserve_request, save_request, replay_request
 
 
 def public_status(control, instance):
@@ -104,8 +104,7 @@ def _serve_instance(control, instance, socket_path=None, stop_event=None):
             request_path = Path(cfg['stateDir']) / 'last-request.json'
             request = json.loads(request_path.read_text()) if request_path.exists() else {}
             if request.get('stage') == 'running':
-                request.update(stage='needs_attention', error='REQUEST_OUTCOME_REQUIRES_RECOVERY')
-                save_request(cfg['stateDir'], request, publish=False)
+                replay_request(control.root, cfg['stateDir'], request['operationId'], request['intent'])
             elif request.get('stage') == 'accepted' and request.get('operationId') != (pending or {}).get('operationId'):
                 request.update(stage='failed', error='CONTROLLER_RESTART_BEFORE_OPERATION_STARTED')
                 save_request(cfg['stateDir'], request, publish=False)
@@ -162,7 +161,7 @@ def _serve_instance(control, instance, socket_path=None, stop_event=None):
                     existing = json.loads(existing_file.read_text())
                     if existing['intent']['action'] != action:
                         return self.reply(409, {'error': 'OPERATION_ID_REUSED_WITH_DIFFERENT_INTENT'})
-                    return self.reply(200, request_result(existing))
+                    return self.reply(200, replay_request(control.root, cfg['stateDir'], operation, existing['intent']))
                 if not active.acquire(blocking=False):
                     return self.reply(409, {'error': 'UPGRADE_ALREADY_RUNNING'})
                 try:

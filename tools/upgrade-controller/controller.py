@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from engine import Docker, EngineError
 from scan import inventory, read_env, parse_env_text, database_lock_key, PATH_DEFAULTS, PATH_KEYS
-from state import Journal, atomic_json, atomic_bytes, locks, execute_request, latest_record
+from state import Journal, atomic_json, atomic_bytes, locks, execute_request, latest_record, replay_request
 
 TERMINAL = {'committed', 'rolled_back', 'rejected'}
 ID = re.compile(r'^[a-z][a-z0-9-]{0,47}$')
@@ -595,8 +595,11 @@ class Controller:
     def recover(self, instance, rollback_committed=False, operation_id=None):
         cfg = self.config(instance)
         operation_id = operation_id or str(uuid.uuid4())
+        replay = replay_request(self.root, cfg['stateDir'], operation_id, {'action': 'rollback' if rollback_committed else 'recover'})
+        if replay and replay['stage'] != 'accepted':
+            return replay
         with locks(self.root, ['host-cutover', 'instance:' + instance]):
-            return execute_request(cfg['stateDir'], operation_id, {'action': 'rollback' if rollback_committed else 'recover'}, lambda: self._recover_locked(instance, rollback_committed))
+            return execute_request(cfg['stateDir'], operation_id, {'action': 'rollback' if rollback_committed else 'recover'}, lambda: self._recover_locked(instance, rollback_committed), root=self.root)
 
     def _recover_locked(self, instance, rollback_committed):
         cfg = self.config(instance)
@@ -633,8 +636,11 @@ class Controller:
     def apply(self, instance, release_name, operation_id=None):
         cfg = self.config(instance)
         operation_id = operation_id or str(uuid.uuid4())
+        replay = replay_request(self.root, cfg['stateDir'], operation_id, {'action': 'upgrade', 'releaseId': release_name})
+        if replay and replay['stage'] != 'accepted':
+            return replay
         with locks(self.root, ['host-cutover', 'instance:' + instance]):
-            return execute_request(cfg['stateDir'], operation_id, {'action': 'upgrade', 'releaseId': release_name}, lambda: self._apply_locked(instance, release_name, operation_id))
+            return execute_request(cfg['stateDir'], operation_id, {'action': 'upgrade', 'releaseId': release_name}, lambda: self._apply_locked(instance, release_name, operation_id), root=self.root)
 
     def _apply_locked(self, instance, release_name, operation_id):
         cfg = self.config(instance)

@@ -18,7 +18,7 @@ from pathlib import Path
 from controller import Controller, TERMINAL, source_configuration_closure, digest, mounted_roots, read_private_json, available_memory
 from engine import Docker, EngineError
 from scan import inventory, read_env
-from state import Journal, atomic_json, atomic_bytes, locks, execute_request, latest_record, reserve_request, request_result, find_request, save_request
+from state import Journal, atomic_json, atomic_bytes, locks, execute_request, latest_record, reserve_request, find_request, save_request, replay_request
 
 ENTRIES = ('cloud', 'src', 'web', 'docs', 'scripts', 'package.json', 'package-lock.json',
            '.env.example', '.gitignore', 'install.php', 'LICENSE', 'node_modules')
@@ -264,8 +264,11 @@ class Pm2ZipController(Controller):
         app_root = request['appRoot']
         request = dict(request, operationId=request.get('operationId') or str(uuid.uuid4()))
         operation_id = request['operationId']
+        replay = replay_request(self.root, self.directory(app_root), operation_id, {'action': 'upgrade', 'archiveSha256': request.get('sha256'), 'expectedVersion': request.get('expectedVersion')})
+        if replay and replay['stage'] != 'accepted':
+            return replay
         with locks(self.root, ['host-cutover', 'pm2:' + app_root]):
-            return execute_request(self.directory(app_root), operation_id, {'action': 'upgrade', 'archiveSha256': request.get('sha256'), 'expectedVersion': request.get('expectedVersion')}, lambda: self._apply_zip_locked(request))
+            return execute_request(self.directory(app_root), operation_id, {'action': 'upgrade', 'archiveSha256': request.get('sha256'), 'expectedVersion': request.get('expectedVersion')}, lambda: self._apply_zip_locked(request), root=self.root)
 
     def _apply_zip_locked(self, request):
         app_root = request['appRoot']
@@ -323,8 +326,11 @@ class Pm2ZipController(Controller):
 
     def recover_zip(self, app_root, rollback=False, operation_id=None):
         operation_id = operation_id or str(uuid.uuid4())
+        replay = replay_request(self.root, self.directory(app_root), operation_id, {'action': 'rollback' if rollback else 'recover'})
+        if replay and replay['stage'] != 'accepted':
+            return replay
         with locks(self.root, ['host-cutover', 'pm2:' + app_root]):
-            return execute_request(self.directory(app_root), operation_id, {'action': 'rollback' if rollback else 'recover'}, lambda: self._recover_zip_locked(app_root, rollback))
+            return execute_request(self.directory(app_root), operation_id, {'action': 'rollback' if rollback else 'recover'}, lambda: self._recover_zip_locked(app_root, rollback), root=self.root)
 
     def _recover_zip_locked(self, app_root, rollback):
         directory = self.directory(app_root)
@@ -389,7 +395,7 @@ def main():
         intent.update(archiveSha256=request.get('sha256'), expectedVersion=request.get('expectedVersion'))
     status = reserve_request(control.directory(request['appRoot']), request['operationId'], intent)
     if status['stage'] != 'accepted':
-        print(json.dumps(request_result(status))); return
+        print(json.dumps(replay_request(control.root, control.directory(request['appRoot']), request['operationId'], intent))); return
     if args.detach:
         child = os.fork()
         if child:

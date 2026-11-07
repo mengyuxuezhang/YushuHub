@@ -45,7 +45,7 @@ def atomic_json(path, body):
 
 
 @contextlib.contextmanager
-def locks(root, keys):
+def locks(root, keys, shared=False):
     import fcntl
     directory = Path(root) / 'locks'
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -56,7 +56,7 @@ def locks(root, keys):
             stream = (directory / (name + '.lock')).open('a')
             handles.append(stream)
             try:
-                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(stream, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise RuntimeError('INSTANCE_OR_DATABASE_BUSY') from None
         yield
@@ -170,29 +170,63 @@ def request_result(record):
     return record.get('result') or {key: record[key] for key in ('operationId', 'stage', 'error') if key in record}
 
 
-def execute_request(directory, operation, intent, callback):
-    """Caller holds the instance/host lock; persist before choosing a rollback target.
+def execution_key(directory, operation):
+    request_file(directory, operation)  # Validate before using the ID in a lock key.
+    return 'request-execution:' + str(Path(directory).resolve()) + ':' + operation
 
-    An interrupted request is never reselected against a newer current release.
-    Recovery after an uncertain outcome must use a new, explicit request ID.
+
+def _interrupted_request(directory, record):
+    if record['stage'] == 'running':
+        record.update(stage='needs_attention', error='REQUEST_OUTCOME_REQUIRES_RECOVERY')
+        save_request(directory, record, publish=False)
+    return request_result(record)
+
+
+def replay_request(root, directory, operation, intent):
+    """All entry points use the exact request's execution lock, not a PID guess.
+
+    A different task holding the host lock cannot make an orphan receipt look live.
+    Reclassification preserves event order and never calls a business callback.
     """
+    record = find_request(directory, operation, intent)
+    if not record:
+        return None
+    if record['stage'] != 'running':
+        return request_result(record)
+    try:
+        # Shared probes do not mistake another replay/classification for a live
+        # exclusive executor. The request-state lock serializes receipt writes.
+        with locks(root, [execution_key(directory, operation)], shared=True):
+            # Re-read after acquiring: the executor may have just committed its result.
+            return _interrupted_request(directory, find_request(directory, operation, intent))
+    except RuntimeError as error:
+        if str(error) != 'INSTANCE_OR_DATABASE_BUSY':
+            raise
+        return request_result(find_request(directory, operation, intent))
+
+
+def execute_request(directory, operation, intent, callback, root=None):
+    """Caller holds the host/instance lock. Hold a per-request lock through effects
+    and final receipt persistence so HTTP and executable retries can prove liveness.
+    """
+    # Production callers always pass the canonical controller root. The fallback
+    # keeps standalone state-only callers isolated without sharing a global lock.
+    root = root or Path(directory)
     record = reserve_request(directory, operation, intent)
     if record['stage'] != 'accepted':
-        if record['stage'] == 'running':
-            record.update(stage='needs_attention', error='REQUEST_OUTCOME_REQUIRES_RECOVERY')
-            save_request(directory, record, publish=False)
-        return request_result(record)
-    record['stage'] = 'running'
-    save_request(directory, record)
-    try:
-        result = callback()
-        result = dict(result, operationId=operation, targetOperationId=result.get('operationId'))
-        record.update(stage=result['stage'], result=result)
-        record.pop('error', None)
+        return replay_request(root, directory, operation, intent)
+    with locks(root, [execution_key(directory, operation)]):
+        record['stage'] = 'running'
         save_request(directory, record)
-        return result
-    except Exception as error:
-        code = str(error)
-        record.update(stage='failed', error=code if re.fullmatch(r'[A-Z][A-Z0-9_]{0,120}', code) else 'CONTROLLER_OPERATION_FAILED')
-        save_request(directory, record)
-        raise
+        try:
+            result = callback()
+            result = dict(result, operationId=operation, targetOperationId=result.get('operationId'))
+            record.update(stage=result['stage'], result=result)
+            record.pop('error', None)
+            save_request(directory, record)
+            return result
+        except Exception as error:
+            code = str(error)
+            record.update(stage='failed', error=code if re.fullmatch(r'[A-Z][A-Z0-9_]{0,120}', code) else 'CONTROLLER_OPERATION_FAILED')
+            save_request(directory, record)
+            raise
