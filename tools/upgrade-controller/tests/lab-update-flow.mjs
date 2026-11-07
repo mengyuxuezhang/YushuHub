@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-const [root, action = 'status'] = process.argv.slice(2)
+const [root, action = 'status', mode = 'pm2'] = process.argv.slice(2)
 await import(pathToFileURL(path.join(root, 'src/config/paths.mjs')).href)
 const env = process.env
 if (env.AI_DB_NAME !== 'fixture_controller' || env.AI_DB_PASSWORD !== 'fixture-only-local' || !['17089', '17099', '17109'].includes(env.AI_ADMIN_PORT) || !['status', 'rollback'].includes(action)) throw Error('Disposable fixture only')
@@ -17,7 +17,7 @@ const response = await fetch(base + '/api/self-update/status', { headers: { cook
 assert.equal(response.status, 200)
 const status = (await response.json()).data
 assert.equal(status.runningVersion, '1.9.69-docker.1')
-assert.equal(status.deploymentMode, 'pm2')
+assert.equal(status.deploymentMode, mode)
 console.log(JSON.stringify({ actualHttpStatus: true, runningVersion: status.runningVersion, taskStage: status.upgradeTask?.stage }))
 if (action === 'rollback') {
   const result = await fetch(base + '/api/self-update/rollback', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: '{}' })
