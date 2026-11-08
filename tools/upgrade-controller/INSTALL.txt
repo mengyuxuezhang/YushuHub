@@ -1,0 +1,64 @@
+YushuHub controller release candidate: existing-instance migration only
+
+This package does not install a new business application, MySQL, Nginx, Docker,
+Node or PM2. First migration requires an approved exact same-version image.
+Linux amd64, Python3.8+, native systemd, local Docker/Compose2.30+, OpenSSL1.1.1
+or3, ss and existing mysqldump are prerequisites. Root-managed single fork PM2
+and an operator-reviewed local exclusive business database are the initial scope.
+No Windows installer or empty-machine business installation is included.
+
+Trust bootstrap
+1. Obtain delivery.py from the fixed, audited source revision. Verify its SHA256
+   through the maintainer's trusted channel. Do not pipe an unverified URL to root.
+2. Obtain the controller tar.gz, independent expected archive SHA256, full source
+   revision and update-public-key SPKI SHA256. A digest supplied only by an
+   untrusted archive is not a trust anchor. No private signing key belongs here.
+3. python3 delivery.py verify --archive PACKAGE --sha256 EXPECTED --revision SHA
+4. python3 delivery.py install --archive PACKAGE --sha256 EXPECTED --revision SHA
+   This is a read-only installation plan. Add --apply only after review.
+   Installer preserves the previous controller and prior active service states;
+   it refuses unsettled business work. It never upgrades an app or restores DBs.
+5. If installation is interrupted, use the same trusted delivery.py recover
+   --apply. Explicit delivery.py rollback --apply restores the prior controller,
+   not an application version. Retained business state and data are unchanged.
+
+Register an existing instance
+/usr/local/sbin/yushuhub-upgrade-setup plan-registration \
+  --instance example --app-root /srv/example-admin \
+  --catalog-url https://updates.example.invalid/docker/catalog.json \
+  --key-id APPROVED_KEY --key-fingerprint APPROVED_SPKI_SHA256 \
+  --initial-release APPROVED_SAME_VERSION_ID --mysqldump /usr/bin/mysqldump
+Review the returned source/version/identity/database locator and reviewSha256.
+Use register with the same arguments plus --review-sha VALUE,
+--database-reviewed and --apply only after confirming database ownership.
+The read-only plan verifies fresh HTTPS signed metadata in disposable scratch
+storage, never registers the app, and never changes its environment or identity.
+Registration imports immutable contracts and publishes the root registration last.
+The dedicated update public key is supplied by the verified controller package;
+it is independent of center-mode business authorization. Do not downgrade center
+authorization to legacy to make a plan pass.
+
+Explicit first migration
+systemctl enable --now yushuhub-upgrade@example.service
+yushuhub-upgrade-setup plan-migration --instance example
+yushuhub-upgrade-setup migrate --instance example --review-sha VALUE \
+  --operation-id UNIQUE_APPROVED_ID --apply
+Source identity/configuration/contracts must still match the approved plan inside
+the controller's host/instance lock. The source version must equal the initial
+image version. There is no direct PM2 old-version to newer-image shortcut.
+
+Subsequent maintenance
+yushuhub-upgrade info --instance example
+yushuhub-upgrade upgrade --instance example --operation-id NEW_ID --apply
+yushuhub-upgrade rollback --instance example --operation-id NEW_ID --apply
+yushuhub-upgrade recover --instance example --operation-id NEW_ID --apply
+The authenticated admin UI uses only its instance socket. The independent CLI
+still works when business HTTP is unavailable. Accepted is not committed.
+Old task IDs return their original receipt; unknown interrupted results require
+review and a new explicit recovery ID. No callback is replayed against a new
+previous version. Recovery retains the current DB and newly written data.
+
+This is a technical RC, not an official production publication. Supported source
+versions and authorization modes require the release's explicit QA matrix.
+Native systemd, real reboot/daemon recovery and HTTPS/OpenSSL compatibility must
+be recorded separately; process SIGKILL is not host power-cut/ENOSPC proof.

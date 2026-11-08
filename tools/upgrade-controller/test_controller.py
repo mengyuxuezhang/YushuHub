@@ -262,6 +262,30 @@ class ControllerTest(unittest.TestCase):
         self.assertNotIn(b'unreviewed_later_change', runtime)
         self.assertIn(b'unreviewed_later_change', (self.app / '.env').read_bytes())
 
+    def test_reviewed_migration_rejects_config_drift_inside_host_lock_before_effects(self):
+        from controller import review_plan_digest
+        reviewed = review_plan_digest(self.control.plan('fixture', 'same'))
+        with (self.app/'.env').open('a') as stream:
+            stream.write('AI_FICTIONAL_CHANGED_AFTER_REVIEW=yes\n')
+        with self.assertRaisesRegex(ValueError, 'MIGRATION_PLAN_CHANGED'):
+            self.control.apply('fixture', 'same', 'reviewed-drift', approved_plan_sha256=reviewed)
+        self.assertNotIn('pm2:stop', self.engine.events)
+        self.assertFalse((Path(self.control.config('fixture')['stateDir'])/'snapshots/reviewed-drift').exists())
+
+    def test_review_digest_does_not_pin_database_size_and_cached_apply_keeps_receipt(self):
+        from controller import review_plan_digest
+        plan = self.control.plan('fixture', 'same')
+        reviewed = review_plan_digest(plan)
+        plan['authorization']['databaseBytes'] = 123456789
+        self.assertEqual(review_plan_digest(plan), reviewed)
+        result = self.control.apply('fixture', 'same', 'reviewed-good', approved_plan_sha256=reviewed)
+        self.assertEqual(result['stage'], 'committed')
+        events = list(self.engine.events)
+        self.assertEqual(self.control.apply('fixture', 'same', 'reviewed-good', approved_plan_sha256=reviewed), result)
+        self.assertEqual(self.engine.events, events)
+        with self.assertRaisesRegex(ValueError, 'DIFFERENT_INTENT'):
+            self.control.apply('fixture', 'same', 'reviewed-good', approved_plan_sha256='f'*64)
+
 
 if __name__ == '__main__':
     unittest.main()

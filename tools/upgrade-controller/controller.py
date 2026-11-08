@@ -26,6 +26,17 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def review_plan_digest(plan):
+    """Bind explicit setup approval to stable identity/config/version, not DB size.
+    The underlying controller still rechecks resources and data under its own locks.
+    """
+    reviewed = {k: plan[k] for k in ('format', 'instanceId', 'releaseId', 'oldMode', 'old', 'target',
+        'configurationClosure', 'registrationSha256', 'releaseDescriptorSha256', 'mountRoots')}
+    reviewed['identityHash'] = plan['authorization']['identityHash']
+    reviewed['pm2'] = plan['inventory'].get('pm2', [])
+    return hashlib.sha256(json.dumps(reviewed, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
 def source_configuration_closure(app_root):
     root = Path(app_root)
     raw = (root / '.env').read_bytes()
@@ -633,16 +644,22 @@ class Controller:
                     raise RuntimeError('RECOVERY_NEEDS_ATTENTION') from None
         return {'stage': record['stage'], 'operationId': record['operationId']}
 
-    def apply(self, instance, release_name, operation_id=None):
+    def apply(self, instance, release_name, operation_id=None, approved_plan_sha256=None):
         cfg = self.config(instance)
         operation_id = operation_id or str(uuid.uuid4())
-        replay = replay_request(self.root, cfg['stateDir'], operation_id, {'action': 'upgrade', 'releaseId': release_name})
+        intent = {'action': 'upgrade', 'releaseId': release_name}
+        if approved_plan_sha256 is not None:
+            if not re.fullmatch(r'[a-f0-9]{64}', approved_plan_sha256):
+                raise ValueError('REVIEWED_PLAN_SHA_REQUIRED')
+            intent['approvedPlanSha256'] = approved_plan_sha256
+        replay = replay_request(self.root, cfg['stateDir'], operation_id, intent)
         if replay and replay['stage'] != 'accepted':
             return replay
         with locks(self.root, ['host-cutover', 'instance:' + instance]):
-            return execute_request(cfg['stateDir'], operation_id, {'action': 'upgrade', 'releaseId': release_name}, lambda: self._apply_locked(instance, release_name, operation_id), root=self.root)
+            callback = (lambda: self._apply_locked(instance, release_name, operation_id)) if approved_plan_sha256 is None else (lambda: self._apply_locked(instance, release_name, operation_id, approved_plan_sha256))
+            return execute_request(cfg['stateDir'], operation_id, intent, callback, root=self.root)
 
-    def _apply_locked(self, instance, release_name, operation_id):
+    def _apply_locked(self, instance, release_name, operation_id, approved_plan_sha256=None):
         cfg = self.config(instance)
         state = Path(cfg['stateDir'])
         journal = Journal(state)
@@ -653,8 +670,12 @@ class Controller:
         if previous and previous.get('operationId') == operation_id:
             if previous['plan']['releaseId'] != release_name:
                 raise ValueError('OPERATION_ID_REUSED_WITH_DIFFERENT_RELEASE')
+            if approved_plan_sha256 is not None and review_plan_digest(previous['plan']) != approved_plan_sha256:
+                raise ValueError('OPERATION_ID_REUSED_WITH_DIFFERENT_REVIEW')
             return {'operationId': operation_id, 'stage': previous['stage']}
         plan = self.plan(instance, release_name)
+        if approved_plan_sha256 is not None and review_plan_digest(plan) != approved_plan_sha256:
+            raise ValueError('MIGRATION_PLAN_CHANGED')
         cfg = plan['config']
         with locks(self.root, ['database:' + plan['inventory']['databaseLockKey']]):
             self.capture_configuration(plan, operation_id)

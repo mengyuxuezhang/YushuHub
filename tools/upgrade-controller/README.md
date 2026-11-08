@@ -1,6 +1,6 @@
-# 独立升级控制器（开发中）
+# 独立升级控制器（技术发行候选）
 
-开发阶段已提供只读扫描、镜像合同及独立CLI的迁移/升级/回退/恢复。后台按钮和独立部署工具尚未适配，尚未正式发布；以固定候选的独立QA结果和部署验收为准。
+已提供只读扫描、镜像合同、后台按钮、独立CLI及ZIP适配器的迁移/升级/回退/恢复；核心固定候选已通过独立QA。当前继续补可信发行与原生安装验收，尚未正式发布。首批只覆盖现有代理实例迁移及后续更新，不包含空机业务、MySQL或反代一键新装。支持版本和授权模式以最终固定发行物的独立QA矩阵为准，不据legacy演练宣称center全链已经通过。
 
 服务器扫描（Python 3.8+标准库，无npm依赖）：
 
@@ -27,7 +27,7 @@ docker build --platform linux/amd64 --build-arg SOURCE_REVISION=VERIFIED_COMMIT 
 
 - 仅Linux amd64、root管理的PM2 fork实例、本机独占MySQL；实测旧版范围先限真实1.9.66及受验1.9.68。外部路径、代码/控制器目录重叠、路径别名、未知符号链接、非root PM2、远程或共享DB需单独计划，不能直接强制跳过。
 - 原MySQL与宝塔Nginx继续使用，不迁库、不升级MySQL、不开放数据库公网。业务容器采用Linux host network，**明确共享宿主网络命名空间**，监听127.0.0.1原端口；容器内DB的127.0.0.1在此模式有意指向宿主。本模式网络隔离较bridge弱，不能混用bridge地址解释。
-- root登记实例和版本，网页调用方未来只能选择登记项，不能传命令、路径或Compose。Docker固定本机Unix socket，忽略调用环境中的远端Docker context；业务容器没有docker.sock。
+- root登记实例和版本，网页调用方只能使用登记项，不能传命令、路径或Compose。Docker固定本机Unix socket，忽略调用环境中的远端Docker context；业务容器没有docker.sock。
 - 版本必须为image@sha256，声明支持来源、HTML指纹、schema指纹、迁移导入闭包/启动步骤指纹及`migrationPolicy=same-schema`。相同hash是必要条件，不代替维护者对业务格式兼容的审阅；未受验版本对不可自动放行。
 - 静态scan对center模式继续保持review；CLI plan仅在现有签名、公钥、实例、域名、时效/缓存状态经**只读运行时证明**后消解这些review项，不调用激活、refresh或写入授权状态。legacy沿用现有模式和原DB身份。身份变化或原.env变化要求重新审核，不重建身份。
 - root状态目录记录当前镜像、前一精确配置、任务journal和历史幂等回执；内核文件锁按主机切换、实例和数据库互斥。控制器退出后锁自动释放，非终态任务必须recover，不能假定已经停止或已经成功。
@@ -45,8 +45,9 @@ docker build --platform linux/amd64 --build-arg SOURCE_REVISION=VERIFIED_COMMIT 
 先审阅固定提交，在受控主机执行：
 
 ```sh
-bash install-controller.sh             # 只显示安装计划
-bash install-controller.sh --apply     # 安装root CLI，无npm安装，不自动登记/切换
+python3 delivery.py verify --archive PACKAGE --sha256 TRUSTED_SHA --revision FULL_SHA
+bash install-controller.sh --archive PACKAGE --sha256 TRUSTED_SHA --revision FULL_SHA
+# 审阅只读计划后，加 --apply 安装控制器；不会登记或迁移业务。
 ```
 
 依赖：Python3.8+、本机Docker、Compose2.30+、Node（只用于存量PM2验证）、ss及已有mysqldump。镜像依赖在构建机安装；业务目标升级不执行npm install。
@@ -114,3 +115,11 @@ yushuhub-upgrade rollback --instance example --apply
 明文payload结构为`{"format":1,"generation":1,"latest":"已审核版本ID","releases":[版本合同]}`，每项合同额外含`id`。维护者离线执行`node sign-catalog.mjs --input payload.json --key protected.pem --key-id KEY_ID --output catalog.json`生成封装；私钥不得进入仓库、镜像或客户机。本工具不会发布或上传。控制器先验签再登记固定合同，拒绝generation回退、同generation冲突及已有版本ID合同被替换；完整登记由内核锁串行化。清单不可用时可使用最近已验证缓存，状态明确给出提示；没有已验证缓存时拒绝升级。
 
 正式清单、公钥分发与镜像发布仍是独立发布步骤，当前开发分支未执行这些动作。
+
+## 固定控制器发行与首迁入口
+
+参见同目录 `INSTALL.txt`。维护者使用 `delivery.py build --repo REPO --revision FULL_SHA --version CONTROLLER_VERSION --output NEW_ARCHIVE --public-key KEY_ID=PUBLIC_PEM`，按固定Git对象而非工作树生成可重复归档和来源清单；私钥不得作为输入。客户端必须从可信渠道独立核对bootstrap脚本SHA、归档SHA、源码SHA和更新公钥SPKI指纹。仅从归档自己的清单取摘要不构成信任。
+
+`yushuhub-upgrade-setup plan-registration`只用临时目录核验HTTPS签名清单、现有PM2和身份，输出审阅摘要；`register --database-reviewed --review-sha ... --apply`才登记，不动业务和数据库。`plan-migration`审阅原版到同版镜像的计划，`migrate --review-sha ... --operation-id ... --apply`在控制器锁内再次绑定配置/身份/版本合同后执行。后续保持现有网页及root CLI更新/恢复入口；不自动给实例固定desiredRelease而遮住catalog的新版本。
+
+控制器自身安装/更新拒绝活动或未收尾业务任务，保存上个控制器和服务原活动状态，失败恢复可用`delivery.py recover --apply`，显式撤回控制器可用`delivery.py rollback --apply`。这两个动作只恢复控制器文件/服务，不是业务版本回退，更不会回灌数据库。原生systemd及重启、分发链证据另列，不以单元替身证明原生部署。

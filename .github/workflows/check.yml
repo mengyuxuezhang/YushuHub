@@ -7,6 +7,20 @@ on:
 permissions:
   contents: read
 jobs:
+  controller-delivery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Isolated controller and delivery regressions
+        run: sudo --preserve-env=PATH python3 -B -m unittest discover -s tools/upgrade-controller -p 'test_*.py' -v
+      - name: Reproduce the controller archive from fixed Git objects
+        run: |
+          python3 tools/upgrade-controller/delivery.py build --repo . --revision "$(git rev-parse HEAD)" --version 0.1.0-rc.1 --output "$RUNNER_TEMP/controller-a.tar.gz"
+          python3 tools/upgrade-controller/delivery.py build --repo . --revision "$(git rev-parse HEAD)" --version 0.1.0-rc.1 --output "$RUNNER_TEMP/controller-b.tar.gz"
+          cmp "$RUNNER_TEMP/controller-a.tar.gz" "$RUNNER_TEMP/controller-b.tar.gz"
   backend:
     runs-on: ubuntu-latest
     steps:
