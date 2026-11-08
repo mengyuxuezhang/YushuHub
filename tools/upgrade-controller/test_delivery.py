@@ -2,9 +2,12 @@
 import gzip
 import io
 import json
+import http.server
 import os
 import tarfile
 import tempfile
+import socketserver
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -67,6 +70,33 @@ class ArchiveTest(unittest.TestCase):
             self.assertIn('bootstrapSha256', first)
 
 
+@unittest.skipUnless(os.name == 'posix', 'Unix socket readiness fixture')
+class ReadinessTest(unittest.TestCase):
+    def test_active_service_needs_three_bound_protocol_responses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            parent = Path(tmp)/'fixture'; parent.mkdir()
+            count = []
+            class Handler(http.server.BaseHTTPRequestHandler):
+                def do_GET(self):
+                    count.append(self.headers.get('X-Yushuhub-Instance'))
+                    body = json.dumps({'protocolVersion': 1, 'instanceId': 'fixture' if len(count) > 1 else 'wrong'}).encode()
+                    self.send_response(200); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
+                def log_message(self, *_): pass
+            with socketserver.UnixStreamServer(str(parent/'control.sock'), Handler) as server:
+                thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+                try:
+                    with patch('delivery.command', return_value=(0, 'active')):
+                        delivery.service_health('yushuhub-upgrade@fixture.service', tmp, 3)
+                    self.assertEqual(count, ['fixture']*4)
+                finally:
+                    server.shutdown(); thread.join(2)
+
+    def test_systemd_active_without_a_socket_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as tmp, patch('delivery.command', return_value=(0, 'active')):
+            with self.assertRaisesRegex(ValueError, 'NOT_READY'):
+                delivery.service_health('yushuhub-upgrade@fixture.service', tmp, .01)
+
+
 @unittest.skipUnless(os.name == 'posix' and os.geteuid() == 0, 'Linux root fixture, never the real host layout')
 class InstallerTest(unittest.TestCase):
     def setUp(self):
@@ -82,6 +112,8 @@ class InstallerTest(unittest.TestCase):
         self.data.write_text('fictional new business data')
         self.patcher = patch('delivery.command', side_effect=self.command)
         self.patcher.start(); self.addCleanup(self.patcher.stop)
+        health = patch('delivery.service_health', side_effect=lambda unit: self.assertTrue(self.active[unit]))
+        health.start(); self.addCleanup(health.stop)
 
     def command(self, argv, allow_failure=False):
         self.calls.append(argv)
@@ -169,3 +201,29 @@ class InstallerTest(unittest.TestCase):
         self.layout.cli.write_text('#!/bin/sh\n# unrelated fixture tool\n')
         with self.assertRaisesRegex(ValueError, 'ENTRYPOINT_NOT_OWNED'):
             self.install('0.1.0-rc.2')
+
+    def test_multiple_managed_instances_require_separate_install_plan(self):
+        atomic_json(self.layout.config/'instances/second.json', {'instanceId': 'second'})
+        with self.assertRaisesRegex(ValueError, 'MULTIPLE_MANAGED'):
+            self.install('0.1.0-rc.1')
+        self.assertFalse(self.layout.install.exists())
+
+    def test_runtime_policy_is_read_only_in_plan_and_retained_on_controller_rollback(self):
+        self.install('0.1.0-rc.1', False)
+        self.assertFalse(self.layout.runtime_policy.exists())
+        self.install('0.1.0-rc.1')
+        policy = self.layout.runtime_policy.read_bytes()
+        self.assertIn(b'/run/yushuhub-upgrade/fixture 0755 root root', policy)
+        delivery.recover_install(True, True, self.layout)
+        self.assertEqual(self.layout.runtime_policy.read_bytes(), policy)
+        self.layout.runtime_policy.write_text('# unrelated fixture configuration\n')
+        with self.assertRaisesRegex(ValueError, 'POLICY_REQUIRES_REVIEW'):
+            self.install('0.1.0-rc.2')
+
+    def test_controller_rollback_refuses_registration_changes_instead_of_uninstalling_live_service(self):
+        self.install('0.1.0-rc.1')
+        original = delivery.current_target(self.layout)
+        atomic_json(self.layout.config/'instances/fixture.json', {'instanceId': 'fixture', 'changed': True})
+        with self.assertRaisesRegex(ValueError, 'INSTANCES_CHANGED'):
+            delivery.recover_install(True, True, self.layout)
+        self.assertEqual(delivery.current_target(self.layout), original)

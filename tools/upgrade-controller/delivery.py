@@ -8,16 +8,19 @@ import base64
 import contextlib
 import gzip
 import hashlib
+import http.client
 import io
 import json
 import os
 import platform
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -63,10 +66,38 @@ def sync_dir(path):
 
 
 def public_fingerprint(raw):
+    if len(raw) > 8192:
+        raise ValueError('PUBLIC_SPKI_KEY_REQUIRED')
     match = re.fullmatch(rb'\s*-----BEGIN PUBLIC KEY-----\s+([A-Za-z0-9+/=\r\n]+)-----END PUBLIC KEY-----\s*', raw)
     if not match:
         raise ValueError('PUBLIC_SPKI_KEY_REQUIRED')
-    return sha(base64.b64decode(re.sub(rb'\s', b'', match[1]), validate=True))
+    data = base64.b64decode(re.sub(rb'\s', b'', match[1]), validate=True)
+    def der(raw, position, tag):
+        if position + 2 > len(raw) or raw[position] != tag:
+            raise ValueError('INVALID_PUBLIC_SPKI_DER')
+        length, start = raw[position + 1], position + 2
+        if length & 0x80:
+            count = length & 0x7f
+            if not 1 <= count <= 3 or start + count > len(raw):
+                raise ValueError('INVALID_PUBLIC_SPKI_DER')
+            length = int.from_bytes(raw[start:start + count], 'big')
+            start += count
+        end = start + length
+        if end > len(raw):
+            raise ValueError('INVALID_PUBLIC_SPKI_DER')
+        return raw[start:end], end
+    outer, end = der(data, 0, 0x30)
+    algorithm, position = der(outer, 0, 0x30)
+    oid, _ = der(algorithm, 0, 0x06)
+    bits, finish = der(outer, position, 0x03)
+    if end != len(data) or finish != len(outer) or oid not in (bytes.fromhex('2a864886f70d010101'), bytes.fromhex('2a864886f70d01010a')) or not bits or bits[0] != 0:
+        raise ValueError('DEDICATED_RSA_UPDATE_PUBLIC_KEY_REQUIRED')
+    rsa, finish = der(bits, 1, 0x30)
+    modulus, position = der(rsa, 0, 0x02)
+    exponent, end = der(rsa, position, 0x02)
+    if finish != len(bits) or end != len(rsa) or not modulus or modulus[0] & 0x80 or int.from_bytes(modulus, 'big').bit_length() not in (3072, 4096) or int.from_bytes(exponent, 'big') < 3 or int.from_bytes(exponent, 'big') % 2 == 0:
+        raise ValueError('RSA_3072_OR_4096_PUBLIC_KEY_REQUIRED')
+    return sha(data)
 
 
 def build(repo, revision, version, output, keys=()):
@@ -165,6 +196,7 @@ class Layout:
         self.cli = prefix / 'usr/local/sbin/yushuhub-upgrade'
         self.setup = prefix / 'usr/local/sbin/yushuhub-upgrade-setup'
         self.journal = self.install / 'installation.json'
+        self.runtime_policy = prefix / 'etc/tmpfiles.d/yushuhub-upgrade.conf'
 
 
 def controlled(path, directory=False):
@@ -208,6 +240,7 @@ def dependencies():
         raise ValueError('OPENSSL_1_1_1_OR_3_REQUIRED')
     command(['ss', '--version'])
     command(['systemctl', '--version'])
+    command(['systemd-tmpfiles', '--version'])
     if not shutil.which('mysqldump') and not os.access('/www/server/mysql/bin/mysqldump', os.X_OK):
         raise ValueError('MYSQLDUMP_REQUIRED')
 
@@ -244,7 +277,10 @@ def quiescent(layout):
 
 def units(layout):
     result = []
-    for path in sorted((layout.config / 'instances').glob('*.json')):
+    registrations = sorted((layout.config / 'instances').glob('*.json'))
+    if len(registrations) > 1:
+        raise ValueError('MULTIPLE_MANAGED_INSTANCES_REQUIRE_SEPARATE_PLAN')
+    for path in registrations:
         controlled(path)
         if not re.fullmatch(r'[a-z][a-z0-9-]{0,47}', path.stem) or json.loads(path.read_text()).get('instanceId') != path.stem:
             raise ValueError('INVALID_REGISTERED_INSTANCE')
@@ -252,8 +288,67 @@ def units(layout):
         code, state = command(['systemctl', 'is-active', unit], allow_failure=True)
         if state not in ('active', 'inactive', 'failed', 'unknown') or state == 'active' and code != 0:
             raise ValueError('CONTROLLER_SERVICE_STATE_UNKNOWN')
-        result.append({'unit': unit, 'active': state == 'active'})
+        result.append({'unit': unit, 'active': state == 'active', 'registrationSha256': sha(path.read_bytes())})
     return result
+
+
+def runtime_paths(instance, policy=Path('/etc/tmpfiles.d/yushuhub-upgrade.conf'), apply=False):
+    """Create only root runtime bind directories, before Docker starts at boot.
+    Keep this registration metadata on controller rollback: the business bind still
+    needs its directory even while the prior controller is being recovered.
+    """
+    if not re.fullmatch(r'[a-z][a-z0-9-]{0,47}', instance):
+        raise ValueError('INVALID_INSTANCE_ID')
+    policy = Path(policy)
+    existing = policy.parent
+    while not existing.exists() and not existing.is_symlink():
+        existing = existing.parent
+    controlled(existing, directory=True)
+    expected = ('# Managed YushuHub controller runtime directories\n'
+                'd /run/yushuhub-upgrade 0755 root root -\n'
+                'd /run/yushuhub-upgrade/' + instance + ' 0755 root root -\n').encode()
+    if policy.exists() or policy.is_symlink():
+        controlled(policy)
+        if policy.read_bytes() != expected:
+            raise ValueError('RUNTIME_DIRECTORY_POLICY_REQUIRES_REVIEW')
+    if apply:
+        if not policy.exists():
+            atomic(policy, expected, 0o644)
+        command(['systemd-tmpfiles', '--create', str(policy)])
+    return expected
+
+
+def service_health(unit, socket_root='/run/yushuhub-upgrade', timeout=45):
+    instance = unit[len('yushuhub-upgrade@'):-len('.service')]
+    path = str(Path(socket_root) / instance / 'control.sock')
+    class Connection(http.client.HTTPConnection):
+        def connect(self):
+            self.sock = socket.socket(socket.AF_UNIX)
+            self.sock.settimeout(12)
+            self.sock.connect(path)
+    stable, deadline = 0, time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        connection = Connection('localhost', timeout=12)
+        try:
+            if command(['systemctl', 'is-active', unit], allow_failure=True) != (0, 'active'):
+                raise ValueError('SERVICE_NOT_ACTIVE')
+            connection.request('GET', '/v1/status', headers={'X-Yushuhub-Instance': instance})
+            response = connection.getresponse()
+            raw = response.read(131073)
+            if len(raw) > 131072:
+                raise ValueError('STATUS_TOO_LARGE')
+            data = json.loads(raw)
+            if response.status != 200 or data.get('protocolVersion') != 1 or data.get('instanceId') != instance:
+                raise ValueError('STATUS_BINDING_MISMATCH')
+            stable += 1
+            if stable == 3:
+                return
+        except Exception:
+            stable = 0
+        finally:
+            connection.close()
+        time.sleep(.2)
+    raise ValueError('CONTROLLER_SERVICE_NOT_READY')
 
 
 def current_target(layout):
@@ -307,6 +402,7 @@ def restore_install(layout, record):
     for item in record['units']:
         if item['active']:
             command(['systemctl', 'start', item['unit']])
+            service_health(item['unit'])
     write_journal(layout, record, 'rolled_back')
 
 
@@ -321,6 +417,8 @@ def install(archive, expected, revision, apply=False, layout=None, check=depende
         controlled(existing, directory=True)
     previous = current_target(layout)
     service_units = units(layout)
+    for item in service_units:
+        runtime_paths(item['unit'][len('yushuhub-upgrade@'):-len('.service')], layout.runtime_policy)
     quiescent(layout)
     if layout.journal.exists():
         controlled(layout.journal)
@@ -350,6 +448,8 @@ def install(archive, expected, revision, apply=False, layout=None, check=depende
                 record['previousFiles'][name] = {'base64': base64.b64encode(raw).decode(), 'mode': path.stat().st_mode & 0o777}
             else:
                 record['previousFiles'][name] = None
+        for item in service_units:
+            runtime_paths(item['unit'][len('yushuhub-upgrade@'):-len('.service')], layout.runtime_policy, apply=True)
         release_root = layout.install / 'releases'
         release_root.mkdir(mode=0o700, exist_ok=True)
         controlled(release_root, directory=True)
@@ -376,7 +476,7 @@ def install(archive, expected, revision, apply=False, layout=None, check=depende
             quiescent(layout)
             write_journal(layout, record, 'services_stopped')
             for path, script in [(layout.cli, 'controller.py'), (layout.setup, 'setup.py')]:
-                atomic(path, ('#!/usr/bin/env bash\nexec python3 /opt/yushuhub-upgrade-controller/current/' + script + ' "$@"\n').encode(), 0o755)
+                atomic(path, ('#!/usr/bin/env bash\nexec python3 -B /opt/yushuhub-upgrade-controller/current/' + script + ' "$@"\n').encode(), 0o755)
             atomic(layout.unit, files['yushuhub-upgrade@.service'], 0o644)
             switch(layout, str(target))
             write_journal(layout, record, 'switched')
@@ -384,8 +484,7 @@ def install(archive, expected, revision, apply=False, layout=None, check=depende
             for item in service_units:
                 if item['active']:
                     command(['systemctl', 'start', item['unit']])
-                    if command(['systemctl', 'is-active', item['unit']])[1] != 'active':
-                        raise ValueError('CONTROLLER_SERVICE_NOT_ACTIVE')
+                    service_health(item['unit'])
             write_journal(layout, record, 'committed')
         except Exception:
             try:
@@ -410,6 +509,10 @@ def recover_install(apply=False, rollback=False, layout=None):
         raise ValueError('ROOT_INSTALL_REQUIRED')
     with install_locks(layout):
         quiescent(layout)
+        registered = units(layout)
+        expected = {u['unit']: u.get('registrationSha256') for u in record['units']}
+        if {u['unit'] for u in registered} != set(expected) or any(expected[u['unit']] is not None and expected[u['unit']] != u['registrationSha256'] for u in registered):
+            raise ValueError('REGISTERED_INSTANCES_CHANGED_REQUIRES_REVIEW')
         actual = current_target(layout)
         if actual not in (record['previous'], record['target']):
             raise ValueError('CURRENT_CHANGED_REQUIRES_REVIEW')

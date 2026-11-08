@@ -46,6 +46,9 @@ yushuhub-upgrade-setup migrate --instance example --review-sha VALUE \
 Source identity/configuration/contracts must still match the approved plan inside
 the controller's host/instance lock. The source version must equal the initial
 image version. There is no direct PM2 old-version to newer-image shortcut.
+If replaying that same reviewed task through the lower-level upgrade CLI, keep
+the same --release, --operation-id and --review-sha; a changed approval is a
+different intent. The setup migrate command already keeps these bindings.
 
 Subsequent maintenance
 yushuhub-upgrade info --instance example
@@ -62,3 +65,8 @@ This is a technical RC, not an official production publication. Supported source
 versions and authorization modes require the release's explicit QA matrix.
 Native systemd, real reboot/daemon recovery and HTTPS/OpenSSL compatibility must
 be recorded separately; process SIGKILL is not host power-cut/ENOSPC proof.
+Registration prepares a root tmpfiles rule for the instance socket directory
+before Docker restores its bind at boot. Controller rollback retains this rule.
+Multiple managed registrations require a separate plan. A registration change
+after controller installation blocks automatic controller rollback for review;
+rollback is not an uninstaller for newly registered, live business instances.

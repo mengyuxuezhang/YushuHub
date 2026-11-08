@@ -59,6 +59,8 @@ class SetupTest(unittest.TestCase):
         self.body = json.dumps({'algorithm': 'RSA-PSS-SHA256', 'keyId': 'fixture',
             'payload': base64.b64encode(payload).decode(), 'signature': base64.b64encode((self.root/'signature').read_bytes()).decode()}).encode()
         engine = SimpleNamespace(source_contract=lambda _: self.old,
+            pm2_processes=lambda: [{'pid': os.getpid(), 'pm2_env': {'pm_cwd': str(self.app),
+                'exec_mode': 'fork_mode', 'pm_exec_path': str(self.app/'cloud/ai-admin/server.mjs')}}],
             authorization_probe=lambda _: {'mode': 'center', 'verified': True, 'identityHash': 'e'*64})
         self.control = Controller(self.root/'state', self.root/'config', engine)
         from scan import database_lock_key, read_env
@@ -67,6 +69,8 @@ class SetupTest(unittest.TestCase):
             'databaseLockKey': database_lock_key(read_env(self.app))}
         scan_patch = patch('setup.inventory', return_value=self.scan)
         scan_patch.start(); self.addCleanup(scan_patch.stop)
+        runtime = patch('setup.runtime_paths')
+        runtime.start(); self.addCleanup(runtime.stop)
         self.options = {'instance': 'fixture', 'appRoot': str(self.app),
             'catalogUrl': 'https://localhost:'+str(self.server.server_port)+'/catalog.json',
             'keyId': 'fixture', 'keyFingerprint': fp, 'initialRelease': 'same-1966',
@@ -123,3 +127,18 @@ class SetupTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'PLAN_CHANGED'):
             register(self.control, self.options, reviewed, True, self.package)
         self.assertFalse((self.control.config_root/'instances/fixture.json').exists())
+
+    def test_tls_or_private_key_cannot_be_used_as_the_dedicated_update_public_key(self):
+        small = self.root/'tls-public.pem'
+        self.openssl('pkey', '-in', str(self.root/'tls-key.pem'), '-pubout', '-out', str(small))
+        with self.assertRaisesRegex(ValueError, '3072_OR_4096'):
+            public_fingerprint(small.read_bytes())
+        with self.assertRaisesRegex(ValueError, 'PUBLIC_SPKI'):
+            public_fingerprint(self.private.read_bytes())
+
+    def test_public_origin_cannot_be_changed_during_registration(self):
+        with (self.app/'.env').open('a') as stream:
+            stream.write('AI_ADMIN_PUBLIC_URL=https://agent.fixture.invalid\n')
+        self.options['publicUrl'] = 'https://different.fixture.invalid'
+        with self.assertRaisesRegex(ValueError, 'ORIGIN_DIFFERS'):
+            self.plan()

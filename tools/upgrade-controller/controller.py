@@ -740,6 +740,7 @@ def main():
     parser.add_argument('--release')
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--operation-id')
+    parser.add_argument('--review-sha', help='Optional reviewed plan binding; preserve it when replaying a setup migration ID')
     args = parser.parse_args()
     if (args.command == 'serve' or args.apply and args.command in ('upgrade', 'recover', 'rollback')) and os.geteuid() != 0:
         raise ValueError('ROOT_CONTROLLER_REQUIRED')
@@ -776,7 +777,7 @@ def main():
             args.release, _ = refresh_catalog(control, control.config(args.instance))
             if not args.release:
                 raise ValueError('NO_APPROVED_RELEASE')
-        print(json.dumps(control.apply(args.instance, args.release, args.operation_id)))
+        print(json.dumps(control.apply(args.instance, args.release, args.operation_id, approved_plan_sha256=args.review_sha)))
 
 
 if __name__ == '__main__':
