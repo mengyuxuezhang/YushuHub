@@ -1,5 +1,7 @@
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -113,6 +115,14 @@ class ControllerTest(unittest.TestCase):
 
     def journal(self):
         return Journal(self.base / 'state/instances/fixture')
+
+    def test_mount_order_and_approval_inputs_are_stable_across_hash_seeds(self):
+        script = "from controller import mounted_roots;import json,sys;print(json.dumps([str(p) for p in mounted_roots(sys.argv[1], {'paths': []})]))"
+        values = [subprocess.check_output([sys.executable, '-B', '-c', script, str(self.app)],
+            env=dict(os.environ, PYTHONHASHSEED=seed, PYTHONPATH=str(Path(__file__).parent)), text=True)
+            for seed in ('1', '2', '17')]
+        self.assertEqual(len(set(values)), 1)
+        self.assertEqual(json.loads(values[0]), [str(self.app/'data'), str(self.app/'logs')])
 
     def test_pre_pull_failure_leaves_old_writer_untouched(self):
         self.engine.fail_pull = True

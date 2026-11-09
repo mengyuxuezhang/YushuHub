@@ -134,7 +134,7 @@ def mounted_roots(root, scan):
             # Missing key files under data remain covered by the data directory.
             candidates.append(path.parent if item['key'].endswith(('_PATH', '_FILE')) else path)
     roots = []
-    for path in sorted(set(candidates), key=lambda p: len(p.parts)):
+    for path in sorted(set(candidates), key=lambda p: (len(p.parts), str(p))):
         if any(path == parent or parent in path.parents for parent in roots):
             continue
         if path == root or path in root.parents:
