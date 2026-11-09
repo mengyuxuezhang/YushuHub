@@ -45,3 +45,7 @@ AGENT_ADMIN_DEPLOYER_BIND=127.0.0.1 bash start-server.sh
 - Node.js 20 或更高版本、npm、PM2。
 - 宝塔 Nginx、MySQL 或 MariaDB、`curl`、`unzip`、`sha256sum`。
 - 推荐使用宝塔默认的 root 终端启动。
+
+## 升级失败后的修复
+
+v1.3.0 维护页面新增“预览修复方案”和“执行修复”，支持保留配置重装当前依赖、重启或重建 PM2 记录，以及使用同版本 ZIP 恢复程序文件。步骤、备份与诊断边界见 [升级与修复说明](../../docs/ADMIN_UPDATE_REPAIR.md)。服务器一键安装入口固定下载 v1.3.0，并验证对应 SHA-256。

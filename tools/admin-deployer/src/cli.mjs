@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { Client } from 'ssh2'
 import mysql from 'mysql2/promise'
 
+import { createAdminRuntimeProbe } from './admin-runtime-probe.mjs'
+import { validateAdminUpdateArchive } from './admin-update-archive.mjs'
+import { runMaintenance } from './maintenance.mjs'
 import { createLocalConnection } from './local-connection.mjs'
 import { compareVersions, latestVersionFromManifest } from './versioning.mjs'
 import { parseSelectedPm2, selectUpgradePm2Script, verifyAdminRuntimeScript } from './runtime-verification.mjs'
@@ -52,11 +55,11 @@ async function connect(cfg) {
     conn.connect({ host: cfg.host, port: Number(cfg.port || 22), username: cfg.username || 'root', password: cfg.password, privateKey, readyTimeout: 20000 })
   })
 }
-function exec(conn, command) {
+function exec(conn, command, { streamOutput = false } = {}) {
   return new Promise((resolve, reject) => conn.exec(command, (err, stream) => {
     if (err) return reject(err)
     let out = ''; let error = ''
-    stream.on('data', d => { out += d.toString() }).stderr.on('data', d => { error += d.toString() })
+    stream.on('data', d => { out += d.toString(); if (streamOutput) process.stdout.write(d.toString()) }).stderr.on('data', d => { error += d.toString(); if (streamOutput) process.stderr.write(d.toString()) })
     stream.on('close', code => code === 0 ? resolve(out) : reject(new Error([error.trim(), out.trim()].filter(Boolean).join('\n') || `remote command failed (exit ${code})`)))
   }))
 }
@@ -132,9 +135,8 @@ function validPort(value) {
 }
 async function resolveAdminPort(conn, cfg) {
   if (cfg.adminPort !== 'auto') return validPort(cfg.adminPort)
-  const envPath = shellQuote(path.posix.join(cfg.appDir, '.env'))
-  const value = (await exec(conn, `set -e; test -f ${envPath}; sed -n 's/^AI_ADMIN_PORT=\\([0-9][0-9]*\\).*$/\\1/p' ${envPath} | tail -1`)).trim()
-  cfg.adminPort = validPort(value)
+  const env = parseEnv(await readRemoteFile(conn, path.posix.join(cfg.appDir, '.env')))
+  cfg.adminPort = validPort(env.AI_ADMIN_PORT)
   return cfg.adminPort
 }
 async function chooseFreshInstallPort(conn, cfg) {
@@ -261,60 +263,30 @@ async function adminBuildCheck(cfg, input = {}) {
 }
 
 async function deploy(cfg, packagePath, mode) {
-  const buffer = await fs.readFile(packagePath)
-  const hash = sha256(buffer)
   const conn = await connect(cfg)
-  let run = ''
   let remoteZip = ''
   try {
     await resolveAdminPort(conn, cfg)
-    const selectedPm2 = await resolveUpgradePm2(conn, cfg)
-    run = `/tmp/agent-ai-admin-deploy-${Date.now()}`
-    remoteZip = `${run}.zip`
-    await exec(conn, `set -e; mkdir -p ${shellQuote(run)}; test -d ${shellQuote(cfg.appDir)} || mkdir -p ${shellQuote(cfg.appDir)}`)
-    await upload(conn, packagePath, remoteZip)
-    console.log('1/5 正在校验并解压升级包...')
-    const version = (await exec(conn, `set -e; echo ${shellQuote(`${hash}  ${remoteZip}`)} | sha256sum -c -; rm -rf ${shellQuote(run)}/extract; mkdir -p ${shellQuote(run)}/extract; unzip -q ${shellQuote(remoteZip)} -d ${shellQuote(run)}/extract; test "$(node -p ${shellQuote(`require(${JSON.stringify(path.posix.join(run, 'extract/package.json'))}).name`)})" = agent-ai-admin; node -p ${shellQuote(`require(${JSON.stringify(path.posix.join(run, 'extract/package.json'))}).version`)}`)).trim().split(/\r?\n/).pop()
-    if (!version || version === 'undefined') throw new Error('升级包缺少有效版本号')
-    console.log(`2/5 检测到版本 ${version}，正在安装文件...`)
-    await exec(conn, `set -e; mkdir -p ${shellQuote(cfg.appDir)}/releases; rm -rf ${shellQuote(cfg.appDir)}/releases/${shellQuote(version)}; mv ${shellQuote(run)}/extract ${shellQuote(cfg.appDir)}/releases/${shellQuote(version)}`)
-    console.log('3/5 正在安装生产依赖...')
-    console.log('4/5 正在重启 PM2 并检查服务...')
-    // 只有新 PID 持有目标端口并正确提供本版本 HTML/JS/CSS 时才报告成功。
-    const healthCmd =
-      `set -e; cd ${shellQuote(cfg.appDir)}; ` +
-      `cp -a .env .env.deployer-backup 2>/dev/null || true; ` +
-      `cp -a releases/${shellQuote(version)}/. ./; ` +
-      `npm install --omit=dev --no-audit --no-fund; ` +
-      `pm2 restart ${shellQuote(cfg.pm2Name)} --update-env || pm2 start cloud/ai-admin/server.mjs --name ${shellQuote(cfg.pm2Name)} --cwd ${shellQuote(cfg.appDir)} --interpreter node --update-env; ` +
-      `if ${verifiedAdminRuntime(cfg, version, selectedPm2.pid)}; then ` +
-        `printf 'running_version=%s\\n' ${shellQuote(version)}; ` +
-      `else ` +
-        `echo 'health check failed; rolling back' >&2; ` +
-        `PREV=$(find releases -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null | grep -vx ${shellQuote(version)} | sort -V | tail -1); ` +
-        `if [ -n "$PREV" ] && [ -d "releases/$PREV" ]; then ` +
-          `cp -a "releases/$PREV/." ./; ` +
-          `npm install --omit=dev --no-audit --no-fund; ` +
-          `pm2 restart ${shellQuote(cfg.pm2Name)} --update-env || pm2 start cloud/ai-admin/server.mjs --name ${shellQuote(cfg.pm2Name)} --cwd ${shellQuote(cfg.appDir)} --interpreter node --update-env; ` +
-          `sleep 3; ` +
-          `printf 'rolled_back_to=%s\\n' "$PREV"; ` +
-        `else ` +
-          `echo 'no previous release available for rollback' >&2; ` +
-        `fi; ` +
-        `exit 1; ` +
-      `fi`
-    const health = await exec(conn, healthCmd)
-    console.log(`5/5 ${mode === 'install' ? '安装' : '升级'}成功：版本 ${version}\nsha256=${hash}\n${health.trim()}`)
-  } finally {
-    if (run) {
-      try { await exec(conn, `rm -rf -- ${shellQuote(run)} ${shellQuote(remoteZip)}`) } catch {}
+    let hash = ''
+    if (packagePath) {
+      const buffer = await fs.readFile(packagePath)
+      validateAdminUpdateArchive(buffer)
+      hash = sha256(buffer)
+      remoteZip = `/tmp/agent-ai-admin-${crypto.randomUUID()}.zip`
+      await upload(conn, packagePath, remoteZip)
     }
+    const options = { action: mode, desiredName: cfg.pm2Name, cwd: cfg.appDir, port: cfg.adminPort, publicUrl: cfg.publicUrl || '', archive: remoteZip, expectedHash: hash, planToken: arg('--plan'), rollbackVersion: arg('--version') }
+    const script = `const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto'); (${runMaintenance.toString()})({fs,path,cp,crypto,createProbe:(${createAdminRuntimeProbe.toString()}),selector:${JSON.stringify(selectUpgradePm2Script)},verifier:${JSON.stringify(verifyAdminRuntimeScript)}},JSON.parse(process.argv[1])).catch(error=>{console.error(error.message);process.exitCode=1});`
+    await exec(conn, `node -e ${shellQuote(script)} ${shellQuote(JSON.stringify(options))}`, { streamOutput: true })
+  } finally {
+    if (remoteZip) { try { await exec(conn, `rm -f -- ${shellQuote(remoteZip)}`) } catch {} }
     conn.end()
   }
 }
 
 async function freshInstall(cfg, packagePath, install) {
   const buffer = await fs.readFile(packagePath)
+  validateAdminUpdateArchive(buffer)
   const hash = sha256(buffer)
   for (const key of ['publicUrl', 'dbName', 'dbUser', 'adminUser', 'adminPassword']) required(install[key], `install.${key}`)
   if (String(install.adminPassword).length < 8) throw new Error('install.adminPassword must be at least 8 characters')
@@ -383,25 +355,21 @@ async function configureProxy(cfg, input) {
   } finally { conn.end() }
 }
 async function rollback(cfg) {
-  const requested = arg('--version')
-  const conn = await connect(cfg)
-  try {
-    await resolveAdminPort(conn, cfg)
-    const selectedPm2 = await resolveUpgradePm2(conn, cfg)
-    const target = (await exec(conn, `set -e; cd ${shellQuote(cfg.appDir)}; test -d releases; versions=$(find releases -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V); target=${shellQuote(requested)}; if [ -z "$target" ]; then target=$(printf '%s\n' "$versions" | tail -2 | head -1); fi; test -n "$target"; test -d "releases/$target"; printf '%s' "$target"`)).trim()
-    const result = await exec(conn, `set -e; cd ${shellQuote(cfg.appDir)}; cp -a .env .env.deployer-backup 2>/dev/null || true; cp -a releases/${shellQuote(target)}/. ./; npm install --omit=dev --no-audit --no-fund; pm2 restart ${shellQuote(cfg.pm2Name)} --update-env || pm2 start cloud/ai-admin/server.mjs --name ${shellQuote(cfg.pm2Name)} --cwd ${shellQuote(cfg.appDir)} --interpreter node --update-env; ${verifiedAdminRuntime(cfg, target, selectedPm2.pid)}; printf 'rollback_version=%s\n' ${shellQuote(target)}`)
-    console.log(`Rollback complete\n${result.trim()}`)
-  } finally { conn.end() }
+  return deploy(cfg, '', 'rollback')
 }
+
 async function diagnose(cfg) {
   const conn = await connect(cfg)
   try {
     await resolveAdminPort(conn, cfg)
-    const selected = await resolveUpgradePm2(conn, cfg)
-    const result = await exec(conn, `set +e; printf '%s\n' '== system =='; node -v; npm -v; printf '%s\n' '== pm2 =='; pm2 describe ${shellQuote(cfg.pm2Name)} 2>&1; printf '%s\n' '== same app directory =='; pm2 jlist | node -e ${shellQuote('let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const p of JSON.parse(s).filter(x=>x?.pm2_env?.pm_cwd===process.argv[1]))console.log(`${p.name}\t${p.pm2_env.status}\tpid=${p.pid}\trestarts=${p.pm2_env.restart_time}`)})')} ${shellQuote(cfg.appDir)}; printf '%s\n' '== port owner =='; ss -ltnp ${shellQuote(`sport = :${cfg.adminPort}`)} 2>&1; printf '%s\n' '== disk package =='; node -p ${shellQuote(`require(${JSON.stringify(path.posix.join(cfg.appDir, 'package.json'))}).version`)} 2>&1; printf '%s\n' '== runtime =='; curl -sS -D - --max-time 8 http://127.0.0.1:${Number(cfg.adminPort || 7077)}/api/runtime-info; printf '\n%s\n' '== admin shell assets =='; curl -sS --max-time 8 http://127.0.0.1:${Number(cfg.adminPort || 7077)}/admin/v2/ | grep -oE 'assets/index-[A-Za-z0-9_-]+\\.(js|css)'; printf '%s\n' '== supervisor =='; systemctl is-active agent-ai-admin-supervisor 2>&1; tail -20 ${shellQuote(path.posix.join(cfg.appDir, 'data/supervisor.log'))} 2>/dev/null; true`)
-    console.log(`selected_pm2=${selected.name}\nselected_pid=${selected.pid}\nadmin_port=${cfg.adminPort}\n${result.trim()}`)
+    const script = `const fs=require('node:fs'),cp=require('node:child_process'),path=require('node:path');const [name,cwd,port]=process.argv.slice(1);const snapshot=(${createAdminRuntimeProbe.toString()})({fs,cp,path}).inspect({name,cwd,port});console.log(JSON.stringify(snapshot,null,2));for(const file of ['package.json','data/self-update/restart-status.json','data/self-update/maintenance.lock/owner.json']){try{const value=JSON.parse(fs.readFileSync(path.join(cwd,file),'utf8'));console.log(file,JSON.stringify(file==='package.json'?{version:value.version}:value))}catch{console.log(file,'unavailable')}}`;
+    const output = await exec(conn, `node -e ${shellQuote(script)} ${shellQuote(cfg.pm2Name)} ${shellQuote(cfg.appDir)} ${shellQuote(cfg.adminPort)}`)
+    console.log(output)
+    const runtime = await exec(conn, `curl -sS --max-time 8 http://127.0.0.1:${Number(cfg.adminPort)}/api/runtime-info || true`)
+    console.log(`runtime=${runtime}`)
   } finally { conn.end() }
 }
+
 async function installSupervisor(cfg) {
   const localScript = fileURLToPath(new URL('../assets/agent-ai-admin-supervisor.sh', import.meta.url))
   const conn = await connect(cfg)
@@ -450,12 +418,13 @@ async function main() {
   if (command === 'configure-proxy') return configureProxy(cfg, operationInput)
   if (command === 'check') return check(cfg)
   if (command === 'install' || command === 'upgrade') return deploy(cfg, required(arg('--package'), '--package'), command)
+  if (command === 'repair' || command === 'repair-plan') return deploy(cfg, arg('--package'), command)
   if (command === 'fresh-install') return freshInstall(cfg, required(arg('--package'), '--package'), operationInput)
   if (command === 'reset-password') return resetPassword(cfg)
   if (command === 'rollback') return rollback(cfg)
   if (command === 'diagnose') return diagnose(cfg)
   if (command === 'install-supervisor') return installSupervisor(cfg)
   if (command === 'version-check') return versionCheck(cfg)
-  throw new Error('Usage: ssh-check|db-check|admin-build-check|configure-proxy|check|install|fresh-install|upgrade|rollback|diagnose|version-check|reset-password|install-supervisor --config config.json')
+  throw new Error('Usage: ssh-check|db-check|admin-build-check|configure-proxy|check|install|fresh-install|upgrade|repair-plan|repair|rollback|diagnose|version-check|reset-password|install-supervisor --config config.json')
 }
 main().catch(err => { console.error(err.message); process.exitCode = 1 })

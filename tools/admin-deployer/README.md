@@ -27,7 +27,7 @@ npm install
 npm run build:exe
 ```
 
-产物为 `dist/Agent-AI-Admin-Deployer-v1.2.2.exe`。EXE 内置 Node.js 运行时及所需依赖，目标 Windows 电脑无需安装 Node.js；双击后会启动仅监听 `127.0.0.1` 的本地管理页面。默认从 `47821` 开始自动选择空闲端口，因此可与已经运行的开发版或其他发版工具实例共存。打包使用 `@yao-pkg/pkg` Enhanced SEA 模式，以正确支持本项目的 ESM、顶层 `await`、内置资源和子进程 CLI 调度。
+产物为 `dist/Agent-AI-Admin-Deployer-v1.3.0.exe`。EXE 内置 Node.js 运行时及所需依赖，目标 Windows 电脑无需安装 Node.js；双击后会启动仅监听 `127.0.0.1` 的本地管理页面。默认从 `47821` 开始自动选择空闲端口，因此可与已经运行的开发版或其他发版工具实例共存。打包使用 `@yao-pkg/pkg` Enhanced SEA 模式，以正确支持本项目的 ESM、顶层 `await`、内置资源和子进程 CLI 调度。
 
 ## 宝塔服务器本地版
 
@@ -59,3 +59,7 @@ cd /www/server/agent-ai-admin-deployer && bash start-server.sh
 - 每套实例必须使用独立的应用目录和 Node 端口；GUI 会自动分配并在后续维护中自动读取，用户无需填写。
 - GUI 根据公网 URL 的主机名和稳定短哈希实时生成唯一 PM2 名称，首次安装与升级维护使用同一规则，不需要手动填写。
 - 首次安装与升级维护配置分别保存在当前浏览器的 `localStorage`。按使用方要求，保存内容包含 SSH、数据库、管理员及构建中心密码，请仅在代理商自有可信电脑上使用。
+
+## 升级失败后的修复
+
+v1.3.0 维护页面新增“预览修复方案”和“执行修复”，支持保留配置重装当前依赖、重启或重建 PM2 记录，以及使用同版本 ZIP 恢复程序文件。步骤、备份与诊断边界见 [升级与修复说明](../../docs/ADMIN_UPDATE_REPAIR.md)。服务器一键安装入口固定下载 v1.3.0，并验证对应 SHA-256。

@@ -183,3 +183,12 @@ test('server-local GUI never reveals its token to unauthenticated requests', asy
   assert.match(html, /服务器本地模式/)
   assert.doesNotMatch(html, /name="password"/)
 })
+
+test('maintenance page exposes a previewed same-version repair flow', () => {
+  const page = renderPage({ serverLocalMode: true })
+  assert.match(page, /data-action="repair-plan"/)
+  assert.match(page, /data-action="repair"/)
+  assert.match(page, /name="repairFiles" type="checkbox"/)
+  assert.match(page, /必须与当前安装版本一致/)
+  assert.match(page, /repairPlan = ''/)
+})

@@ -1,4 +1,8 @@
 import fs from 'node:fs/promises'
+import fsSync from 'node:fs'
+import * as cp from 'node:child_process'
+import { releaseAdminMaintenanceLock } from '../src/services/admin-maintenance-lock.mjs'
+import { createAdminRuntimeProbe } from '../src/services/admin-runtime-probe.mjs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -18,6 +22,7 @@ const port = Number(value('--port'))
 const expectedVersion = value('--expected-version')
 const delayMs = Number(value('--delay-ms') || 1200)
 const publicUrl = value('--public-url')
+const lockId = value('--lock-id')
 const statusPath = path.join(workDir, 'restart-status.json')
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -50,19 +55,25 @@ try {
   await execFileAsync(pm2Bin, ['restart', pm2Name, '--update-env'], { cwd: repoRoot, windowsHide: true })
   const baseUrl = `http://127.0.0.1:${port}`
   const expectedHtml = await fs.readFile(path.join(repoRoot, 'web', 'admin-v2', 'index.html'), 'utf8')
+  let verified = false
+  let stablePid = 0
   let stableChecks = 0
   let lastError = 'service did not become ready'
+  let diagnostics = null
+  const probe = createAdminRuntimeProbe({ fs: fsSync, cp, path, pm2Bin })
   for (let attempt = 1; attempt <= 40; attempt += 1) {
     await wait(1000)
     try {
-      const { stdout } = await execFileAsync(pm2Bin, ['jlist'], { cwd: repoRoot, windowsHide: true })
-      const row = JSON.parse(stdout).find((item) => item?.name === pm2Name)
-      const pid = Number(row?.pid || 0)
-      if (row?.pm2_env?.status !== 'online' || !pid || pid === previousPid) throw new Error('PM2 has not switched to a new online process')
-      if (path.resolve(row?.pm2_env?.pm_cwd || '') !== repoRoot) throw new Error('PM2 working directory does not match the application directory')
+      let pid
       if (process.platform !== 'win32') {
-        const { stdout: sockets } = await execFileAsync('ss', ['-ltnp', `sport = :${port}`], { windowsHide: true })
-        if (!sockets.includes(`pid=${pid},`)) throw new Error('target port is not owned by the restarted PM2 PID')
+        diagnostics = probe.inspect({ name: pm2Name, cwd: repoRoot, port })
+        pid = probe.assertOwnership(diagnostics, { previousPid }).pid
+      } else {
+        const { stdout } = await execFileAsync(pm2Bin, ['jlist'], { cwd: repoRoot, windowsHide: true })
+        const row = JSON.parse(stdout).find((item) => item?.name === pm2Name)
+        pid = Number(row?.pid || 0)
+        if (row?.pm2_env?.status !== 'online' || !pid || pid === previousPid) throw new Error('PM2 has not switched to a new online process')
+        if (path.resolve(row?.pm2_env?.pm_cwd || '') !== repoRoot) throw new Error('PM2 working directory does not match the application directory')
       }
       const runtimeResponse = await fetch(`${baseUrl}/api/runtime-info`, { signal: AbortSignal.timeout(4000) })
       if (!runtimeResponse.ok) throw new Error(`runtime endpoint returned HTTP ${runtimeResponse.status}`)
@@ -70,7 +81,8 @@ try {
       if (runtime?.data?.version !== expectedVersion) throw new Error(`running version is ${runtime?.data?.version || 'unknown'}`)
       await verifyFrontend(baseUrl, expectedHtml)
       if (publicUrl && !/example\.com/i.test(publicUrl)) await verifyFrontend(publicUrl, expectedHtml)
-      stableChecks += 1
+      stableChecks = stablePid === pid ? stableChecks + 1 : 1
+      stablePid = pid
       if (stableChecks >= 3) {
         await writeStatus('verified', { pid, verifiedAt: new Date().toISOString() })
         try {
@@ -79,15 +91,24 @@ try {
         } catch (error) {
           console.warn(`Self-update cleanup failed: ${error.message}`)
         }
-        process.exit(0)
+        verified = true
+        break
       }
     } catch (error) {
       stableChecks = 0
       lastError = error instanceof Error ? error.message : String(error)
     }
   }
-  throw new Error(lastError)
+  if (!verified) {
+    const failure = new Error(lastError)
+    failure.diagnostics = diagnostics
+    throw failure
+  }
 } catch (error) {
-  await writeStatus('failed', { error: error instanceof Error ? error.message : String(error) }).catch(() => {})
-  process.exit(1)
+  await writeStatus('failed', { error: error instanceof Error ? error.message : String(error), diagnostics: error.diagnostics || null }).catch(() => {})
+  console.error(error.message)
+  if (error.diagnostics) console.error(JSON.stringify(error.diagnostics))
+  process.exitCode = 1
+} finally {
+  await releaseAdminMaintenanceLock(repoRoot, lockId)
 }

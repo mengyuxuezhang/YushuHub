@@ -8,6 +8,19 @@ const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, '..')
 
 const targets = [
+  'src/services/admin-update-archive.mjs',
+  'tools/admin-deployer/src/admin-update-archive.mjs',
+  'src/services/admin-code-snapshot.mjs',
+  'src/services/admin-runtime-probe.mjs',
+  'src/services/admin-maintenance-lock.mjs',
+  'scripts/verify-admin-restart.mjs',
+  'scripts/launch-admin-restart-verifier.mjs',
+  'tools/admin-deployer/src/admin-runtime-probe.mjs',
+  'tools/admin-deployer/src/maintenance.mjs',
+  'tools/admin-deployer/src/runtime-verification.mjs',
+  'tools/admin-deployer/src/cli.mjs',
+  'tools/admin-deployer/src/gui.mjs',
+  'tools/admin-deployer/src/deployer-ui.mjs',
   'src/services/project-downloads.mjs',
   'src/routes/project-downloads.mjs',
   'src/repositories/project-downloads.mjs',

@@ -44,7 +44,10 @@ import { normalizeHttpUrl, normalizeOssEndpoint, trimSlashes, normalizeArtifactS
 import { normalizeSecureBuildCenterUrl } from '../../src/utils/build-center-url.mjs'
 import { canonicalizePublicUploadUrl } from '../../src/utils/public-url.mjs'
 import { migrateOfficialUpdateDatabaseSettings, migrateOfficialUpdateEnvFile } from '../../src/services/official-update-source-migration.mjs'
-import { readSelfUpdateRestartStatus, resolveCurrentPm2Process, scheduleVerifiedSelfRestart } from '../../src/services/self-update-runtime.mjs'
+import { validateAdminUpdateArchive } from '../../src/services/admin-update-archive.mjs'
+import { restoreAdminCodeSnapshot } from '../../src/services/admin-code-snapshot.mjs'
+import { acquireAdminMaintenanceLock, releaseAdminMaintenanceLock } from '../../src/services/admin-maintenance-lock.mjs'
+import { inspectSelfUpdateRuntime, readSelfUpdateRestartStatus, resolveCurrentPm2Process, scheduleVerifiedSelfRestart } from '../../src/services/self-update-runtime.mjs'
 import { imageUsageEvents } from '../../src/services/media-billing.mjs'
 import { mergeReleaseHistory, readReleaseHistory, readAdminReleaseHistory } from '../../src/services/release-history.mjs'
 import { cleanupFailedBuildStorage } from '../../src/services/storage-retention.mjs'
@@ -601,19 +604,19 @@ async function getSelfUpdateStatus({ fullHistory = false } = {}) {
   return status
 }
 
-let selfUpdateInProgress = false
 async function applySelfUpdate() {
-  if (selfUpdateInProgress) throw new Error('管理端升级正在进行，请等待重启验证完成')
-  selfUpdateInProgress = true
+  const lockId = await acquireAdminMaintenanceLock(repoRoot)
+  let scheduled = false
   try {
-    return await performSelfUpdate()
-  } catch (error) {
-    selfUpdateInProgress = false
-    throw error
+    const result = await performSelfUpdate(lockId)
+    scheduled = true
+    return result
+  } finally {
+    if (!scheduled) await releaseAdminMaintenanceLock(repoRoot, lockId)
   }
 }
 
-async function performSelfUpdate() {
+async function performSelfUpdate(lockId) {
   const manifestUrl = await getConfiguredSelfUpdateManifestUrl()
   if (!manifestUrl) throw new Error('未配置 AI_ADMIN_UPDATE_MANIFEST_URL')
   await fsp.mkdir(SELF_UPDATE_WORK_DIR, { recursive: true })
@@ -630,6 +633,7 @@ async function performSelfUpdate() {
     pm2Bin: SELF_UPDATE_PM2_BIN,
     configuredName: SELF_UPDATE_PM2_NAME,
     repoRoot,
+    port: PORT,
   })
   await appendSelfUpdateLog(`PM2 instance verified: ${pm2Target.name} pid=${pm2Target.pid} cwd=${pm2Target.cwd}`)
 
@@ -640,6 +644,7 @@ async function performSelfUpdate() {
       workDir: SELF_UPDATE_WORK_DIR,
       pm2Bin: SELF_UPDATE_PM2_BIN,
       pm2Name: pm2Target.name,
+      lockId,
       previousPid: pm2Target.pid,
       port: PORT,
       expectedVersion: manifest.version,
@@ -663,6 +668,10 @@ async function performSelfUpdate() {
   const extractDir = path.join(runDir, 'extract')
   const backupDir = path.join(SELF_UPDATE_WORK_DIR, 'backups', `backup-${currentVersion || 'unknown'}-${runId}`)
   await fsp.mkdir(runDir, { recursive: true })
+  let filesTouched = false
+  const npmEnv = path.isAbsolute(SELF_UPDATE_NPM_BIN)
+    ? { PATH: `${path.dirname(SELF_UPDATE_NPM_BIN)}${path.delimiter}${process.env.PATH || ''}` }
+    : {}
   try {
   await appendSelfUpdateLog(`Downloading ${manifest.zipUrl}`)
   const bytes = await downloadFile(manifest.zipUrl, zipPath)
@@ -672,6 +681,7 @@ async function performSelfUpdate() {
     throw new Error(`sha256 校验失败：expected ${manifest.sha256}, got ${actualSha256}`)
   }
   await appendSelfUpdateLog('sha256 verified')
+  validateAdminUpdateArchive(await fsp.readFile(zipPath))
 
   await fsp.mkdir(extractDir, { recursive: true })
   await runCommand('unzip', ['-q', zipPath, '-d', extractDir])
@@ -695,24 +705,23 @@ async function performSelfUpdate() {
   }
 
   await appendSelfUpdateLog('Replacing application files...')
+  filesTouched = true
   for (const name of ['cloud', 'src', 'web', 'docs', 'scripts', 'package.json', 'package-lock.json', '.env.example', '.gitignore', 'install.php']) {
     await removeIfExists(path.join(repoRoot, name))
   }
   await copyDir(extractDir, repoRoot)
 
   await appendSelfUpdateLog('Installing production dependencies...')
-  const npmEnv = path.isAbsolute(SELF_UPDATE_NPM_BIN)
-    ? { PATH: `${path.dirname(SELF_UPDATE_NPM_BIN)}${path.delimiter}${process.env.PATH || ''}` }
-    : {}
   await runCommand(SELF_UPDATE_NPM_BIN, ['install', '--omit=dev'], { env: npmEnv })
 
-  await appendSelfUpdateLog(`Update applied: ${currentVersion} -> ${manifest.version}`)
+  await appendSelfUpdateLog(`Files installed (restart verification pending): ${currentVersion} -> ${manifest.version}`)
   await appendSelfUpdateLog(`Scheduling verified PM2 restart: ${pm2Target.name}`)
   const restartStatus = await scheduleVerifiedSelfRestart({
     repoRoot,
     workDir: SELF_UPDATE_WORK_DIR,
     pm2Bin: SELF_UPDATE_PM2_BIN,
     pm2Name: pm2Target.name,
+    lockId,
     previousPid: pm2Target.pid,
     port: PORT,
     expectedVersion: manifest.version,
@@ -733,6 +742,18 @@ async function performSelfUpdate() {
     restartStatus,
     message: 'Files installed; PM2 restart and frontend verification are in progress.',
   }
+  } catch (error) {
+    if (filesTouched) {
+      try {
+        const restored = await restoreAdminCodeSnapshot(repoRoot, backupDir)
+        await runCommand(SELF_UPDATE_NPM_BIN, ['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { env: npmEnv })
+        await appendSelfUpdateLog(`Installation failed; restored pre-operation code ${restored}; restart was not verified`)
+      } catch (restoreError) {
+        await appendSelfUpdateLog(`Installation recovery failed: ${restoreError.message}; backup=${backupDir}`)
+      }
+    }
+    await appendSelfUpdateLog(`Self-update failed: ${error.message}`)
+    throw error
   } finally {
     await fsp.rm(runDir, { recursive: true, force: true }).catch((error) => appendSelfUpdateLog(`Temporary update cleanup failed: ${error.message}`))
   }
@@ -6436,9 +6457,13 @@ async function diagnosticsInfo() {
   }
   return {
     generatedAt: nowIso(),
-    version: process.env.npm_package_version || PACKAGE_VERSION,
+    version: PACKAGE_VERSION,
+    npmPackageVersion: process.env.npm_package_version || '',
+    diskVersion: await getAdminVersion(),
     node: process.version,
-    pm2Name: SELF_UPDATE_PM2_NAME,
+    pid: process.pid,
+    pm2Name: process.env.name || SELF_UPDATE_PM2_NAME,
+    configuredPm2Name: SELF_UPDATE_PM2_NAME,
     listen: `http://${HOST}:${PORT}`,
     publicAdminBaseUrl: PUBLIC_ADMIN_BASE_URL,
     publicUpdateBaseUrl: PUBLIC_UPDATE_BASE_URL,
@@ -6457,6 +6482,9 @@ async function diagnosticsInfo() {
     recentBuilds: latestBuilds,
     appLogTail: await tailTextFile(APP_LOG_FILE),
     selfUpdateLogTail: await tailTextFile(path.join(SELF_UPDATE_WORK_DIR, 'update.log')),
+    restartStatus: await readSelfUpdateRestartStatus(SELF_UPDATE_WORK_DIR),
+    restartLogTail: await tailTextFile(path.join(SELF_UPDATE_WORK_DIR, 'restart.log')),
+    runtimeDiagnostics: inspectSelfUpdateRuntime({ name: SELF_UPDATE_PM2_NAME, repoRoot, port: PORT, pm2Bin: SELF_UPDATE_PM2_BIN }),
   }
 }
 
@@ -7069,7 +7097,7 @@ process.on('unhandledRejection', (reason, promise) => {
 })
 
 app.listen(PORT, HOST, () => {
-  writeAppLog('system', `boot version=${process.env.npm_package_version || PACKAGE_VERSION} pid=${process.pid} node=${process.version} build=${BUILD_MODE} host=${HOST} port=${PORT}`)
+  writeAppLog('system', `boot version=${PACKAGE_VERSION} pid=${process.pid} node=${process.version} build=${BUILD_MODE} host=${HOST} port=${PORT}`)
   console.log(`[ai-admin] listening on http://${HOST}:${PORT}`)
   console.log(`[ai-admin] build mode: ${BUILD_MODE}`)
   console.log(`[ai-admin] database: ${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME}`)

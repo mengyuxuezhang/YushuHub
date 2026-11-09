@@ -16,3 +16,12 @@ test('self update refuses to guess when neither PID nor configured app directory
     { name: 'configured-name', pid: 77, pm2_env: { status: 'online', pm_cwd: '/srv/other' } },
   ], { pid: 42, configuredName: 'configured-name', repoRoot: '/srv/admin' }), /could not identify/)
 })
+
+test('self update locates an npm parent only through proven process ancestry', () => {
+  const rows = [{ name: 'npm-parent', pid: 40, pm2_env: { status: 'online', pm_cwd: '/srv/admin' } }]
+  assert.equal(selectCurrentPm2Process(rows, { pid: 42, ancestorPids: [41, 40], repoRoot: '/srv/admin' }).name, 'npm-parent')
+  assert.throws(() => selectCurrentPm2Process(rows, { pid: 42, configuredName: 'npm-parent', repoRoot: '/srv/admin' }), /could not identify/)
+})
+test('self update rejects a matching PID registered to another application directory', () => {
+  assert.throws(() => selectCurrentPm2Process([{ name: 'other', pid: 42, pm2_env: { status: 'online', pm_cwd: '/other' } }], { pid: 42, repoRoot: '/srv/admin' }), /could not identify/)
+})

@@ -1,6 +1,6 @@
 {
   "name": "agent-ai-admin-deployer",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "bin": "src/entry.mjs",
@@ -8,9 +8,11 @@
     "start": "node src/cli.mjs",
     "gui": "node src/gui.mjs",
     "test": "node --test test/*.test.mjs",
-    "build:exe": "pkg . --sea --compress GZip --targets node22-win-x64 --output dist/Agent-AI-Admin-Deployer-v1.2.2.exe"
+    "build:exe": "pkg . --sea --compress GZip --targets node22-win-x64 --output dist/Agent-AI-Admin-Deployer-v1.3.0.exe",
+    "pack:server": "node scripts/pack-server.mjs"
   },
   "dependencies": {
+    "adm-zip": "^0.6.0",
     "mysql2": "^3.22.5",
     "ssh2": "^1.16.0"
   },

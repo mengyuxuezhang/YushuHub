@@ -113,11 +113,14 @@ async function downloadPackage(input, operationId, res, cleanup) {
   let packageUrl
   try { packageUrl = new URL(input.packageUrl).toString() }
   catch { throw new Error('在线更新清单或安装包 URL 无效') }
+  let manifestHash = ''
   let response = await fetch(packageUrl)
   if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}`)
   const isManifest = new URL(packageUrl).pathname.toLowerCase().endsWith('.json') || response.headers.get('content-type')?.includes('application/json')
   if (isManifest) {
     const manifest = await response.json()
+    manifestHash = String(manifest.sha256 || manifest.current?.sha256 || '').toLowerCase()
+    if (!/^[a-f0-9]{64}$/.test(manifestHash)) throw new Error('更新清单缺少有效 SHA-256')
     const candidate = manifest.url || manifest.current?.url || manifest.packageUrl
     if (!candidate) throw new Error('更新清单中没有可用安装包地址')
     packageUrl = new URL(candidate, packageUrl).toString()
@@ -128,6 +131,7 @@ async function downloadPackage(input, operationId, res, cleanup) {
   if (declaredSize > maxPackageBytes) throw new Error('在线安装包超过 300 MB 限制')
   const buffer = Buffer.from(await response.arrayBuffer())
   if (!buffer.length || buffer.length > maxPackageBytes) throw new Error('在线安装包为空或超过 300 MB 限制')
+  if (manifestHash && crypto.createHash('sha256').update(buffer).digest('hex') !== manifestHash) throw new Error('在线安装包 SHA-256 与更新清单不一致')
   const packagePath = path.join(runtimeRoot, `.gui-package-${operationId}.zip`)
   await fs.writeFile(packagePath, buffer, { mode: 0o600 })
   trackFile(packagePath, cleanup)
@@ -171,11 +175,15 @@ const server = http.createServer(async (req, res) => {
     await fs.writeFile(configPath, JSON.stringify(cfg), { mode: 0o600 })
     trackFile(configPath, cleanup)
 
-    const needsPackage = input.action === 'fresh-install' || input.action === 'upgrade'
+    const needsPackage = input.action === 'fresh-install' || input.action === 'upgrade' || (['repair', 'repair-plan'].includes(input.action) && input.repairFiles === true)
     const packageResult = needsPackage ? await downloadPackage(input, operationId, res, cleanup) : { packagePath: '', message: '' }
     const packagePath = packageResult.packagePath
     const args = [input.action, '--config', configPath]
     if (packagePath) args.push('--package', packagePath)
+    if (input.action === 'repair') {
+      if (!/^[a-f0-9]{64}$/.test(input.repairPlan || '')) throw new Error('请先预览修复方案')
+      args.push('--plan', input.repairPlan)
+    }
     if (['fresh-install', 'db-check', 'admin-build-check', 'configure-proxy'].includes(input.action)) {
       const installConfigPath = path.join(runtimeRoot, `.gui-install-${operationId}.json`)
       await fs.writeFile(installConfigPath, JSON.stringify(input), { mode: 0o600 })

@@ -12,6 +12,9 @@ export function pm2NameFromPublicUrl(value) {
 }
 
 function clientApp(derivePm2Name) {
+  let repairPlan = ''
+  document.querySelector('#maintForm')?.addEventListener('input', () => { repairPlan = '' })
+  document.querySelector('#maintForm')?.addEventListener('change', () => { repairPlan = '' })
   const storageKey = 'agent-ai-admin-deployer-config-v2'
   const log = document.querySelector('#log')
   const statusTexts = [...document.querySelectorAll('[data-status]')]
@@ -71,6 +74,7 @@ function clientApp(derivePm2Name) {
   }
 
   function setSource(form, source) {
+    if (form.id === 'maintForm') repairPlan = ''
     const mode = source === 'local' ? 'local' : 'online'
     form.querySelector('[name=packageSource]').value = mode
     for (const button of form.querySelectorAll('[data-source]')) button.classList.toggle('active', button.dataset.source === mode)
@@ -157,13 +161,19 @@ function clientApp(derivePm2Name) {
     input.action = action
     input.pm2Name = form.elements.pm2Name.value
 
+    if (action === 'repair-plan') repairPlan = ''
     if (action === 'reset-password' && !input.newPassword) {
       form.elements.newPassword.focus()
       setStatus('请填写新的管理员密码', 'danger')
       return
     }
 
-    if (action === 'upgrade' || action === 'fresh-install') {
+    if (action === 'repair') {
+      if (!repairPlan) { setStatus('请先预览修复方案，确认将执行的操作', 'warning'); return }
+      input.repairPlan = repairPlan
+      repairPlan = ''
+    }
+    if (action === 'upgrade' || action === 'fresh-install' || (['repair', 'repair-plan'].includes(action) && input.repairFiles)) {
       if (input.packageSource === 'local') {
         const file = form.elements.packageFile.files?.[0]
         if (!file) {
@@ -211,6 +221,10 @@ function clientApp(derivePm2Name) {
       }
       if (action === 'version-check') updateVersionSummary(log.textContent)
       const succeeded = response.ok && /退出码:\s*0\s*$/.test(log.textContent)
+      if (action === 'repair-plan' && succeeded) {
+        repairPlan = log.textContent.match(/^repair_plan=([a-f0-9]{64})$/m)?.[1] || ''
+        log.textContent = log.textContent.replace(/^repair_plan=[a-f0-9]{64}\n?/m, '')
+      }
       setStatus(succeeded ? '操作执行成功' : (response.ok ? '操作执行失败，请检查下方日志' : `操作失败（HTTP ${response.status}）`), succeeded ? 'success' : 'danger')
       if (testActions.has(action)) {
         showTestResult({
@@ -322,13 +336,14 @@ export function renderPage({ serverLocalMode = false } = {}) {
             <label class="field full" data-online-source><span class="field-label">更新清单或 ZIP 地址</span><input class="input" name="packageUrl" value="https://updates.okpa.cn/agent/ai-admin/latest.json"></label>
             <label class="field full" data-local-source hidden><span class="field-label">选择升级包</span><input class="input" name="packageFile" type="file" accept=".zip,application/zip"></label>
           </div></section>
+          <section class="section"><div class="section-title"><h3>修复现有部署</h3></div><div class="grid"><div class="callout">先预览方案，再执行修复。重装当前版本依赖并重启原 PM2 实例，记录缺失时重建。保留现有配置和经营数据。端口被其他进程占用时停止并显示原因。</div><label class="field full"><span><input name="repairFiles" type="checkbox"> 同时使用上方 ZIP 恢复程序文件（必须与当前安装版本一致）</span></label></div></section>
           <section class="section"><div class="section-title"><h3>维护参数</h3><span>仅在对应操作时使用</span></div><div class="grid">
             <label class="field"><span class="field-label">回滚版本</span><input class="input" name="version" placeholder="留空自动选择上一版本"></label>
             <label class="field"><span class="field-label">管理员账号</span><input class="input" name="user" value="admin"></label>
             <label class="field"><span class="field-label">新管理员密码</span><input class="input" name="newPassword" type="password" minlength="8" autocomplete="new-password"></label>
           </div></section>
         </form>
-        <div class="operation-bar"><div class="operations"><button type="button" class="button" data-action="upgrade">开始升级</button><button type="button" class="button secondary" data-action="rollback">回滚版本</button><button type="button" class="button secondary" data-action="diagnose">运行诊断</button><button type="button" class="button secondary" data-action="install-supervisor">安装自愈服务</button><button type="button" class="button danger" data-action="reset-password">重置密码</button></div><span class="status" data-status>等待操作</span></div>
+        <div class="operation-bar"><div class="operations"><button type="button" class="button" data-action="upgrade">开始升级</button><button type="button" class="button secondary" data-action="repair-plan">预览修复方案</button><button type="button" class="button secondary" data-action="repair">执行修复</button><button type="button" class="button secondary" data-action="rollback">回滚版本</button><button type="button" class="button secondary" data-action="diagnose">运行诊断</button><button type="button" class="button secondary" data-action="install-supervisor">安装自愈服务</button><button type="button" class="button danger" data-action="reset-password">重置密码</button></div><span class="status" data-status>等待操作</span></div>
       </section>
       <pre class="console" id="log">部署工具已就绪，等待操作...</pre>
     </main>

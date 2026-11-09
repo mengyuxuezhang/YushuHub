@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEPLOYER_VERSION="1.2.2"
-DEPLOYER_ZIP_URL="https://updates.okpa.cn/agent/ai-admin/deployer/Agent-AI-Admin-Deployer-Server-Linux-v1.2.2.zip"
-DEPLOYER_ZIP_SHA256="8457caef111d148cc2b1cad687532e4e288778b9c1966218473aa83131c47380"
+DEPLOYER_VERSION="1.3.0"
+DEPLOYER_ZIP_URL="https://updates.okpa.cn/agent/ai-admin/deployer/Agent-AI-Admin-Deployer-Server-Linux-v1.3.0.zip"
+DEPLOYER_ZIP_SHA256="394a04afffe8c23fc0835631699e0cb4938b8d2aa0471e5698e874fbba8b5adb"
 INSTALL_ROOT="${AGENT_ADMIN_DEPLOYER_HOME:-/www/server/agent-ai-admin-deployer}"
 RELEASE_DIR="${INSTALL_ROOT}/releases/${DEPLOYER_VERSION}"
 MARKER_FILE="${RELEASE_DIR}/.package-sha256"

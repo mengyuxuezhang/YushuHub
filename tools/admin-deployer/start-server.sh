@@ -22,7 +22,7 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ ! -d node_modules/mysql2 ] || [ ! -d node_modules/ssh2 ]; then
+if [ ! -d node_modules/mysql2 ] || [ ! -d node_modules/ssh2 ] || [ ! -d node_modules/adm-zip ]; then
   echo "首次运行：正在安装发版工具依赖..."
   npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 fi
