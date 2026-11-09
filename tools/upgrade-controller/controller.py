@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import ssl
 import stat
 import subprocess
 import tarfile
@@ -24,6 +25,31 @@ IMAGE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9./:_-]*@sha256:[a-f0-9]{64}$')
 
 def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def node_extra_ca(app_root, env):
+    """Only an explicit, root-controlled public certificate bundle is startup input."""
+    value = env.get('NODE_EXTRA_CA_CERTS')
+    if not value:
+        return None
+    path = Path(value)
+    if not path.is_absolute():
+        path = Path(app_root) / path
+    path = Path(os.path.abspath(path))
+    for item in [path] + list(path.parents):
+        info = item.lstat()
+        if stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError('NODE_CA_MUST_BE_ROOT_CONTROLLED')
+    if not path.is_file() or path.stat().st_size > 1048576:
+        raise ValueError('NODE_CA_CERTIFICATE_BUNDLE_REQUIRED')
+    raw = path.read_bytes()
+    if not re.fullmatch(rb'(?:\s*-----BEGIN CERTIFICATE-----\s+[A-Za-z0-9+/=\s]+-----END CERTIFICATE-----\s*)+', raw):
+        raise ValueError('NODE_CA_CERTIFICATE_BUNDLE_REQUIRED')
+    try:
+        ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT).load_verify_locations(cadata=raw.decode('ascii'))
+    except (ValueError, UnicodeError, ssl.SSLError):
+        raise ValueError('NODE_CA_CERTIFICATE_BUNDLE_REQUIRED') from None
+    return {'path': str(path), 'sha256': hashlib.sha256(raw).hexdigest()}
 
 
 def review_plan_digest(plan):
@@ -57,8 +83,12 @@ def source_configuration_closure(app_root):
     for name in ('authorization-connection.json', 'legacy-upgrade-mode.json'):
         path = root / 'data' / name
         critical[str(path)] = digest(path) if path.is_file() else None
-    return {'envSha256': hashlib.sha256(raw).hexdigest(), 'databaseLockKey': database_lock_key(env),
-            'resolvedPaths': paths, 'criticalFiles': critical}
+    closure = {'envSha256': hashlib.sha256(raw).hexdigest(), 'databaseLockKey': database_lock_key(env),
+               'resolvedPaths': paths, 'criticalFiles': critical}
+    ca = node_extra_ca(root, env)
+    if ca:
+        closure['nodeExtraCa'] = ca
+    return closure
 
 
 def render_runtime_environment(raw, overrides):
@@ -219,6 +249,9 @@ class Controller:
         if not current and old['version'] != target['version']:
             raise ValueError('MIGRATE_TO_SAME_VERSION_FIRST')
         roots = mounted_roots(cfg['appRoot'], scan)
+        ca = closure.get('nodeExtraCa')
+        if ca and any(Path(ca['path']) == path or path in Path(ca['path']).parents for path in roots):
+            raise ValueError('NODE_CA_MUST_BE_OUTSIDE_BUSINESS_MOUNTS')
         for path in roots:
             for protected in (self.root.resolve(), self.config_root.resolve()):
                 if path == protected or path in protected.parents or protected in path.parents:
@@ -270,6 +303,12 @@ class Controller:
             raise ValueError('SOURCE_CONFIGURATION_CHANGED_REPLAN_REQUIRED')
         directory = Path(plan['config']['stateDir']) / 'snapshots' / operation_id
         atomic_bytes(directory / '.env', raw)
+        ca = plan['configurationClosure'].get('nodeExtraCa')
+        if ca:
+            content = Path(ca['path']).read_bytes()
+            if hashlib.sha256(content).hexdigest() != ca['sha256']:
+                raise ValueError('SOURCE_CONFIGURATION_CHANGED_REPLAN_REQUIRED')
+            atomic_bytes(directory / 'node-extra-ca.pem', content)
         plan['sourceEnvSnapshotDir'] = str(directory)
 
     def snapshot_environment(self, plan):
@@ -479,6 +518,19 @@ class Controller:
             mounts.append({'type': 'bind', 'source': path, 'target': target, 'bind': {'create_host_path': False}})
         mounts.append({'type': 'bind', 'source': str(config_file), 'target': '/app/.env', 'read_only': True})
         environment = {'AI_ADMIN_DEPLOYMENT_MODE': 'docker', 'AI_ADMIN_HOST': '127.0.0.1', 'AI_ADMIN_PORT': str(cfg['port'])}
+        ca = plan['configurationClosure'].get('nodeExtraCa')
+        if ca:
+            snapshot = Path(plan['sourceEnvSnapshotDir']) / 'node-extra-ca.pem'
+            if snapshot.is_symlink() or digest(snapshot) != ca['sha256']:
+                raise ValueError('VERIFIED_NODE_CA_SNAPSHOT_REQUIRED')
+            # A separate public-only copy is readable by UID1000. The transaction
+            # snapshot remains private; the application gets neither host paths nor secrets.
+            runtime_ca = directory / 'node-extra-ca.pem'
+            atomic_bytes(runtime_ca, snapshot.read_bytes())
+            os.chmod(runtime_ca, 0o444)
+            mounts.append({'type': 'bind', 'source': str(runtime_ca), 'target': '/run/yushuhub-node-ca.pem',
+                           'read_only': True, 'bind': {'create_host_path': False}})
+            environment['NODE_EXTRA_CA_CERTS'] = '/run/yushuhub-node-ca.pem'
         if cfg.get('webControlEnabled') is True:
             socket_directory = self.controller_socket_directory(plan['instanceId'])
             mounts.append({'type': 'bind', 'source': str(socket_directory), 'target': '/run/yushuhub-upgrade', 'read_only': True,

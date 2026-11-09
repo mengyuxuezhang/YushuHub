@@ -37,6 +37,8 @@ python3 delivery.py install --archive PACKAGE --sha256 TRUSTED_SHA --revision FU
 
 安装器固定本机 Docker socket，拒绝工作中或尚未收尾的业务任务，保留上个控制器与服务原活动状态。更新会实际检查绑定实例的 UDS 状态连续稳定，不把 systemd 的短暂 `active` 当就绪。Python 使用 `-B`，避免在校验过的发布目录生成缓存文件。
 
+业务需要私有 CA 时，在既有 `.env` 显式配置 `NODE_EXTRA_CA_CERTS` 指向纯 PEM 证书包。文件及全部父目录须由 root 所有，不可为符号链接、不可被组或其他用户写入，并且必须位于全部业务持久目录之外（例如 `/etc/example-admin-trust/ca.pem`）。计划展示路径和 SHA256，审核后将证书字节纳入配置闭包和任务快照；变更须重新规划。Compose 单独只读挂载该证书快照，并在 Node 启动前设置容器内映射路径；不透传其他 `NODE_*` 配置，不关闭 TLS 校验，也不改变 registry 或 Python 的信任。未配置时使用 Node 默认公有信任。额外 CA 会扩大 Node 出站 TLS 信任范围，须由维护者审核。
+
 登记先运行 `yushuhub-upgrade-setup plan-registration`，提供目录、实例、HTTPS catalog、已核定公钥指纹及同版版本项。计划仅在临时空间验证签名，核对实际 PM2、数据库定位及身份，不改业务、数据库或实例登记。随后同参数运行 `register --review-sha ... --database-reviewed --apply`，由维护者明确确认业务库归属；它不会自动证明不存在其他写入者。
 
 登记导入不可变版本合同，最后发布实例配置，并准备原生 tmpfiles 目录规则。该规则在开机时预建 root 管理的 `/run/yushuhub-upgrade/<实例>`，避免 Docker 先恢复业务时缺少 UDS bind 目录；不包含客户路径或凭据，不删除新数据。控制器文件回退保留此登记元数据。

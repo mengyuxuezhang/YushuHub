@@ -106,6 +106,7 @@ def registration_plan(control, options, package=None):
         'initialRelease': options['initialRelease'], 'latestRelease': latest, 'authorizationMode': proof['mode'],
         'identitySha256': proof['identityHash'], 'databaseLocatorSha256': before['databaseLockKey'],
         'catalogGeneration': cache['generation'], 'publicKeySpkiSha256': fingerprint,
+        'nodeExtraCa': before.get('nodeExtraCa'),
         'reviewSha256': hashlib.sha256(canonical(reviewed)).hexdigest(),
         'databaseOwnershipConfirmationRequired': True, 'applicationChanged': False}
     return plan, cfg, releases, cache
