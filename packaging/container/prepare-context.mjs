@@ -11,7 +11,7 @@ const archiveDocs = new Set(['ADMIN_RELEASE_ARCHIVE.json', 'AGENT_RELEASE_ARCHIV
 const rootFiles = new Set(['package.json', 'package-lock.json', 'LICENSE'])
 const required = ['package.json', 'package-lock.json', 'cloud/ai-admin/server.mjs', 'src/db/schema.mjs', 'web/admin-v2/index.html']
 
-function permittedFile(name) {
+export function permittedFile(name) {
   if (rootFiles.has(name)) return true
   if (name.startsWith('cloud/')) {
     if (!cloudFiles.has(name)) throw new Error('Unexpected cloud runtime file')

@@ -1,0 +1,91 @@
+# Import into BaoTa Docker > Compose. Supply YUSHUHUB_IMAGE and YUSHUHUB_INSTALL_TOKEN.
+# The release must supply an immutable image@sha256 reference, never latest.
+services:
+  prepare:
+    image: ${YUSHUHUB_IMAGE:?Use the approved immutable image digest}
+    user: '0:0'
+    entrypoint: [node, packaging/container/prepare-fresh.mjs]
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - root-secret:/fresh-root
+      - app-secret:/fresh-app
+      - app-data:/fresh-data
+      - app-logs:/fresh-logs
+      - published:/fresh-published
+    restart: 'no'
+    mem_limit: 128m
+    logging: {driver: json-file, options: {max-size: 10m, max-file: '3'}}
+  database:
+    image: mysql:8.4@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902
+    depends_on:
+      prepare: {condition: service_completed_successfully}
+    environment:
+      MYSQL_ROOT_PASSWORD_FILE: /run/root-secret/mysql-root
+      MYSQL_PASSWORD_FILE: /run/app-secret/mysql-app
+      MYSQL_DATABASE: yushuhub
+      MYSQL_USER: yushuhub
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - root-secret:/run/root-secret:ro
+      - app-secret:/run/app-secret:ro
+    networks: [database]
+    restart: unless-stopped
+    mem_limit: 768m
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, mysqladmin, ping, -h, 127.0.0.1, --silent]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    logging: {driver: json-file, options: {max-size: 10m, max-file: '3'}}
+  admin:
+    image: ${YUSHUHUB_IMAGE:?Use the approved immutable image digest}
+    depends_on:
+      prepare: {condition: service_completed_successfully}
+      database: {condition: service_healthy}
+    user: '1000:1000'
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      YUSHUHUB_INSTALL_TOKEN: ${YUSHUHUB_INSTALL_TOKEN:?Set a unique 32-128 character installation token}
+      AI_DB_HOST: database
+      AI_DB_USER: yushuhub
+      AI_DB_NAME: yushuhub
+      AI_DB_PASSWORD_FILE: /run/yushuhub/mysql-app
+      AI_ADMIN_PORT: '7077'
+    ports:
+      - '127.0.0.1:${YUSHUHUB_PORT:-7077}:7077'
+    volumes:
+      - app-secret:/run/yushuhub:ro
+      - app-data:/app/data
+      - app-logs:/app/logs
+      - published:/app/published
+    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    networks: [database, outbound]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:7077/readyz',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    logging: {driver: json-file, options: {max-size: 10m, max-file: '3'}}
+networks:
+  database: {internal: true}
+  outbound: {}
+volumes:
+  root-secret: {}
+  app-secret: {}
+  mysql-data: {}
+  app-data: {}
+  app-logs: {}
+  published: {}

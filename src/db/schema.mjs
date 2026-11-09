@@ -1,6 +1,7 @@
 import { consolidatePricingPlans } from '../services/pricing-current-plan-migration.mjs'
 import crypto from 'node:crypto'
 import mysql from 'mysql2/promise'
+import { validPasswordHash } from '../services/fresh-install.mjs'
 import { migrateUserUsagePermissions } from '../services/user-usage-permissions.mjs'
 
 let pool
@@ -298,6 +299,7 @@ export async function initDatabase(options = {}) {
     dbName,
     adminUser: ADMIN_USER,
     adminPassword: ADMIN_PASSWORD,
+    adminPasswordHash,
     publicUpdateBaseUrl: PUBLIC_UPDATE_BASE_URL,
     defaultPlatformSettings,
     safeUsername,
@@ -310,6 +312,8 @@ export async function initDatabase(options = {}) {
     supplierId = '',
     permissionKeys = [],
   } = options
+  if (adminPasswordHash !== undefined && !validPasswordHash(adminPasswordHash)) throw new Error('Invalid fresh administrator password hash')
+  const initialAdminHash = () => adminPasswordHash || hashPassword(ADMIN_PASSWORD)
   DB_NAME = dbName
   pool = mysql.createPool({
     host: DB_HOST,
@@ -2026,13 +2030,13 @@ export async function initDatabase(options = {}) {
         `UPDATE ai_users
          SET username = ?, display_name = ?, role = 'admin', status = 'enabled', password_hash = ?
          WHERE id = ?`,
-        [adminUsername, '平台管理员', hashPassword(ADMIN_PASSWORD), 'admin'],
+        [adminUsername, '平台管理员', initialAdminHash(), 'admin'],
       )
     } else {
       await pool.query(
         `INSERT INTO ai_users (id, username, display_name, role, status, password_hash)
        VALUES (?, ?, ?, 'admin', 'enabled', ?)`,
-        ['admin', adminUsername, '平台管理员', hashPassword(ADMIN_PASSWORD)],
+        ['admin', adminUsername, '平台管理员', initialAdminHash()],
       )
     }
   }

@@ -6915,6 +6915,7 @@ pool = await initDatabase({
   dbName: DB_NAME,
   adminUser: ADMIN_USER,
   adminPassword: ADMIN_PASSWORD,
+  ...(process.env.AI_FRESH_INSTALL === '1' ? { adminPasswordHash: process.env.AI_ADMIN_PASSWORD_HASH } : {}),
   publicUpdateBaseUrl: PUBLIC_UPDATE_BASE_URL,
   defaultPlatformSettings,
   safeUsername,
@@ -6976,6 +6977,13 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('[ai-admin] unhandledRejection', reason)
 })
 
+if (process.env.AI_FRESH_INSTALL === '1') {
+  app.get('/healthz', (_req, res) => res.json({ alive: true }))
+  app.get('/readyz', async (_req, res) => {
+    try { await pool.query('SELECT 1'); res.json({ ready: true }) }
+    catch { res.status(503).json({ ready: false }) }
+  })
+}
 app.listen(PORT, HOST, () => {
   writeAppLog('system', `boot version=${process.env.npm_package_version || PACKAGE_VERSION} pid=${process.pid} node=${process.version} build=${BUILD_MODE} host=${HOST} port=${PORT}`)
   console.log(`[ai-admin] listening on http://${HOST}:${PORT}`)
