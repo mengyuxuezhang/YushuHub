@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { installInput, readInstallation, saveInstallation, retryMatches, equalSecret, claimFreshDatabase } from './fresh-install.mjs'
+import { installInput, readInstallation, saveInstallation, retryMatches, equalSecret, claimFreshDatabase, validInstallationToken } from './fresh-install.mjs'
 
 const input = { password: 'fiction-install-password-2026!', publicUrl: 'https://admin.example.test' }
 test('initialization stores a hash, survives restart and binds retries to original credentials', async () => {
@@ -27,6 +27,9 @@ test('rejects weak passwords and non-HTTPS or path-bound public origins', () => 
   for (const publicUrl of ['http://admin.example.test', 'https://admin.example.test/path', 'https://user:pw@admin.example.test']) assert.throws(() => installInput({ ...input, publicUrl }))
   assert.equal(equalSecret('correct', 'wrong'), false)
   assert.equal(equalSecret('correct', 'correct'), true)
+  assert.equal(validInstallationToken('REPLACE_WITH_YOUR_UNIQUE_INSTALL_TOKEN'), false)
+  assert.equal(validInstallationToken(''), false)
+  assert.equal(validInstallationToken('fiction-only-install-token-for-isolated-test-20261109'), true)
 })
 test('fresh installation refuses another writer or existing unclaimed database', async () => {
   const state = installInput(input)

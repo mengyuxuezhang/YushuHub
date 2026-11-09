@@ -4,6 +4,7 @@ import crypto from 'node:crypto'
 import { hashPassword, verifyPassword } from '../utils/crypto.mjs'
 
 export const validPasswordHash = value => /^pbkdf2_sha256\$[a-f0-9]{32}\$[a-f0-9]{64}$/.test(value || '')
+export const validInstallationToken = value => typeof value === 'string' && value.length >= 32 && value.length <= 128 && !/\s/.test(value) && !/^REPLACE_/.test(value)
 export function equalSecret(left, right) {
   const digest = value => crypto.createHash('sha256').update(String(value || '')).digest()
   return crypto.timingSafeEqual(digest(left), digest(right))

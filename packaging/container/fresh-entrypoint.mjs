@@ -4,7 +4,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import mysql from 'mysql2/promise'
 import { fileURLToPath } from 'node:url'
-import { equalSecret, installInput, readInstallation, saveInstallation, retryMatches, claimFreshDatabase } from '../../src/services/fresh-install.mjs'
+import { equalSecret, installInput, readInstallation, saveInstallation, retryMatches, claimFreshDatabase, validInstallationToken } from '../../src/services/fresh-install.mjs'
 import { ModelCredentialVault } from '../../src/services/model-credentials.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -12,7 +12,7 @@ const file = path.join(root, 'data', 'fresh-install.json')
 const port = Number(process.env.AI_ADMIN_PORT || 7077)
 let state = await readInstallation(file), child, database, server, busy = false, stopping = false
 const secret = process.env.YUSHUHUB_INSTALL_TOKEN || ''
-if (state?.stage !== 'complete' && (secret.length < 32 || secret.length > 128 || /\s/.test(secret))) throw new Error('Set a unique installation token of 32–128 non-whitespace characters before starting')
+if (state?.stage !== 'complete' && !validInstallationToken(secret)) throw new Error('Set a unique installation token of 32–128 non-whitespace characters before starting')
 const dbPassword = (await fs.readFile(process.env.AI_DB_PASSWORD_FILE || '/run/yushuhub/mysql-app', 'utf8')).trim()
 const dbOptions = { host: process.env.AI_DB_HOST || 'database', port: Number(process.env.AI_DB_PORT || 3306), user: process.env.AI_DB_USER || 'yushuhub', database: process.env.AI_DB_NAME || 'yushuhub', password: dbPassword, connectTimeout: 5000 }
 
