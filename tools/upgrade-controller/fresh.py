@@ -67,6 +67,8 @@ def checked_template(container, instance):
              'AI_ADMIN_UPGRADE_INSTANCE_ID': instance, 'AI_ADMIN_UPGRADE_SOCKET': '/run/yushuhub-upgrade/control.sock'}
     if any(environment.get(k) != v for k, v in fixed.items()) or environment.get('AI_FRESH_ALLOW_HTTP'):
         raise ValueError('FRESH_RUNTIME_ENVIRONMENT_MISMATCH')
+    if environment.get('NODE_EXTRA_CA_CERTS') and not re.fullmatch(r'/run/yushuhub/[A-Za-z0-9_.-]{1,100}\.pem', environment['NODE_EXTRA_CA_CERTS']):
+        raise ValueError('FRESH_NODE_CA_REQUIRES_READONLY_SECRET_VOLUME')
     return p, port
 
 
@@ -98,7 +100,7 @@ class FreshController(Controller):
 
     def identity(self, cfg):
         # Installation identity and encryption key must already exist, never generate them here.
-        script = "import fs from 'node:fs';import c from 'node:crypto';const s=JSON.parse(fs.readFileSync('/app/data/fresh-install.json'));if(s.stage!=='complete')throw Error();const k=fs.readFileSync('/app/data/model-credentials.key');if(k.length!==32)throw Error();console.log(JSON.stringify({installationId:s.installationId,publicUrl:s.publicUrl,configuration:c.createHash('sha256').update(JSON.stringify(s)).digest('hex'),key:c.createHash('sha256').update(k).digest('hex')}))"
+        script = "import fs from 'node:fs';import c from 'node:crypto';const hash=b=>c.createHash('sha256').update(b).digest('hex');const s=JSON.parse(fs.readFileSync('/app/data/fresh-install.json'));if(s.stage!=='complete')throw Error();const k=fs.readFileSync('/app/data/model-credentials.key');if(k.length!==32)throw Error();let ca=null;if(process.env.NODE_EXTRA_CA_CERTS){const raw=fs.readFileSync(process.env.NODE_EXTRA_CA_CERTS);if(!/^(?:\\s*-----BEGIN CERTIFICATE-----\\s+[A-Za-z0-9+/=\\s]+-----END CERTIFICATE-----\\s*)+$/.test(raw.toString()))throw Error();new c.X509Certificate(raw);ca=hash(raw)}console.log(JSON.stringify({installationId:s.installationId,publicUrl:s.publicUrl,configuration:hash(JSON.stringify(s)),key:hash(k),ca}))"
         return json.loads(self.engine.run(['docker', 'exec', cfg['containerName'], 'node', '--input-type=module', '-e', script]))
 
     def verify(self, cfg, release, authorization=None):

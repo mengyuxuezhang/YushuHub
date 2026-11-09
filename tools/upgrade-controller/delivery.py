@@ -24,7 +24,7 @@ import time
 import uuid
 from pathlib import Path
 
-FILES = ('controller.py', 'engine.py', 'state.py', 'scan.py', 'service.py', 'catalog.py', 'fresh.py',
+FILES = ('controller.py', 'engine.py', 'state.py', 'scan.py', 'service.py', 'catalog.py', 'fresh.py', 'fresh_backup.py',
          'authorization-probe.mjs', 'runtime-contract.mjs', 'pm2_zip.py', 'bundle.json',
          'delivery.py', 'setup.py', 'install-controller.sh', 'yushuhub-upgrade@.service', 'INSTALL.txt')
 MAX_ARCHIVE = 4 * 1024**2
