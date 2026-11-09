@@ -67,7 +67,7 @@ services:
       - app-data:/app/data
       - app-logs:/app/logs
       - published:/app/published
-    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=64m']
     networks: [database, outbound]
     restart: unless-stopped
     stop_grace_period: 30s

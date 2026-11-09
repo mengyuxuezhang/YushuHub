@@ -57,6 +57,7 @@ async function launch() {
       AI_ADMIN_USER: 'admin', AI_DB_PASSWORD: dbPassword, AI_ADMIN_PUBLIC_URL: state.publicUrl,
       AI_AUTHORIZATION_MODE: 'center', AI_ADMIN_HOST: '0.0.0.0', AI_ADMIN_DEPLOYMENT_MODE: 'docker',
       AI_UPDATE_ROOT: '/app/published/ai', AI_PREVIEW_ROOT: '/app/published/ai-staging',
+      AI_UPDATE_BASE_URL: state.publicUrl + '/agent/ai', AI_PREVIEW_BASE_URL: state.publicUrl + '/agent/ai-staging',
     } })
     let ready = false
     child.on('message', message => {

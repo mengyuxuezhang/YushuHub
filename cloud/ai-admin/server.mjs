@@ -6915,7 +6915,7 @@ pool = await initDatabase({
   dbName: DB_NAME,
   adminUser: ADMIN_USER,
   adminPassword: ADMIN_PASSWORD,
-  ...(process.env.AI_FRESH_INSTALL === '1' ? { adminPasswordHash: process.env.AI_ADMIN_PASSWORD_HASH } : {}),
+  ...(process.env.AI_FRESH_INSTALL === '1' ? { freshInstallation: true, adminPasswordHash: process.env.AI_ADMIN_PASSWORD_HASH } : {}),
   publicUpdateBaseUrl: PUBLIC_UPDATE_BASE_URL,
   defaultPlatformSettings,
   safeUsername,
@@ -6989,7 +6989,7 @@ app.listen(PORT, HOST, () => {
   console.log(`[ai-admin] listening on http://${HOST}:${PORT}`)
   console.log(`[ai-admin] build mode: ${BUILD_MODE}`)
   console.log(`[ai-admin] database: ${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME}`)
-  if (ADMIN_PASSWORD === 'change-me-now') {
+  if (ADMIN_PASSWORD === 'change-me-now' && process.env.AI_FRESH_INSTALL !== '1') {
     console.warn('[ai-admin] Please set AI_ADMIN_PASSWORD before exposing this service.')
   }
   if (!WORKER_TOKEN && !process.env.AI_WORKER_IDENTITIES_FILE) {

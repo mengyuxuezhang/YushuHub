@@ -9,7 +9,8 @@ LABEL org.opencontainers.image.source="https://github.com/mengyuxuezhang/YushuHu
 WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY --chown=node:node . ./
-RUN mkdir -p data logs published && chown node:node data logs published
+RUN mkdir -p data logs published agent && chown node:node data logs published \
+    && ln -s /app/published/ai /app/agent/ai && ln -s /app/published/ai-staging /app/agent/ai-staging
 ENV NODE_ENV=production AI_ADMIN_DEPLOYMENT_MODE=docker
 USER node
 STOPSIGNAL SIGTERM

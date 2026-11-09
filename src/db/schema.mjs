@@ -300,6 +300,7 @@ export async function initDatabase(options = {}) {
     adminUser: ADMIN_USER,
     adminPassword: ADMIN_PASSWORD,
     adminPasswordHash,
+    freshInstallation = false,
     publicUpdateBaseUrl: PUBLIC_UPDATE_BASE_URL,
     defaultPlatformSettings,
     safeUsername,
@@ -312,7 +313,7 @@ export async function initDatabase(options = {}) {
     supplierId = '',
     permissionKeys = [],
   } = options
-  if (adminPasswordHash !== undefined && !validPasswordHash(adminPasswordHash)) throw new Error('Invalid fresh administrator password hash')
+  if ((freshInstallation || adminPasswordHash !== undefined) && !validPasswordHash(adminPasswordHash)) throw new Error('Invalid fresh administrator password hash')
   const initialAdminHash = () => adminPasswordHash || hashPassword(ADMIN_PASSWORD)
   DB_NAME = dbName
   pool = mysql.createPool({
