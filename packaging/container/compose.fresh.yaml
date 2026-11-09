@@ -61,6 +61,8 @@ services:
       AI_DB_NAME: yushuhub
       AI_DB_PASSWORD_FILE: /run/yushuhub/mysql-app
       AI_ADMIN_PORT: '7077'
+      AI_ADMIN_UPGRADE_INSTANCE_ID: ${YUSHUHUB_INSTANCE:-baota-admin}
+      AI_ADMIN_UPGRADE_SOCKET: /run/yushuhub-upgrade/control.sock
     ports:
       - '127.0.0.1:${YUSHUHUB_PORT:-7077}:7077'
     volumes:
@@ -68,6 +70,7 @@ services:
       - app-data:/app/data
       - app-logs:/app/logs
       - published:/app/published
+      - /run/yushuhub-upgrade/${YUSHUHUB_INSTANCE:-baota-admin}:/run/yushuhub-upgrade:ro
     tmpfs: ['/tmp:rw,noexec,nosuid,size=64m']
     networks: [database, outbound]
     restart: unless-stopped

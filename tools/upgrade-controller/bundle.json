@@ -1,4 +1,4 @@
 {
   "format": 1,
-  "files": ["controller.py", "engine.py", "scan.py", "state.py", "authorization-probe.mjs", "runtime-contract.mjs", "pm2_zip.py"]
+  "files": ["controller.py", "engine.py", "scan.py", "state.py", "authorization-probe.mjs", "runtime-contract.mjs", "pm2_zip.py", "fresh.py"]
 }

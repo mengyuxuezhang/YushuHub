@@ -797,6 +797,11 @@ def main():
     if (args.command == 'serve' or args.apply and args.command in ('upgrade', 'recover', 'rollback')) and os.geteuid() != 0:
         raise ValueError('ROOT_CONTROLLER_REQUIRED')
     control = Controller()
+    if args.instance and ID.fullmatch(args.instance):
+        registration = control.config_root / 'instances' / (args.instance + '.json')
+        if registration.exists() and read_private_json(registration).get('deploymentMode') == 'fresh-compose':
+            from fresh import FreshController
+            control = FreshController()
     if args.command == 'serve':
         from service import serve_instance
         serve_instance(control, args.instance)

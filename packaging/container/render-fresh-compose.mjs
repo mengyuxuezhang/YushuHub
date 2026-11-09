@@ -8,5 +8,6 @@ const template = await fs.readFile(path.join(path.dirname(fileURLToPath(import.m
 const text = template.replaceAll('${YUSHUHUB_IMAGE:?Use the approved immutable image digest}', image)
   .replace('${YUSHUHUB_INSTALL_TOKEN:?Set a unique 32-128 character installation token}', 'REPLACE_WITH_YOUR_UNIQUE_INSTALL_TOKEN')
   .replace('${YUSHUHUB_PORT:-7077}', '7077')
+  .replaceAll('${YUSHUHUB_INSTANCE:-baota-admin}', 'baota-admin')
 await fs.writeFile(output, text, { flag: 'wx', mode: 0o600 })
 console.log('Created pinned Compose. Replace the installation token before importing; keep the project name and volumes stable.')

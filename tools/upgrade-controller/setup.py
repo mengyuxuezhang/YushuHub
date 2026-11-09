@@ -175,9 +175,18 @@ def main():
             sub.add_argument('--review-sha', required=True)
             sub.add_argument('--operation-id', required=True)
             sub.add_argument('--apply', action='store_true')
+    fresh = commands.add_parser('register-fresh')
+    for option in ('instance', 'project', 'catalog-url', 'key-id', 'key-fingerprint', 'initial-release'):
+        fresh.add_argument('--' + option, required=True)
+    fresh.add_argument('--apply', action='store_true')
     args = parser.parse_args()
     control = Controller()
-    if args.action in ('plan-registration', 'register'):
+    if args.action == 'register-fresh':
+        from fresh import FreshController, register_fresh
+        result = register_fresh(FreshController(), {'instance': args.instance, 'project': args.project,
+            'catalogUrl': args.catalog_url, 'keyId': args.key_id, 'keyFingerprint': args.key_fingerprint,
+            'initialRelease': args.initial_release}, apply=args.apply)
+    elif args.action in ('plan-registration', 'register'):
         options = {'instance': args.instance, 'appRoot': args.app_root, 'catalogUrl': args.catalog_url,
             'keyId': args.key_id, 'keyFingerprint': args.key_fingerprint, 'initialRelease': args.initial_release,
             'mysqldump': args.mysqldump, 'publicUrl': args.public_url,

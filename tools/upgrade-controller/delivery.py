@@ -24,7 +24,7 @@ import time
 import uuid
 from pathlib import Path
 
-FILES = ('controller.py', 'engine.py', 'state.py', 'scan.py', 'service.py', 'catalog.py',
+FILES = ('controller.py', 'engine.py', 'state.py', 'scan.py', 'service.py', 'catalog.py', 'fresh.py',
          'authorization-probe.mjs', 'runtime-contract.mjs', 'pm2_zip.py', 'bundle.json',
          'delivery.py', 'setup.py', 'install-controller.sh', 'yushuhub-upgrade@.service', 'INSTALL.txt')
 MAX_ARCHIVE = 4 * 1024**2
@@ -226,7 +226,7 @@ def command(args, allow_failure=False):
     return result.returncode, result.stdout.strip()
 
 
-def dependencies():
+def dependencies(fresh=False):
     if platform.system() != 'Linux' or platform.machine() != 'x86_64' or sys.version_info < (3, 8):
         raise ValueError('LINUX_AMD64_PYTHON38_REQUIRED')
     if not Path('/run/systemd/system').is_dir():
@@ -241,7 +241,7 @@ def dependencies():
     command(['ss', '--version'])
     command(['systemctl', '--version'])
     command(['systemd-tmpfiles', '--version'])
-    if not shutil.which('mysqldump') and not os.access('/www/server/mysql/bin/mysqldump', os.X_OK):
+    if not fresh and not shutil.which('mysqldump') and not os.access('/www/server/mysql/bin/mysqldump', os.X_OK):
         raise ValueError('MYSQLDUMP_REQUIRED')
 
 
@@ -540,6 +540,7 @@ def main():
         sub.add_argument('--revision', required=True)
         if action == 'install':
             sub.add_argument('--apply', action='store_true')
+            sub.add_argument('--profile', choices=('existing', 'fresh'), default='existing')
     for action in ('recover', 'rollback'):
         commands.add_parser(action).add_argument('--apply', action='store_true')
     args = parser.parse_args()
@@ -549,7 +550,7 @@ def main():
         manifest, _ = verified_archive(args.archive, args.sha256, args.revision)
         result = {'verified': True, 'sourceRevision': manifest['sourceRevision'], 'version': manifest['version'], 'keys': manifest['keys']}
     elif args.action == 'install':
-        result = install(args.archive, args.sha256, args.revision, args.apply)
+        result = install(args.archive, args.sha256, args.revision, args.apply, check=lambda: dependencies(fresh=args.profile == 'fresh'))
     else:
         result = recover_install(args.apply, args.action == 'rollback')
     print(json.dumps(result))
