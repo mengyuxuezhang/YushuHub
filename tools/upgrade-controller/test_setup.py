@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -47,8 +48,12 @@ class SetupTest(unittest.TestCase):
         self.server.socket = context.wrap_socket(self.server.socket, server_side=True)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.server_close); self.addCleanup(self.server.shutdown)
-        env = patch.dict(os.environ, {'SSL_CERT_FILE': str(cert)})
-        env.start(); self.addCleanup(env.stop)
+        # Python may cache the default opener/context across tests. Bind this
+        # fixture's CA to a fresh client and restore the previous opener afterwards.
+        client = urllib.request.build_opener(urllib.request.HTTPSHandler(
+            context=ssl.create_default_context(cafile=str(cert))))
+        client_patch = patch('urllib.request._opener', client)
+        client_patch.start(); self.addCleanup(client_patch.stop)
         self.old = {'version': '1.9.66', 'htmlSha256': 'a'*64, 'schemaSha256': 'b'*64, 'migrationSha256': 'c'*64}
         self.release = dict(self.old, id='same-1966', platform='linux/amd64', image='registry.fixture.invalid/admin@sha256:'+'d'*64,
                             migrationPolicy='same-schema', supportedFrom=['1.9.66'])
@@ -118,8 +123,22 @@ class SetupTest(unittest.TestCase):
             self.plan()
         self.options['catalogUrl'] = self.options['catalogUrl'].replace('http:', 'https:')
         self.body = b'{"algorithm":"none"}'
+        before = self.requests
         with self.assertRaisesRegex(ValueError, 'NOT_VERIFIED'):
             self.plan()
+        self.assertGreater(self.requests, before)  # TLS succeeded; envelope was rejected.
+
+    def test_bad_signature_reaches_real_openssl_after_verified_https(self):
+        envelope = json.loads(self.body)
+        signature = bytearray(base64.b64decode(envelope['signature']))
+        signature[0] ^= 1
+        envelope['signature'] = base64.b64encode(signature).decode()
+        self.body = json.dumps(envelope).encode()
+        with patch('catalog.subprocess.run', wraps=subprocess.run) as verify:
+            with self.assertRaisesRegex(ValueError, 'NOT_VERIFIED'):
+                self.plan()
+        self.assertTrue(any(call.args[0][:2] == ['openssl', 'dgst'] for call in verify.call_args_list))
+        self.assertGreater(self.requests, 0)
 
     def test_source_configuration_changed_after_review_does_not_register(self):
         reviewed = self.plan()[0]['reviewSha256']
