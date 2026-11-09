@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>宝塔 Docker 管理后台迁移手册 · YushuHub</title>
+<style>
+:root{color-scheme:light;--ink:#192e32;--muted:#53676b;--line:#d9e3e2;--accent:#14685c;--paper:#fff;--wash:#f1f6f4}*{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font:16px/1.8 system-ui,"Microsoft YaHei",sans-serif}a{color:var(--accent);text-underline-offset:3px}header,main,footer{max-width:1060px;margin:auto;padding:32px 40px}header{padding-top:52px}h1{font-size:34px;line-height:1.35;margin:12px 0}h2{font-size:25px;margin:0 0 16px}h3{font-size:19px;margin:26px 0 10px}p{margin:10px 0 16px}.kicker{color:var(--accent);font-weight:700;letter-spacing:.08em}.lead{font-size:19px;max-width:840px}.status{display:inline-block;background:#fff2d8;border:1px solid #e5c47d;padding:6px 12px;border-radius:6px;font-size:14px}.muted,small{color:var(--muted)}section{background:var(--paper);padding:28px 32px;margin:0 0 20px;border:1px solid var(--line);border-radius:10px;scroll-margin-top:16px}.note{border-left:4px solid var(--accent);background:#eff7f3;padding:12px 16px}.stop{border-left:4px solid #b26b28;background:#fff7eb;padding:12px 16px}nav ol{columns:2;padding-left:26px}li{margin:7px 0}table{width:100%;border-collapse:collapse;font-size:14px;margin:14px 0 22px}th,td{text-align:left;vertical-align:top;padding:10px 12px;border:1px solid var(--line)}th{background:#edf4f1}pre{padding:18px;background:#142a2f;color:#e8f3f1;border-radius:7px;overflow:auto;font:13px/1.7 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}code{font-family:Consolas,monospace;font-size:.9em}p code,li code,td code{background:#edf3f2;padding:2px 4px;border-radius:3px}.check{font-weight:650;color:var(--accent)}.flow{display:flex;gap:8px;flex-wrap:wrap}.flow span{border:1px solid var(--line);background:#f7faf8;padding:8px 12px;border-radius:6px}.scroll{overflow-x:auto}footer{font-size:13px;padding-bottom:48px}details{border:1px solid var(--line);padding:12px 16px;margin:16px 0;border-radius:6px}summary{font-weight:650;cursor:pointer}@media(max-width:650px){header,main,footer{padding:22px 16px}header{padding-top:30px}h1{font-size:28px}section{padding:22px 18px}nav ol{columns:1}th,td{padding:8px;font-size:13px}pre{font-size:12px}}@media print{body{background:#fff;font-size:11pt}header,main,footer{max-width:none;padding:12px 0}section{border:0;border-top:1px solid #bbb;border-radius:0;padding:20px 0;margin:0;break-inside:auto}h2,h3{break-after:avoid}table,pre,.note,.stop{break-inside:avoid}pre{background:#f5f5f5;color:#111;border:1px solid #ccc}a{color:#111}details{display:block}details>div{display:block}nav{display:none}.status{border:1px solid #999}}
+</style></head><body>
+<header><div class="kicker">YUSHUHUB · 宝塔操作手册</div><h1>把已有管理后台迁入 Docker</h1><p class="lead">沿用原数据库、经营数据、密钥与授权配置。先做同版本迁移，再按批准的版本清单升级。</p><p class="status">候选手册 · 2026-11-09 · 待发行批准与独立步骤审阅</p><p class="muted">本文固定首迁基线为管理后台 <strong>1.9.68</strong>。普通更新仍为 1.9.68；内部 Docker 候选不是首迁前置版本。未收到维护者发行单、生产公钥指纹和窗口批准，请只阅读，不执行变更命令。</p></header>
+<main>
+<section id="start"><h2>先看这一页</h2><div class="flow"><span>确认已运行 1.9.68</span><span>→ 备份与核对</span><span>→ 1.9.68 同版首迁</span><span>→ 检查原域名</span><span>→ 后续批准升级</span></div>
+<p>这不是把经营后台清空重装。迁移工具保留同一数据库和持久目录，绑定原端口与授权身份；首次迁移后仍显示 <strong>1.9.68 是预期结果</strong>。</p>
+<table><thead><tr><th>谁来操作</th><th>负责什么</th></tr></thead><tbody><tr><td>代理商</td><td>确认域名、后台版本和备份，检查登录、授权状态、项目及经营记录；在宝塔查看容器状态和日志。</td></tr><tr><td>有权限的维护者</td><td>核定发行单与服务器条件，在宝塔终端安装独立控制器、审核登记计划、执行首迁、处理恢复及必要的反代调整。</td></tr></tbody></table>
+<div class="stop">当前不能只靠面板点“创建网站”完成受管迁移。没有宝塔终端或受控 root 维护权限时，请交给维护者，不要另建同名容器或导入通用 Compose 模板。</div>
+<nav aria-label="目录"><ol><li><a href="#panel">认清宝塔入口</a></li><li><a href="#requirements">环境检查</a></li><li><a href="#backup">迁移前备份</a></li><li><a href="#release">领取发行单与安装控制器</a></li><li><a href="#migrate">1.9.68 首迁</a></li><li><a href="#proxy">域名、SSL 与反代</a></li><li><a href="#observe">状态与日志</a></li><li><a href="#upgrade">后续升级</a></li><li><a href="#recover">失败恢复</a></li><li><a href="#faq">常见问题</a></li><li><a href="#fresh">新部署现状</a></li><li><a href="#evidence">验证范围与官方依据</a></li></ol></nav></section>
+<section id="panel"><h2>1 · 认清宝塔入口</h2><p>宝塔的“网站”和“容器”是不同列表。“Docker→网站”没有记录，不能据此判断 Docker 没装、容器没运行，或必须重建后台。</p>
+<table><thead><tr><th>入口</th><th>本手册怎么使用</th></tr></thead><tbody><tr><td>左侧“网站”</td><td>保留原管理后台域名、证书和实际生效的反向代理站点。</td></tr><tr><td>Docker→容器</td><td>按维护者提供的容器名查状态、镜像和日志。官方说明，终端创建的容器也能在此查看。[1]</td></tr><tr><td>Docker→网站 / 运行环境</td><td>这是宝塔的建站入口，不是已运行容器的完整清单。不要在此再安装一个同域名的后台。</td></tr><tr><td>Docker→容器编排</td><td>宝塔提供 Compose 管理入口。[1] 本工具生成的是受保护的 <code>compose.json</code>，不同面板版本是否自动列出尚未实测。看不到编排时，先查“容器”和终端；不要复制成第二个项目。</td></tr><tr><td>左侧“终端”</td><td>维护者执行本文标出的命令。必须是后台所在这台服务器，不是另一节点或本地 Windows 终端。</td></tr></tbody></table>
+<p>保留原宿主 Nginx 是本手册主路径。“Docker→网站”的 Nginx 按钮和普通“网站”的配置入口不能视为同一个配置位置；也不能仅凭该按钮判断 Nginx 的实际进程或网络。维护者要确认哪一个服务正在接收原域名的 80/443 请求。</p><p>若反代实际运行在 bridge 网络的 Nginx 容器内，它的 <code>127.0.0.1</code> 是那个容器自身，不是宿主。当前后台绑定宿主回环地址，这种前置架构需单独核定；不要为绕过它把后台或数据库改成公网监听。</p>
+<p class="muted">界面参考：官方 Docker 网站教程注明 9.3.0 以上版本；较新版菜单可能调整。[2][3] 截图中的 Nginx 版本不是宝塔版本。本文未在某个宝塔版本实装点选，不能标成“宝塔 13.x 已实测”。</p></section>
+<section id="requirements"><h2>2 · 环境检查：全部通过才继续</h2><table><thead><tr><th>检查项</th><th>通过条件 / 不满足时</th></tr></thead><tbody><tr><td>现有后台</td><td>磁盘版本、本机运行 API 和原域名 API 都是发行单指定的 1.9.68。其他版本先按既有升级流程到基线，再重新检查。</td></tr><tr><td>系统</td><td>Linux amd64 / x86_64，原生 systemd，Python 3.8+、OpenSSL 1.1.1 或 3、<code>ss</code> 与兼容现有数据库的 <code>mysqldump</code>。</td></tr><tr><td>宝塔已有 Docker</td><td>复用本机 Engine；<code>docker compose</code> 插件 ≥2.30。只装有旧 <code>docker-compose</code> 不等于通过。已有 Engine 时不运行重装脚本、不重启共享 Docker 服务来试错。</td></tr><tr><td>原进程</td><td>当前范围是 root 管理、一个在线 fork PM2 进程。宝塔项目若以 <code>www</code> 或其他用户运行，暂停交维护者评估；不要擅自提权或另启 root 副本。</td></tr><tr><td>数据库</td><td>沿用同机、经维护者确认业务独占的库。保留现有本地 TCP 地址、端口、账户；不新建 MySQL 容器，不开放数据库公网访问。</td></tr><tr><td>域名与身份</td><td>原 HTTPS 域名、授权模式、实例及公钥/密钥保持。center 不能为了迁移改成 legacy，也不重新激活或重建用户。</td></tr><tr><td>端口与守护</td><td>保留此后台原端口；不能与其他站冲突。维护者核对并处理“此后台”的面板自动拉起、旧守护和计划任务，防止首迁后旧 PM2 复活。不要停其他站的守护或数据库。</td></tr><tr><td>路径与权限</td><td>数据目录在该实例已审路径内，无未审外部目录/符号链接。容器使用 UID/GID 1000，迁移工具会处理本实例持久目录的所有权；须核对宿主 UID1000 是否与其他用户冲突，不做全盘 chmod/chown。</td></tr><tr><td>资源</td><td>有足够磁盘存放镜像、数据库备份和持久文件备份。默认业务上限 256MiB、宿主预留 128MiB 是准入预算，不是最低整机配置或不会 OOM 的保证。</td></tr></tbody></table>
+<details open><summary>维护者：只读检查命令（不含密码）</summary><div><pre>id -u
+uname -m
+python3 --version
+openssl version
+docker info --format '{{.OSType}}'
+docker compose version --short
+command -v ss
+command -v mysqldump
+pm2 list</pre><p>预期：root 的 UID 为 0、架构 x86_64、本机 Docker 为 linux，Compose 版本满足要求。宝塔的 mysqldump 可能在 <code>/www/server/mysql/bin/mysqldump</code>，由维护者核定；命令未找到不代表需要重装数据库。</p></div></details>
+<p>以下示例统一使用占位站点和目录。先由维护者填好 <code>APP_ROOT</code>、<code>APP_PORT</code>；不要直接把示例替换成截图里的服务器地址。</p><pre>APP_ROOT='/www/wwwroot/example-admin'
+APP_PORT='7077'
+# 先核对磁盘包版本（不是运行版本）
+node -p 'require(process.argv[1]).version' "$APP_ROOT/package.json"
+# 本机实际运行版本
+curl -fsS "http://127.0.0.1:$APP_PORT/api/runtime-info" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["version"])'
+# 原域名实际运行版本；改为自己的原域名
+curl -fsS 'https://admin.example.invalid/api/runtime-info' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["version"])'</pre>
+<p class="check">预期：迁移前这三处均为 1.9.68，页面可以登录，原授权和原项目可用。若本机与域名不同，先排查反代目标/缓存，不执行迁移。</p></section>
+<section id="backup"><h2>3 · 迁移前备份</h2><p>先约定短维护窗口，暂停本后台的业务写入并记录维护方式。宝塔“数据库→备份”和站点备份可以作为入口，但只备份网页源码不够。</p><table><thead><tr><th>必须保留</th><th>核对方式</th></tr></thead><tbody><tr><td>原数据库一致性备份</td><td>确认是正确业务库、文件非空、可在隔离环境读取；不把数据库密码写进命令参数或群聊。</td></tr><tr><td>原 <code>.env</code>、data、上传/发布及其他已审持久目录</td><td>加密密钥文件与库中的密文必须配套。记录路径、权限和安全摘要，不展示内容。</td></tr><tr><td>原代码、依赖与 PM2 恢复定义</td><td>维护者保存精确原版本和启动方式；不只保存版本号。</td></tr><tr><td>原域名、Nginx 配置、SSL 与现有守护设置</td><td>保留受控副本，能恢复原入口；不更换域名、证书或其他站点配置。</td></tr></tbody></table>
+<p>备份放在 Web 根目录之外的受控位置，例如 <code>/www/backup/yushuhub/</code>，只允许授权维护者访问，并按既有制度保留异地副本。不要放到能通过域名下载的目录。</p><p>工具在停旧写入者后还会创建任务备份。它不能代替迁移前备份和恢复演练；回退也不会自动把旧数据库 dump 灌回去覆盖新记录。</p><p class="check">预期：代理与维护者共同确认备份范围、位置及恢复负责人。备份里可能含密钥，不能作为普通故障截图发送。</p></section>
+<section id="release"><h2>4 · 领取发行单，安装独立控制器</h2><p>维护者应给你一份完整发行单，不能只给一条“拉 latest”命令。发行单至少包含：</p><ul><li>当前受支持的基线 1.9.68、实例名、原目录、原端口和原 HTTPS 域名。</li><li>可信来源的 <code>delivery.py</code>、控制器包、完整源码 SHA、二者 SHA256、生产更新公钥 keyId 与 SPKI 指纹。</li><li>已批准的 HTTPS catalog 地址，以及 <strong>1.9.68 同版镜像项的 release ID</strong>。</li><li>本地 mysqldump 路径、维护窗口、备份位置及资源预算。</li></ul>
+<div class="stop">本文未提供已发布的生产包或公钥。所有 <code>REPLACE_…</code>、<code>example.invalid</code> 和示例路径都必须由发行单替换。测试公钥、同一下载页自己给出的摘要都不能代替可信首次核对；不要关闭 HTTPS 证书校验。</div>
+<details open><summary>维护者：校验与安装命令模板</summary><div><pre>BOOTSTRAP='/root/yushuhub-release/delivery.py'
+ARCHIVE='/root/yushuhub-release/controller.tar.gz'
+BOOTSTRAP_SHA='REPLACE_WITH_64_HEX'
+ARCHIVE_SHA='REPLACE_WITH_64_HEX'
+SOURCE_SHA='REPLACE_WITH_RELEASE_SOURCE_SHA'
+
+printf '%s  %s\n' "$BOOTSTRAP_SHA" "$BOOTSTRAP" | sha256sum -c -
+# 上一步必须显示 OK，之后才运行已核定的脚本
+python3 -B "$BOOTSTRAP" verify --archive "$ARCHIVE" \
+  --sha256 "$ARCHIVE_SHA" --revision "$SOURCE_SHA"
+# 默认只读安装计划
+python3 -B "$BOOTSTRAP" install --archive "$ARCHIVE" \
+  --sha256 "$ARCHIVE_SHA" --revision "$SOURCE_SHA"
+# 审阅后才应用；只安装/更新控制器，不迁移业务
+python3 -B "$BOOTSTRAP" install --archive "$ARCHIVE" \
+  --sha256 "$ARCHIVE_SHA" --revision "$SOURCE_SHA" --apply</pre><p class="check">预期：校验通过；只读计划无错误；应用返回 <code>committed</code>。如果依赖缺失、任务未收尾或注册不一致，停止处理，不绕过检查。</p></div></details>
+<p>标准公有证书无需额外配置。业务中心若使用私有 CA，须在首迁前由维护者审核：纯证书包位于所有业务挂载之外、文件和父目录均 root 控制且不可被其他用户写入，路径/摘要纳入审批。不要把 TLS 私钥当 CA，更不要设 <code>NODE_TLS_REJECT_UNAUTHORIZED=0</code>。迁移后的环境或 CA 变更另需维护方案。</p></section>
+<section id="migrate"><h2>5 · 先完成 1.9.68 同版首迁</h2><p>以下两轮计划有不同的审批摘要：<strong>登记 review SHA 与迁移 review SHA 不能混用</strong>。实例名和目录必须指向当前这一份后台。</p>
+<details open><summary>维护者：先计划、再登记</summary><div><pre>INSTANCE='example-admin'
+APP_ROOT='/www/wwwroot/example-admin'
+PUBLIC_URL='https://admin.example.invalid'
+CATALOG_URL='https://updates.example.invalid/pilot/catalog.json'
+KEY_ID='REPLACE_WITH_APPROVED_KEY_ID'
+KEY_SPKI='REPLACE_WITH_64_HEX'
+INITIAL_RELEASE='REPLACE_WITH_APPROVED_1968_RELEASE_ID'
+MYSQLDUMP='/www/server/mysql/bin/mysqldump'
+
+/usr/local/sbin/yushuhub-upgrade-setup plan-registration \
+  --instance "$INSTANCE" --app-root "$APP_ROOT" \
+  --public-url "$PUBLIC_URL" \
+  --catalog-url "$CATALOG_URL" --key-id "$KEY_ID" \
+  --key-fingerprint "$KEY_SPKI" --initial-release "$INITIAL_RELEASE" \
+  --mysqldump "$MYSQLDUMP"</pre><p>核对 sourceVersion=1.9.68、原目录/端口/域名、授权模式、身份摘要、数据库定位摘要和初始 release；中心授权不应变为 legacy。维护者单独确认库归属，再填写本次返回的摘要：</p><pre>REGISTER_REVIEW='REPLACE_WITH_REGISTRATION_REVIEW_SHA'
+/usr/local/sbin/yushuhub-upgrade-setup register \
+  --instance "$INSTANCE" --app-root "$APP_ROOT" \
+  --public-url "$PUBLIC_URL" \
+  --catalog-url "$CATALOG_URL" --key-id "$KEY_ID" \
+  --key-fingerprint "$KEY_SPKI" --initial-release "$INITIAL_RELEASE" \
+  --mysqldump "$MYSQLDUMP" --review-sha "$REGISTER_REVIEW" \
+  --database-reviewed --apply</pre><p class="check">预期：<code>registered</code>。此时只登记，没有把业务切换到容器。</p></div></details>
+<details open><summary>维护者：明确执行同版迁移</summary><div><pre>systemctl enable --now "yushuhub-upgrade@${INSTANCE}.service"
+yushuhub-upgrade-setup plan-migration --instance "$INSTANCE"
+
+# 审阅：sourceVersion 和 targetVersion 都必须是 1.9.68
+MIGRATION_REVIEW='REPLACE_WITH_MIGRATION_REVIEW_SHA'
+OP_ID='REPLACE_WITH_UNIQUE_OPERATION_ID'
+yushuhub-upgrade-setup migrate --instance "$INSTANCE" \
+  --review-sha "$MIGRATION_REVIEW" --operation-id "$OP_ID" --apply
+
+yushuhub-upgrade info --instance "$INSTANCE"
+yushuhub-upgrade status --instance "$INSTANCE"</pre><p class="check">预期：本次任务为 <code>committed</code>，实际 API 仍为 1.9.68；原端口由唯一业务容器提供服务，旧 PM2 不再占用。看到 accepted/running 不代表完成。</p></div></details>
+<p>此时不要再从宝塔“Node 项目”启动旧 PM2，也不要使用 1.9.68 原网页的旧 ZIP 更新方式去修改容器。后续先由维护者走受验 CLI 升至支持控制器网页操作的批准版本。</p>
+<p>代理检查：原地址登录、授权状态、旧用户/项目、余额、订单、会员和已有文件正常；由维护者在批准范围内做无付费功能核验。异常时保留任务编号，走恢复步骤，不重新填写整套经营配置。</p></section>
+<section id="proxy"><h2>6 · 保留原域名、SSL 和反代</h2><p>本批使用 Linux host 网络，应用仅监听 <code>127.0.0.1:原端口</code>；沿用本机数据库的回环 TCP 连接。Compose 不需要 <code>ports:</code> 映射，宝塔容器列表的端口映射栏为空可能是正常现象。</p><p>如果原域名已通过宿主宝塔 Nginx 转发到这个地址，通常无需改域名、SSL 或目标端口。先验证原入口，不要为了让“Docker→网站”出现一条记录而再创建站点。</p>
+<ol><li>在左侧“网站”找到原域名，记录实际代理目标与证书。部分版本有独立“反向代理”项目，旧版在站点设置内。[4]</li><li>目标保留 <code>http://127.0.0.1:原端口</code>，发送域名/Host 应保留原域名；SSL 在现有入口终止，不把私钥放进业务容器。</li><li>需要调整时先备份该站点配置，只改此站点并检查 Nginx 配置，再平滑重载；不要停止或重装全机 Nginx。</li><li>验证 HTTPS 证书、<code>/admin/v2/</code>、<code>/api/</code>、静态资源、上传以及实际使用的长连接。</li></ol>
+<details open><summary>维护者：现有 Nginx location 配置参考（不是另建站点文件）</summary><div><pre># 在原管理域名的有效 server 中核对唯一的 location /。
+# 7077 只是示例，必须使用该实例原端口。
+location / {
+    proxy_pass http://127.0.0.1:7077;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_connect_timeout 15s;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+    proxy_buffering off;
+    client_max_body_size 64m;
+}</pre><p>64m 和 300s 是需维护者核定的示例，不更改应用自身上传上限。JSON API 自身限制和 multipart 上传限制仍生效；有 CDN/WAF 时还要核对其超时/大小。不要在已有同名 location 外再粘一份，也不要缓存登录、API 和流式响应。[4][5]</p><pre># 路径仅为宝塔常见位置，先确认本机实际安装路径
+/www/server/nginx/sbin/nginx -t
+# 仅在检查通过且维护窗口允许时，使用该站点所用服务的平滑重载入口</pre></div></details>
+<div class="stop">若前置 Nginx 本身是 bridge 容器，此示例的回环目标不能直接套用。先由维护者确认网络和原入口方案；不要改业务为 bridge、不要暴露 MySQL，也不要在同机再抢占 80/443。</div></section>
+<section id="observe"><h2>7 · 在宝塔看状态与日志</h2><p>进入“Docker→容器”，按发行单中的实例名定位 <code>yushuhub-&lt;实例名&gt;</code>，刷新查看。可观察镜像、启动时间、healthy/starting、资源和日志；不要点击“升级/重建/删除”来更换业务版本。</p>
+<pre>INSTANCE='example-admin'
+docker ps --filter "name=^/yushuhub-${INSTANCE}$" \
+  --format '{{.Names}}  {{.Status}}  {{.Image}}'
+systemctl is-active "yushuhub-upgrade@${INSTANCE}.service"
+yushuhub-upgrade info --instance "$INSTANCE"
+yushuhub-upgrade status --instance "$INSTANCE"
+# 以下只在本机查看，分享前脱敏，不发送env/完整inspect/PM2 jlist
+docker logs --tail 100 "yushuhub-${INSTANCE}"
+journalctl -u "yushuhub-upgrade@${INSTANCE}.service" --no-pager -n 50</pre>
+<p class="check">预期：控制器 active；业务最终 healthy；本次事务 committed。starting 期间等待控制器检查，不反复点重启。</p><p>默认日志采用 json-file、单文件 10MiB、保留 3 份；业务内文件日志、宝塔/Nginx 日志及数据库备份仍需原有保留策略，不代表整机日志总共只有 30MiB。</p><p>容器使用 <code>unless-stopped</code>。手工停止后它不会像故障退出那样自动恢复；不要把重启策略改成“停止后自动删除”，不要给此受管项目另设面板自动拉 latest 或重建计划。</p><p>文件权限由迁移工具按已审核范围处理。不要对 <code>/www</code>、数据库目录或业务根目录执行 <code>chmod -R 777</code>；权限异常交维护者核对数据路径和宿主 UID1000。</p></section>
+<section id="upgrade"><h2>8 · 后续升级仍走受验入口</h2><p>维护者先检查当前任务、备份和发行单，确认 catalog 明确支持当前版本。只允许固定 digest 的批准镜像，不能用面板“拉 latest”替代。</p><pre>yushuhub-upgrade info --instance "$INSTANCE"
+# 每次新动作使用维护者分配的新ID；重复读取同一动作保留原ID
+OP_ID='REPLACE_WITH_UNIQUE_OPERATION_ID'
+yushuhub-upgrade upgrade --instance "$INSTANCE" \
+  --operation-id "$OP_ID" --apply</pre>
+<p>当实际运行版本已经支持新的升级页面，管理员可使用后台授权的升级/回退入口，它只提交给本实例的独立控制器。不能把这条新能力描述成原版 1.9.68 已自带。最终仍要核对任务 committed、实际 API 版本、原域名、授权及经营记录。</p><p>迁移后宿主原目录可能继续保留 1.9.68 代码作为恢复来源。此时不能用宿主 <code>package.json</code> 判断容器运行版本；以运行 API、实例任务和实际镜像为准。</p><div class="note">宝塔负责观察和现有站点入口；业务版本变更由控制器负责。即便面板能编辑 Compose，也不要修改控制器生成的镜像、挂载、端口、用户、资源、套接字或审批状态文件。</div></section>
+<section id="recover"><h2>9 · 失败时按任务恢复，不重装</h2><ol><li>停止连续点击，记录实例、operationId、stage 和错误代码。保留日志及备份。</li><li>先用终端查询 <code>info</code>/<code>status</code>。即使业务 HTTP 或网页不可用，独立 root CLI 仍可使用。</li><li><code>rejected</code> 通常表示切换前拒绝；处理原因后重新计划。<code>rolled_back</code> 表示已回退，核对实际版本与数据。</li><li><code>needs_attention</code> 或未知中断由维护者检查当前写入者、端口、镜像、配置与锁，再决定显式恢复，不能开第二个实例碰碰运气。</li></ol>
+<pre># 确认需要恢复未完成事务后，使用新的恢复ID
+yushuhub-upgrade recover --instance "$INSTANCE" \
+  --operation-id 'REPLACE_WITH_UNIQUE_RECOVERY_ID' --apply
+# 只有维护者确认要撤回已完成业务升级时才执行
+yushuhub-upgrade rollback --instance "$INSTANCE" \
+  --operation-id 'REPLACE_WITH_UNIQUE_ROLLBACK_ID' --apply</pre>
+<p>业务回退沿原事务恢复上一受验版本，保留同一数据库和新增记录，不自动回灌旧数据库。控制器包安装中断是另一类问题：由维护者使用已验证的 bootstrap <code>recover --apply</code>；控制器包回退不是业务回退，也不是卸载已登记实例。</p><p>若只是误点宝塔“停止”，一个已经 committed 的事务执行 recover 不一定会替你启动容器。维护者先确认没有活动任务、旧 PM2 或其他写入者，且容器配置未变，再恢复<strong>原容器</strong>；不要创建新容器、重建卷或改 journal。</p><p>若面板已重建、改网络或删卷，先暂停操作并交维护者核实。不要把旧备份整库覆盖当前库当成默认修复，也不要删除任务收据或部署标记来骗过检查。</p></section>
+<section id="faq"><h2>10 · 常见问题</h2><table><thead><tr><th>现象</th><th>先做什么</th></tr></thead><tbody><tr><td>Docker→网站是空的</td><td>看 Docker→容器及本机 <code>docker ps</code>，再看实例 info。网站记录不是容器全集，不重新创建后台。</td></tr><tr><td>容器编排找不到项目</td><td>可能是面板版本或 JSON/外部项目识别差异。保留控制器归属，通过“容器”和 CLI 观察，不导入第二份编排。</td></tr><tr><td>容器端口栏为空</td><td>当前是 host 网络，没有 ports 映射。核对回环监听与原反代，不额外映射公网端口。</td></tr><tr><td>首迁后还是 1.9.68</td><td>正常：首次必须同版本。已批准的后续版本要另提交升级任务。</td></tr><tr><td>网页版本和本机不同</td><td>分别核对本机实际 API、原域名 API、容器及任务。再检查反代目标/CDN缓存/浏览器缓存，不把“环境不同”直接当根因。</td></tr><tr><td>502 或长连接中断</td><td>先看原目标端口有没有服务、本机 API，再核对代理网络、Host/转发协议、WebSocket/超时和缓存。不要重装 Nginx。</td></tr><tr><td>数据库连不上</td><td>核对仍是 host 网络、本机 TCP 地址/端口及原服务状态。不要改成 host.docker.internal、改所有人可连或开放公网。</td></tr><tr><td>权限不足/上传失败</td><td>查看准确的数据挂载及 UID1000 权限；不把应用源码变成可写，不全盘 chmod。</td></tr><tr><td>PLAN_CHANGED / 配置变化</td><td>先停止，重新审阅当前计划。迁移后 env/CA 变更需单独维护方案，不修改摘要/current 文件绕过。</td></tr><tr><td>授权显示 disabled/expired</td><td>检查原授权及受信中心连通，交授权维护者处理；不能把容器绿色等同业务许可有效，不能切 legacy 绕过。</td></tr><tr><td>镜像下载失败</td><td>让维护者核对发行单 digest、仓库可达与证书。不要改成同名 latest、关闭TLS或随意更换镜像站。</td></tr></tbody></table></section>
+<section id="fresh"><h2>11 · 新部署的支持现状</h2><p>当前工具的登记入口要求<strong>已经健康运行的单实例 PM2 管理后台</strong>。它不会初始化空库、创建数据库账号、生成首次业务身份、配置新授权或一键安装 Nginx/Docker。</p><p>所以，一台仅装了宝塔的新机器，不能靠导入本文 Compose 或点击应用商店获得等价的受管新部署。本项目当前尚未发布宝塔 YushuHub 一键模板。</p><p>已有完整 1.9.68 实例可以按前述迁移流程。纯新部署若要扩展，需另行批准最小范围：本地空库及最小权限账号、首次数据/密钥初始化、合法授权接入、固定镜像/挂载与实例登记、原生恢复入口、域名SSL及备份验收。本手册不让代理自行绕过 PM2 首迁校验。</p></section>
+<section id="evidence"><h2>12 · 验证范围与官方依据</h2><p>1.9.68 官方 ZIP 与基线镜像的 186 个输入文件已核对；在自有虚构数据上完成同版首迁、后续 Docker 候选、回退及数据/密钥/身份保持的开发定向实验。该实验使用 CLI 和有效 center 缓存，未重做网页套接字、在线中心、systemd/CA 或宝塔面板 UI；1.9.68 基线及本手册步骤仍需独立审阅。</p><p>控制器既有原生 Linux 验收与宝塔版本验收是两件事。未安装/操作截图机器，也未在共享环境安装宝塔。面板版本与 Docker/Compose/Nginx 实装组合未核定前，不承诺所有宝塔版本一键兼容。</p>
+<p>维护者发行前应补记：宝塔实际版本、Docker/Compose版本、Nginx运行位置/网络、源PM2用户、数据库版本与mysqldump、容器列表可见性和实际域名验证结果。UI名称变化时，以功能和当前官方文档为准。</p>
+<ol><li id="ref1">宝塔官方开发教程：<a href="https://www.bt.cn/bbs/thread-140412-1-1.html">Docker 容器/容器编排使用帮助</a>（命令创建与面板入口）。</li><li id="ref2">宝塔官方开发教程：<a href="https://www.bt.cn/bbs/thread-140664-1-1.html">Docker 网站使用帮助</a>（9.3.0+教程适用范围）。</li><li id="ref3">宝塔官方：<a href="https://docs.bt.cn/update-log/linux-panel-11-0-0">11.0.0 更新说明</a>（UI与编排功能变化）。</li><li id="ref4">宝塔官方：<a href="https://docs.bt.cn/user-guide/site/php/site-config/reverse-proxy">反向代理配置指南</a>（站点、目标URL和发送域名）。</li><li id="ref5">宝塔官方：<a href="https://docs.bt.cn/api/proxy/set-global-websocket">反代 WebSocket 支持</a>（界面可能提供对应开关；本文不调用面板API）。</li><li>宝塔官方：<a href="https://docs.bt.cn/user-guide/docker/website/docker-website-tutorial/">Docker 网站部署教程</a>（通用建站流程不是本产品受管首迁模板）。</li></ol><p class="muted">官方资料核对日期：2026-11-09。本文的固定digest、数据/密钥保护、审批、升级和恢复步骤，以 YushuHub 实现与维护者发行单为准。</p></section>
+</main><footer>YushuHub · 本文件可离线阅读，也可使用浏览器打印保存。示例没有真实密码、token或私钥。迁移操作应由获准维护者执行，普通更新渠道与其他站点不因本手册自动改变。</footer></body></html>
+
