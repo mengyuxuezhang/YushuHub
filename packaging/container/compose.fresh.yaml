@@ -16,6 +16,7 @@ services:
       - app-data:/fresh-data
       - app-logs:/fresh-logs
       - published:/fresh-published
+      - mysql-data:/fresh-mysql:ro
     restart: 'no'
     mem_limit: 128m
     logging: {driver: json-file, options: {max-size: 10m, max-file: '3'}}
@@ -73,7 +74,7 @@ services:
     stop_grace_period: 30s
     mem_limit: 512m
     healthcheck:
-      test: [CMD, node, -e, "fetch('http://127.0.0.1:7077/readyz',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:7077/healthz',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 30

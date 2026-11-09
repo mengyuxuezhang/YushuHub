@@ -8,7 +8,11 @@ for (const directory of ['/fresh-root', '/fresh-app', '/fresh-data', '/fresh-log
   await fs.chmod(directory, 0o700)
   await fs.chown(directory, directory === '/fresh-root' ? 0 : 1000, directory === '/fresh-root' ? 0 : 1000)
 }
+const existingDatabase = (await fs.readdir('/fresh-mysql')).length > 0
 for (const file of ['/fresh-root/mysql-root', '/fresh-app/mysql-app']) {
+  if (existingDatabase) {
+    try { await fs.access(file) } catch { throw new Error('Existing database requires its original credential volumes; restore backup') }
+  }
   try {
     const handle = await fs.open(file, 'wx', 0o600)
     try { await handle.writeFile(crypto.randomBytes(32).toString('hex')); await handle.sync() } finally { await handle.close() }
