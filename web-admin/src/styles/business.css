@@ -5,6 +5,15 @@
 .end-user-table{min-width:1180px;table-layout:fixed}.end-user-table th,.end-user-table td{padding-right:10px;padding-left:10px}.end-user-col-user{width:19%}.end-user-col-source{width:12%}.end-user-col-points{width:8%}.end-user-col-membership{width:16%}.end-user-col-times{width:16%}.end-user-col-status{width:6%}.end-user-col-actions{width:23%}.end-user-table .entity-cell{min-width:0}.end-user-table .entity-cell>div{min-width:0}.end-user-table .entity-cell>div strong,.end-user-table .entity-cell>div span,.end-user-table .entity-cell>div small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.end-user-table .entity-cell>.entity-avatar{display:inline-flex;align-items:center;justify-content:center;line-height:1;text-align:center}.end-user-table .membership-expiry{margin-top:4px;color:#b45309}.end-user-table .time-line{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.end-user-table .time-line~.time-line{font-weight:450}.end-user-table .action-column{width:auto}.end-user-table .row-actions{display:grid;grid-template-columns:repeat(3,max-content);justify-content:start;gap:4px 6px}.end-user-table .text-button{padding:5px 7px}
 @media(max-width:1000px){.membership-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:720px){.membership-grid,.payment-provider-grid{grid-template-columns:1fr}}
 
+.end-user-form-section{box-shadow:0 8px 24px rgb(15 23 42/3%)}
+.end-user-form-section .section-heading{padding-bottom:14px;border-bottom:1px solid #edf0f5}
+.end-user-form-grid{gap:16px}
+.end-user-form-grid>label,.end-user-form-section>.end-user-project-field{margin-top:0}
+.end-user-form-section input{box-sizing:border-box;width:100%;min-width:0;transition:border-color .16s ease,box-shadow .16s ease}
+.end-user-form-section input::placeholder{color:#a4adbc}
+.end-user-form-section label>small{color:var(--muted);font-size:11px;font-weight:450;line-height:1.6}
+@media(max-width:720px){.end-user-form-section{padding:17px}}
+
 .redeem-code-form{display:grid;gap:20px;box-shadow:0 8px 24px rgb(15 23 42/3%)}
 .redeem-code-form .section-heading{padding-bottom:14px;border-bottom:1px solid #edf0f5}
 .redeem-code-grid{gap:16px}
