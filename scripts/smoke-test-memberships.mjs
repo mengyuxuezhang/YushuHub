@@ -9,7 +9,7 @@ console.log('PASS: free membership card IDs are stable and isolated by account')
 let ensuredFreePackages = null
 const freeCardDatabase = {
   async query(sql, params = []) {
-    if (sql.startsWith('SELECT packages_json FROM ai_membership_cards')) {
+    if (sql.startsWith('SELECT packages_json, status, created_by, system_builtin FROM ai_membership_cards')) {
       return [[{ packages_json: JSON.stringify([
         { name: '基础会员', durationDays: 30, bonusPoints: 20, pointsDurationDays: 90, price: 0 },
         { name: '不应保留的第二套餐', durationDays: 365, bonusPoints: 999 },
@@ -124,7 +124,7 @@ function fallbackDatabase() {
     state,
     database: {
       async query(sql, params = []) {
-        if (sql.startsWith('SELECT packages_json FROM ai_membership_cards')) return [[{ packages_json: JSON.stringify([freePackage]) }], []]
+        if (sql.startsWith('SELECT packages_json, status, created_by, system_builtin FROM ai_membership_cards')) return [[{ packages_json: JSON.stringify([freePackage]) }], []]
         if (sql.startsWith('INSERT INTO ai_membership_cards')) return [{ affectedRows: 1 }, []]
         throw new Error(`Unexpected fallback database SQL: ${sql} / ${params.join(',')}`)
       },

@@ -9,6 +9,8 @@ import { createModelProxyLifecycle, isDownstreamAbortReason } from '../services/
 import { clientBillingErrorResponse } from '../services/client-billing.mjs'
 import { applyModelReasoning } from '../services/model-reasoning.mjs'
 import { sendLoginProtectionError } from '../services/login-protection.mjs'
+import { forwardModelStream } from '../services/model-proxy-stream.mjs'
+import { modelCapacity, capacityInteger } from '../services/model-capacity.mjs'
 
 function clampInt(value, min, max, fallback) {
   const number = Number(value)
@@ -263,13 +265,17 @@ export function registerClientApiRoutes(app, deps) {
     let proxyLifecycle
     let proxyRequestId = ''
     let proxyStartedAt = 0
+    let releaseUser, releaseProvider
+    let upstreamAttempted = false
     try {
       const proofHeaders = desktopProofHeaders(req.headers)
-      const user = await findEndUserById(req.clientUser.id)
+      releaseUser = modelCapacity.acquireUser(req.clientUser.id)
+      const user = req.clientUser
       let upstreamBody = { ...(req.body || {}) }
-      const resolvedContext = await resolveModelProxyContext(upstreamBody.model, req.clientUser.id, 'text')
+      const resolvedContext = await resolveModelProxyContext(upstreamBody.model, req.clientUser.id, 'text', { endUser: user })
       await assertClientModelRequestAllowed(user, resolvedContext.pricingRule)
       context = resolvedContext
+      releaseProvider = modelCapacity.acquireProvider(context.provider.id)
       if (context.model.modelType !== 'text') {
         res.status(400).json({ error: { message: '当前模型分类暂不支持聊天调用，请选择文本模型' } })
         return
@@ -295,6 +301,8 @@ export function registerClientApiRoutes(app, deps) {
         req,
         res,
         timeoutMs: providerTimeoutMs,
+        idleTimeoutMs: capacityInteger(process.env.AI_MODEL_STREAM_IDLE_TIMEOUT_MS, 180000, 86400000),
+        maxDurationMs: capacityInteger(process.env.AI_MODEL_MAX_DURATION_MS, 900000, 86400000),
         onAbort: (reason) => writeAppLog('model-proxy', JSON.stringify({
           event: 'aborted',
           ...proxyLogContext,
@@ -310,6 +318,8 @@ export function registerClientApiRoutes(app, deps) {
         messageCount: Array.isArray(upstreamBody.messages) ? upstreamBody.messages.length : 0,
         toolCount: Array.isArray(upstreamBody.tools) ? upstreamBody.tools.length : 0,
       }))
+      if (req.aborted || res.destroyed) return
+      upstreamAttempted = true
       const upstream = await fetch(upstreamUrl, {
         method: 'POST',
         redirect: 'error',
@@ -378,38 +388,7 @@ export function registerClientApiRoutes(app, deps) {
         }
       }
       if (String(contentType).includes('text/event-stream')) {
-        const reader = upstream.body?.getReader()
-        if (!reader) {
-          res.end()
-          await finishDeduct(null, upstream.headers.get('x-request-id') || '')
-          await recordModelKeySuccess(context.key.id)
-          return
-        }
-        const decoder = new TextDecoder()
-        let buffer = ''
-        let streamUsage = null
-        let streamRequestId = upstream.headers.get('x-request-id') || ''
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          res.write(Buffer.from(value))
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split(/\r?\n/)
-          buffer = lines.pop() || ''
-          for (const line of lines) {
-            const trimmed = line.trim()
-            if (!trimmed.startsWith('data:')) continue
-            const data = trimmed.slice(5).trim()
-            if (!data || data === '[DONE]') continue
-            try {
-              const event = JSON.parse(data)
-              if (event.usage) streamUsage = event.usage
-              if (event.id) streamRequestId = String(event.id)
-            } catch {
-              // Ignore non-JSON SSE frames.
-            }
-          }
-        }
+        const { usage: streamUsage, requestId: streamRequestId } = await forwardModelStream(upstream, res, proxyLifecycle)
         res.end()
         await finishDeduct(streamUsage, streamRequestId)
         await recordModelKeySuccess(context.key.id)
@@ -448,9 +427,10 @@ export function registerClientApiRoutes(app, deps) {
       }))
     } catch (err) {
       const abortReason = proxyLifecycle?.abortReason || ''
-      const downstreamAborted = isDownstreamAbortReason(abortReason)
-      if (context?.key?.id && !downstreamAborted) await recordModelKeyFailure(context.key.id, err)
-      if (context?.key?.id && !downstreamAborted) {
+      const downstreamAborted = isDownstreamAbortReason(abortReason) || err?.code === 'MODEL_DOWNSTREAM_STALLED'
+      if (err?.code === 'MODEL_DOWNSTREAM_STALLED') res.destroy()
+      if (upstreamAttempted && context?.key?.id && !downstreamAborted) await recordModelKeyFailure(context.key.id, err)
+      if (upstreamAttempted && context?.key?.id && !downstreamAborted) {
         await recordModelKeyUsageFailure(
           req.clientUser.id,
           context,
@@ -478,11 +458,14 @@ export function registerClientApiRoutes(app, deps) {
       const billingFailure = clientBillingErrorResponse(err)
       const failure = billingFailure || transportFailure
       if (failure?.code) res.setHeader('X-Agent-Error-Code', failure.code)
+      if (failure?.status === 429 || failure?.status === 503) res.setHeader('Retry-After', String(err.retryAfter || 1))
       res.status(failure?.status || 400).json({
         error: { code: failure?.code || '', message: failure?.message || (err instanceof Error ? err.message : String(err)) },
       })
     } finally {
       proxyLifecycle?.cleanup()
+      releaseProvider?.()
+      releaseUser?.()
     }
   })
 

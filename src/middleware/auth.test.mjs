@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canAccessProject, canOperateProject, requireClientAuth, requirePermission, setAuthDependencies } from './auth.mjs'
+import { canAccessProject, canOperateProject, requireClientAuth, requirePermission, setAuthDependencies, getClientAuthUser } from './auth.mjs'
 
 test('project access is isolated by organization, including parent and sibling agents', () => {
   const agentA = { id: 'user-a', organizationContext: { organizationId: 'org-a', legacyOwnerUserId: 'user-a', dataScope: 'subtree' } }
@@ -57,5 +57,16 @@ test('marks rejected desktop sessions with an explicit account auth code', async
     code: 'ADMIN_AUTH_REQUIRED',
     error: '未登录或账号已停用',
   })
+})
+
+test('authentication is shared only within one request, never across sessions or new requests', async () => {
+  let reads=0,enabled=true
+  setAuthDependencies({getEndUserByToken:async token=>{reads++;return enabled?{id:token,status:'enabled'}:null}})
+  const req={headers:{authorization:'Bearer one'}}
+  const [a,b]=await Promise.all([getClientAuthUser(req),getClientAuthUser(req)])
+  assert.equal(a,b);assert.equal(reads,1)
+  enabled=false
+  assert.equal(await getClientAuthUser({headers:{authorization:'Bearer one'}}),null)
+  assert.equal(reads,2)
 })
 

@@ -22,6 +22,12 @@ export function classifyProviderHttpError(status) {
 }
 
 export function classifyProviderTransportError(error, abortReason = '') {
+  if (['model_stream_idle_timeout', 'model_duration_timeout'].includes(abortReason)) {
+    return { status: 504, code: 'MODEL_STREAM_TIMEOUT', message: '模型响应超时，请稍后重试或切换模型' }
+  }
+  if (['ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT'].includes(error?.code)) {
+    return { status: 503, code: 'DATABASE_BUSY', message: '服务繁忙，请稍后重试' }
+  }
   if (abortReason === 'provider_headers_timeout') {
     return {
       status: 504,

@@ -37,3 +37,9 @@ test('recognizes undici transport causes without exposing diagnostics', () => {
 test('leaves business and validation failures unchanged', () => {
   assert.equal(classifyProviderTransportError(new Error('当前模型不存在')), null)
 })
+
+test('database lock errors and stream deadlines have safe retryable responses',()=>{
+  const e=Object.assign(Error('raw SQL details'),{code:'ER_LOCK_DEADLOCK'})
+  assert.deepEqual(classifyProviderTransportError(e),{status:503,code:'DATABASE_BUSY',message:'服务繁忙，请稍后重试'})
+  assert.equal(classifyProviderTransportError(Error('aborted'),'model_stream_idle_timeout').status,504)
+})

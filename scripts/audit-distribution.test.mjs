@@ -38,6 +38,8 @@ test('rejects desktop source, private infrastructure and credential material', (
     ['cloud/license-center/server.mjs', 'signing service'],
     ['src/services/authorization/operator-accounts.mjs', 'operator administration'],
     ['web/license-center/index.html', 'center frontend'],
+    ['capacity-results/model.key', 'ephemeral benchmark key'],
+    ['scripts/capacity-600.mjs', 'development-only stress harness'],
   ]
   for (const [name, body] of cases) {
     const item = fixture({ 'package.json': '{"name":"agent-ai-admin"}', [name]: body })

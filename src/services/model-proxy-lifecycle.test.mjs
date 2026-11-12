@@ -55,3 +55,18 @@ test('aborts when the provider does not return headers before its timeout', asyn
   assert.equal(isDownstreamAbortReason(lifecycle.abortReason), false)
   lifecycle.cleanup()
 })
+
+test('stream idle deadline is refreshed by progress and cleanup releases all handlers', async()=>{
+  const {req,res}=createRequestPair()
+  const life=createModelProxyLifecycle({req,res,timeoutMs:1000,idleTimeoutMs:40})
+  life.clearHeaderTimeout();await new Promise(r=>setTimeout(r,20));life.touch()
+  await new Promise(r=>setTimeout(r,25));assert.equal(life.signal.aborted,false)
+  await new Promise(r=>setTimeout(r,30));assert.equal(life.abortReason,'model_stream_idle_timeout')
+  life.cleanup();assert.equal(req.listenerCount('aborted'),0);assert.equal(res.listenerCount('close'),0)
+})
+test('maximum duration cannot be prolonged indefinitely by active output',async()=>{
+  const {req,res}=createRequestPair()
+  const life=createModelProxyLifecycle({req,res,timeoutMs:1000,idleTimeoutMs:1000,maxDurationMs:20})
+  life.clearHeaderTimeout();life.touch()
+  await new Promise(r=>setTimeout(r,40));assert.equal(life.abortReason,'model_duration_timeout');life.cleanup()
+})

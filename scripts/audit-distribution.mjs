@@ -9,6 +9,8 @@ const MAX_FILE_BYTES = 4 * 1024 * 1024
 const MAX_TOTAL_BYTES = 48 * 1024 * 1024
 
 const forbiddenPaths = [
+  /(^|\/)capacity-results(?:\/|$)/i,
+  /(^|\/)scripts\/capacity-[^/]*\.mjs$/i,
   /(^|\/)(?:cloud|web)\/license-center(?:\/|$)/i,
   /(^|\/)src\/routes\/license-center\.mjs$/i,
   /(^|\/)src\/services\/authorization\/(?:center|package-management|audit-presentation|operator-auth|operator-accounts|operator-passwords|reminders)\.mjs$/i,

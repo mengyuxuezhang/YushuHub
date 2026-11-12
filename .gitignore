@@ -1,4 +1,5 @@
 node_modules/
+capacity-results/
 __pycache__/
 .env
 .env.*

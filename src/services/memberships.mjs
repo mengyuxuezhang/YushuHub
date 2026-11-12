@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { db } from '../db/pool.mjs'
 import { toMysqlDateTime } from '../utils/time.mjs'
+import { membershipTransaction } from '../db/transaction-retry.mjs'
 
 const DEFAULT_FREE_PACKAGES = [
   { name: '永久免费', durationDays: 0, bonusPoints: 0, pointsDurationDays: 0, price: 0, originalPrice: 0, showOriginalPrice: false },
@@ -39,8 +40,12 @@ export function freeMembershipCardId(ownerUserId = 'admin') {
 export async function ensureAccountFreeMembership(ownerUserId = 'admin', database = db()) {
   const ownerId = String(ownerUserId || 'admin').trim() || 'admin'
   const cardId = freeMembershipCardId(ownerId)
-  const [existingRows] = await database.query('SELECT packages_json FROM ai_membership_cards WHERE id = ? LIMIT 1', [cardId])
+  const [existingRows] = await database.query('SELECT packages_json, status, created_by, system_builtin FROM ai_membership_cards WHERE id = ? LIMIT 1', [cardId])
+  const existing = existingRows[0]
   const freePackage = normalizeFreePackage(existingRows[0]?.packages_json)
+  const packages = parsePackageList(existing?.packages_json)
+  if (existing?.status === 'enabled' && existing.created_by === ownerId && Number(existing.system_builtin) === 1 &&
+      packages.length === 1 && Object.entries(freePackage).every(([key, value]) => packages[0][key] === value)) return cardId
   await database.query(
     `INSERT INTO ai_membership_cards (
        id, name, level, discount_percent, discount_modules, redeem_only,
@@ -73,9 +78,7 @@ export async function ensureFreeMembershipFallback({
   const ownerId = String(ownerUserId || 'admin').trim() || 'admin'
   if (!targetUserId) throw new Error('终端用户不能为空')
   const cardId = await ensureAccountFreeMembership(ownerId, database)
-  const conn = await database.getConnection()
-  try {
-    await conn.beginTransaction()
+  return membershipTransaction(database, async (conn) => {
     const [[user]] = await conn.query('SELECT id FROM ai_end_users WHERE id = ? FOR UPDATE', [targetUserId])
     if (!user) throw new Error('终端用户不存在')
 
@@ -90,18 +93,17 @@ export async function ensureFreeMembershipFallback({
       `SELECT * FROM ai_end_user_memberships
        WHERE user_id = ? AND status = 'active'
          AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP(3))
-       ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+       ORDER BY created_at DESC LIMIT 1`,
       [targetUserId],
     )
     if (active?.id) {
-      await conn.commit()
       return { ...active, existing: true }
     }
 
     const [[card]] = await conn.query(
       `SELECT id, name, packages_json FROM ai_membership_cards
        WHERE id = ? AND created_by = ? AND system_builtin = 1
-       LIMIT 1 FOR UPDATE`,
+       LIMIT 1`,
       [cardId, ownerId],
     )
     if (!card) throw new Error('基础免费会员不存在')
@@ -115,7 +117,6 @@ export async function ensureFreeMembershipFallback({
        ) VALUES (?, ?, ?, ?, ?, NULL, NULL, 'active', 'fallback', ?)`,
       [membershipId, targetUserId, card.id, membershipPackage.name, toMysqlDateTime(startedAt), ownerId],
     )
-    await conn.commit()
     return {
       id: membershipId,
       user_id: targetUserId,
@@ -129,12 +130,7 @@ export async function ensureFreeMembershipFallback({
       created_by: ownerId,
       existing: false,
     }
-  } catch (err) {
-    await conn.rollback()
-    throw err
-  } finally {
-    conn.release()
-  }
+  })
 }
 
 export async function grantMembershipBenefits({

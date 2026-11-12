@@ -292,8 +292,24 @@ test('desktop proof challenges pass through unchanged and malformed input never 
   return Response.json({ id: 'test', choices: [], usage: { prompt_tokens: 1 }, okpa_proof: 'signed-fixture' })
  })
  const { chatHandler, calls } = createRouteHarness({ resolveModelProxyContext: async () => { resolved++; return { provider: { id:'provider',name:'Test',baseUrl:'https://api.example/v1' }, model:{ modelType:'text',modelId:'text' }, key:{ id:'key',apiKey:'fixture-key' }, pricingRule:{} } } })
- const valid = createResponse(); await chatHandler({ headers:{'x-okpa-proof-nonce':nonce,'x-okpa-request-hash':hash},body:{model:'text'},clientUser:{id:'user-1'},once(){},removeListener(){} },valid)
+ const valid = createResponse(); await chatHandler({ headers:{'x-okpa-proof-nonce':nonce,'x-okpa-request-hash':hash},body:{model:'text'},clientUser:{id:'user-1',creditBalance:10},once(){},removeListener(){} },valid)
  assert.equal(valid.statusCode,200); assert.equal(JSON.parse(valid.payload).okpa_proof,'signed-fixture');assert.equal(calls.deduct,1)
  const invalid = createResponse();await chatHandler({headers:{'x-okpa-proof-nonce':'invalid'},body:{model:'text'},clientUser:{id:'user-1'}},invalid)
  assert.equal(invalid.statusCode,400);assert.equal(fetched,1);assert.equal(resolved,1);assert.equal(calls.failure,0)
+})
+
+test('per-user overload rejects before upstream work without damaging Keys or charging', async(t)=>{
+  let release
+  const gate=new Promise(r=>{release=r});let upstreamCalls=0
+  t.mock.method(globalThis,'fetch',async()=>{upstreamCalls++;await gate;return Response.json({usage:{total_tokens:1}})})
+  const {chatHandler,calls}=createRouteHarness({resolveModelProxyContext:async()=>({provider:{id:'test-limit-p',baseUrl:'https://provider.example'},model:{modelId:'text',modelType:'text'},key:{id:'key',apiKey:'synthetic'},pricingRule:{}})})
+  const request=()=>({headers:{},body:{model:'text'},clientUser:{id:'test-limit-user',creditBalance:100},once(){},removeListener(){}})
+  const pending=Array.from({length:8},()=>chatHandler(request(),createResponse()))
+  try {
+    await new Promise(r=>setImmediate(r))
+    const rejected=createResponse();await chatHandler(request(),rejected)
+    assert.equal(rejected.statusCode,429);assert.equal(rejected.headers['Retry-After'],'1')
+    assert.equal(upstreamCalls,8);assert.equal(calls.failure,0);assert.equal(calls.deduct,0)
+  } finally { release();await Promise.all(pending) }
+  assert.equal(calls.deduct,8)
 })

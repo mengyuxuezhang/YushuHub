@@ -1,6 +1,7 @@
 import { consolidatePricingPlans } from '../services/pricing-current-plan-migration.mjs'
 import crypto from 'node:crypto'
 import mysql from 'mysql2/promise'
+import { databasePoolLimit } from './pool.mjs'
 import { migrateUserUsagePermissions } from '../services/user-usage-permissions.mjs'
 
 let pool
@@ -319,7 +320,7 @@ export async function initDatabase(options = {}) {
     database: DB_NAME,
     charset: 'utf8mb4',
     waitForConnections: true,
-    connectionLimit: 10,
+    connectionLimit: databasePoolLimit(),
     namedPlaceholders: true,
     enableKeepAlive: true,
   })

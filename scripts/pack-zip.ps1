@@ -63,11 +63,13 @@ $excludeDirs = @(
   "local-update",
   "tmp",
   "output",
+  "capacity-results",
   "docs",
   "test"
 )
 
 $excludeFiles = @(
+  ".git",
   ".env",
   "install.php"
 )
@@ -129,6 +131,7 @@ Get-ChildItem -LiteralPath $stage -Recurse -Directory -Force |
 # Development-only tests and packaging tools are not required by a deployed Admin instance. Keeping
 # them out also prevents security-fixture strings from becoming part of the supplier distribution.
 Get-ChildItem -LiteralPath $stage -Recurse -File | Where-Object {
+  $_.Name -match '^capacity-.*\.mjs$' -or
   $_.Name -match '\.test\.mjs$' -or
   $_.Name -eq 'sync-release-archives.py' -or
   $_.Name -eq 'test_sync_release_archives.py' -or

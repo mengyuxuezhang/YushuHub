@@ -2,6 +2,7 @@
 
 - [部署指南](DEPLOYMENT.md)
 - [开发指南](DEVELOPMENT.md)
+- [600 路模型并发优化与隔离验收](MODEL_CAPACITY_OPTIMIZATION_2026-11-12.md)
 - [版本发布与更新源](RELEASING.md)
 - [管理端版本记录](UPDATE_HISTORY.json)
 - [贡献指南](../CONTRIBUTING.md)

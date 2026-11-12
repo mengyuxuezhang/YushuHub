@@ -102,7 +102,14 @@ export function requireAnyPermission(permissionKeys = [], label = '') {
   }
 }
 
+const clientAuthRead = Symbol('requestClientAuth')
 export async function getClientAuthUser(req) {
+  // Several policy/route guards inspect the same HTTP request. Never reuse across requests.
+  if (!req[clientAuthRead]) req[clientAuthRead] = readClientAuthUser(req)
+  return req[clientAuthRead]
+}
+
+async function readClientAuthUser(req) {
   const header = String(req.headers.authorization || '')
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
   const user = token ? await deps.getEndUserByToken(token) : null

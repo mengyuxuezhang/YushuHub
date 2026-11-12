@@ -8,6 +8,11 @@ const __dirname = path.dirname(__filename)
 const repoRoot = path.resolve(__dirname, '..')
 
 const targets = [
+  'src/db/transaction-retry.mjs',
+  'src/services/model-capacity.mjs',
+  'src/services/model-proxy-context.mjs',
+  'src/services/model-proxy-stream.mjs',
+  'src/services/model-key-usage.mjs',
   'src/services/admin-update-archive.mjs',
   'tools/admin-deployer/src/admin-update-archive.mjs',
   'src/services/admin-code-snapshot.mjs',

@@ -12,6 +12,8 @@ import { registerDeploymentAuthorizationRoutes } from '../../src/routes/deployme
 import { normalizeModelProviderKey, listModelProviderKeys as listProviderKeys, saveModelProviderKey as saveProviderKey } from '../../src/services/model-provider-keys.mjs'
 import { selectEligibleModelKeys, findKeyScopeModelId, resolveTaskModelKeyContext } from '../../src/services/model-key-scope.mjs'
 import { createJsonRequestBodyParser } from '../../src/middleware/json-request-body.mjs'
+import { modelCapacity, capacityInteger } from '../../src/services/model-capacity.mjs'
+import { createModelProxyContextResolver } from '../../src/services/model-proxy-context.mjs'
 import { queryModelProviders } from '../../src/repositories/model-providers.mjs'
 import express from 'express'
 import { normalizeLoginDesign, preserveSubmittedLoginBrandFields } from '../../src/services/login-brand.mjs'
@@ -195,6 +197,7 @@ let sourceVersionCache = { info: null, checkedAt: 0 }
 let visibleSourceVersionCache = { info: null, checkedAt: 0 }
 const localizingBuildIds = new Set()
 
+app.use(modelCapacity.admit)
 app.use(createJsonRequestBodyParser())
 app.use(express.urlencoded({ extended: true }))
 app.use(disableDynamicResponseCaching)
@@ -2959,10 +2962,10 @@ async function saveEndUserModelAccess(id, input = {}, actor = null, scope = null
   return getEndUserModelAccess(user.id, scope)
 }
 
-async function allowedProviderModelIdSetForUser(userId) {
+async function allowedProviderModelIdSetForUser(userId, preferredOwnerUserId = '') {
   const id = String(userId || '').trim()
   if (!id) return null
-  await ensureEndUserMembershipFallback(id)
+  await ensureEndUserMembershipFallback(id, preferredOwnerUserId)
   const [rows] = await db().query('SELECT provider_model_id FROM ai_end_user_model_access WHERE user_id = ?', [id])
   if (rows.length) return new Set(rows.map((row) => row.provider_model_id).filter(Boolean))
   const [membershipRows] = await db().query(
@@ -3395,8 +3398,8 @@ function calculateCompoundBillingPoints(rule, usage = {}, plan = null, rates = {
   return { ...legacy, points: quote.points, compoundQuote: quote }
 }
 
-async function keyOwnerUserIdForEndUser(userId = '') {
-  const user = await findEndUserById(userId)
+async function keyOwnerUserIdForEndUser(userId = '', knownUser = null) {
+  const user = knownUser?.id === userId ? knownUser : await findEndUserById(userId)
   if (!user) return 'admin'
   if (user.sourceAgentId) return user.sourceAgentId
   if (user.sourceProjectId) {
@@ -3406,85 +3409,15 @@ async function keyOwnerUserIdForEndUser(userId = '') {
   return 'admin'
 }
 
-async function resolveModelProxyContext(requestedModel = '', userId = '', requiredModelType = '') {
-  const targetModel = String(requestedModel || '').trim()
-  const targetModelType = requiredModelType ? normalizeProviderModelType(requiredModelType) : ''
-  const keyOwnerUserId = await keyOwnerUserIdForEndUser(userId)
-  const allowedModelIds = await allowedProviderModelIdSetForUser(userId)
-  const endUser = await findEndUserById(userId)
-  const endUserOrganizationId = String(endUser?.organizationId || '')
-  const params = []
-  let where = "WHERE m.archived_at IS NULL AND m.status = 'enabled' AND p.status = 'enabled'"
-  if (endUserOrganizationId) {
-    where += ' AND m.organization_id = ?'
-    params.push(endUserOrganizationId)
-  }
-  if (targetModelType) {
-    where += ' AND m.model_type = ?'
-    params.push(targetModelType)
-  }
-  params.push(targetModel)
-  const [modelRows] = await db().query(
-    `SELECT m.*, p.name AS provider_name, p.base_url, p.protocol, p.timeout_ms, p.status AS provider_status, p.is_default AS provider_is_default, p.sort_order AS provider_sort_order
-     FROM ai_provider_models m
-     JOIN ai_model_providers p ON p.id = m.provider_id
-     ${where}
-     ORDER BY
-      CASE WHEN m.model_id = ? THEN 0 ELSE 1 END,
-      CASE WHEN p.is_default = 1 THEN 0 ELSE 1 END,
-      CASE WHEN m.is_default = 1 THEN 0 ELSE 1 END,
-      p.sort_order ASC,
-      m.sort_order ASC,
-      m.created_at ASC`,
-    params,
-  )
-  const isAllowedModel = (item) => !allowedModelIds || allowedModelIds.has(item.id)
-  const row = targetModel
-    ? modelRows.find((item) => item.model_id === targetModel && isAllowedModel(item))
-    : modelRows.find(isAllowedModel)
-  if (!row) {
-    if (allowedModelIds) throw new Error(targetModel ? `当前账号无权使用模型 ${targetModel}` : '当前账号暂无可用授权模型')
-    if (targetModel) throw new Error(`模型 ${targetModel} 未启用或未配置${targetModelType ? `为 ${targetModelType} 分类` : ''}`)
-    throw new Error(targetModelType ? `暂无可用${targetModelType === 'search' ? '搜索' : targetModelType}模型，请先在后台配置服务商和模型` : '暂无可用模型，请先在后台配置服务商和模型')
-  }
-  let provider = normalizeModelProvider({
-    id: row.provider_id,
-    name: row.provider_name,
-    protocol: row.protocol,
-    base_url: row.base_url,
-    status: row.provider_status,
-    is_default: row.provider_is_default,
-    timeout_ms: row.timeout_ms,
-    sort_order: row.provider_sort_order,
-  })
-  const model = normalizeProviderModel(row)
-  const textPolicy = resolveTextConnection(await getSupplierLicense(), provider, model, normalizeModelEndpointPath(model.endpointPath, model.modelType))
-  provider = textPolicy
-  const keyRows = await selectEligibleModelKeys(db(), { ownerUserId: keyOwnerUserId, providerId: provider.id, providerModelId: model.id, organizationId: endUserOrganizationId })
-  const key = await materializeModelProviderKey(keyRows[0])
-  if (!key?.api_key) throw new Error(`服务商 ${provider.name} 在当前账号下暂无适用于该模型的可用 Key，请检查 Key 池的适用模型配置`)
-  const rules = await listModelPricingRules(provider.id)
-  const legacyPricingRule = rules.find((item) => item.providerModelId === model.id && item.status === 'enabled')
-  const taskType = model.modelType === 'image' ? 'image_generation' : model.modelType === 'search' ? 'web_search' : 'chat'
-  const [[capability]] = await db().query("SELECT id FROM ai_model_task_capabilities WHERE provider_model_id=? AND task_type=? AND status='enabled' LIMIT 1", [model.id, taskType])
-  const [pricingPlan, rateRows] = capability ? await Promise.all([
-    pricingPlanRepository.findActiveByCapability(capability.id, model.organizationId || ''),
-    pricingPlanRepository.rates(model.organizationId || ''),
-  ]) : [null, []]
-  const pricingRule = effectiveGatewayPricingRule(legacyPricingRule, pricingPlan)
-  if (!pricingRule) throw new Error(`模型 ${model.modelId} 未配置启用中的计费方案`)
-  await db().query('UPDATE ai_model_provider_keys SET last_used_at = CURRENT_TIMESTAMP(3) WHERE id = ?', [key.id])
-  const endpointPath = textPolicy.endpointPath
-  return {
-    provider,
-    model,
-    key: { id: key.id, apiKey: String(key.api_key || ''), keyPreview: key.key_preview || previewSecret(key.api_key) },
-    pricingRule,
-    pricingPlan,
-    pricingRates: Object.fromEntries(rateRows.map(item => [item.currency, item.cnyRate])),
-    endpointPath,
-  }
-}
+const resolveModelProxyContext = createModelProxyContextResolver({
+  db, findEndUserById, keyOwnerUserIdForEndUser, allowedProviderModelIdSetForUser,
+  normalizeProviderModelType, normalizeModelProvider, normalizeProviderModel, getSupplierLicense,
+  normalizeModelEndpointPath, materializeModelProviderKey, listModelPricingRules,
+  pricingPlanRepository: {
+    findActiveByCapability: (...args) => pricingPlanRepository.findActiveByCapability(...args),
+    rates: (...args) => pricingPlanRepository.rates(...args),
+  }, effectiveGatewayPricingRule, previewSecret,
+})
 
 async function generateImageForClient(userId, input = {}, resolvedContext = null) {
   const request = normalizeImageGenerationRequest(input)
@@ -7096,7 +7029,7 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('[ai-admin] unhandledRejection', reason)
 })
 
-app.listen(PORT, HOST, () => {
+app.listen(PORT, HOST, capacityInteger(process.env.AI_ADMIN_LISTEN_BACKLOG, 2048, 65535), () => {
   writeAppLog('system', `boot version=${PACKAGE_VERSION} pid=${process.pid} node=${process.version} build=${BUILD_MODE} host=${HOST} port=${PORT}`)
   console.log(`[ai-admin] listening on http://${HOST}:${PORT}`)
   console.log(`[ai-admin] build mode: ${BUILD_MODE}`)
