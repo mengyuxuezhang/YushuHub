@@ -17,7 +17,7 @@
     "test:redeem-codes": "node scripts/smoke-test-redeem-codes.mjs",
     "test:payments": "node scripts/smoke-test-payments.mjs",
     "test:end-users": "node --test src/services/end-user-accounts.test.mjs src/routes/admin-business.test.mjs",
-    "test:model-capacity": "node --test src/db/transaction-retry.test.mjs src/services/model-capacity.test.mjs src/services/model-key-usage.test.mjs src/services/model-proxy-context.test.mjs src/services/model-proxy-stream.test.mjs src/routes/client-stream.integration.test.mjs",
+    "test:model-capacity": "node --test src/db/transaction-retry.test.mjs src/services/model-capacity.test.mjs src/services/model-key-usage.test.mjs src/services/model-proxy-context.test.mjs src/services/model-proxy-stream.test.mjs src/routes/client-stream.integration.test.mjs scripts/capacity-preload.test.mjs",
     "test:model-proxy": "node --test src/middleware/auth.test.mjs src/routes/client-api.test.mjs src/services/client-billing.test.mjs src/services/model-pricing.test.mjs src/services/model-reasoning.test.mjs src/services/model-proxy-lifecycle.test.mjs src/services/model-proxy-errors.test.mjs",
     "test:curated-skills": "node --test src/services/curated-skills.test.mjs src/services/curated-skill-package.test.mjs src/services/builtin-curated-skills.test.mjs src/routes/curated-skills.test.mjs src/repositories/skill-market-installations.test.mjs",
     "test:curated-skills:e2e": "node scripts/e2e-protected-skill.mjs",

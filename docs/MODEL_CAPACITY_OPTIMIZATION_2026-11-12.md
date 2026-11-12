@@ -84,7 +84,7 @@
 ## 检查、交付与边界
 
 - `npm run check`：后端检查与 221 项回归通过。
-- `npm run test:model-capacity`：20 项通过，包括真实本机 HTTP 断线取消、上游空闲、背压、权限下一请求失效、单 Key/多 Key 语义、事务重试、容量释放。
+- `npm run test:model-capacity`：21 项通过，包括真实本机 HTTP 断线取消、上游空闲、背压、权限下一请求失效、单 Key/多 Key 语义、事务重试、容量释放及观测器隔离。
 - `npm run test:model-proxy`：47 项通过；会员烟测通过。
 - 分发测试 8 项、导入/注册烟测 30 项通过。
 - `node scripts/capacity-validate-optimized.mjs` 对完整 SSE、实际并发峰值、余额/唯一流水、会员幂等、预期保护拒绝和缓冲上界的断言通过。
