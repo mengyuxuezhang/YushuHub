@@ -1,4 +1,5 @@
 import { normalizePricingPlan, pricingSnapshot, quotePricing } from './compound-pricing.mjs'
+import { salePointsFromCny } from './membership-packages.mjs'
 
 const TASK_GROUPS = Object.freeze({
   overview: [], text: ['chat', 'web_search'], image: ['image_generation', 'image_edit'],
@@ -46,7 +47,10 @@ export function validatePricingForTask(plan) {
 }
 
 export class PricingPlanService {
-  constructor(repository) { this.repository = repository }
+  constructor(repository, { membershipCards = null } = {}) {
+    this.repository = repository
+    this.membershipCards = membershipCards
+  }
 
   async list(input = {}, organizationId = '') {
     const requested = String(input.taskType || '')
@@ -59,14 +63,70 @@ export class PricingPlanService {
     return this.repository.list({ organizationId, providerId: String(input.providerId || '') })
   }
 
-  async save(input = {}, organizationId = '') {
+  async save(input = {}, organizationId = '', actorId = '') {
     if (!input.capabilityId) throw new Error('请选择模型任务能力')
     if (['video_generation', 'embedding', 'rerank'].includes(String(input.taskType || ''))) throw new Error('该模型类型的计费功能正在开发中，暂不支持配置')
+    const components = await this.resolveMembershipPricing(Array.isArray(input.components) ? input.components : [], actorId)
+    const enrichedInput = { ...input, components }
     const normalized = normalizePricingPlan({ taskType: input.taskType, version: 1, status: input.status,
-      consumptionMultiplier: input.consumptionMultiplier, components: applyManagedPricingDefaults(Array.isArray(input.components) ? input.components : []) })
+      consumptionMultiplier: input.consumptionMultiplier, components: applyManagedPricingDefaults(components) })
     if (!normalized.components.length) throw new Error('请至少添加一个计费项')
     validatePricingForTask(normalized)
-    return this.repository.save(input, normalized, organizationId)
+    return this.repository.save(enrichedInput, normalized, organizationId)
+  }
+
+  async resolveMembershipPricing(components = [], actorId = '') {
+    if (!components.length) return components
+    if (!this.membershipCards) throw new Error('会员卡套餐服务不可用，请检查服务配置')
+    if (!actorId) throw new Error('无法识别当前操作者，请重新登录')
+    return Promise.all(components.map(async (item) => {
+      const cardId = String(item?.pricingCardId || item?.metadata?.pricingCardId || '').trim()
+      if (!cardId) throw new Error('请为每个计费项选择套餐')
+      const card = await this.membershipCards.findPackage(cardId, actorId)
+      if (!card) throw new Error('所选套餐不存在或不属于当前账号')
+      if (card.status !== 'enabled') throw new Error(`套餐「${card.name}」已停用，请重新选择`)
+      if (card.unitPriceCny === null) throw new Error(`套餐「${card.name}」未设置价格或赠送积分，无法计算积分单价`)
+      const salePriceCny = Number(item.salePriceCny ?? item.metadata?.salePriceCny)
+      if (!Number.isFinite(salePriceCny) || salePriceCny < 0) throw new Error(`请填写套餐「${card.name}」对应的有效销售价格`)
+      return {
+        ...item,
+        pricingCardId: card.id,
+        salePriceCny,
+        salePoints: salePointsFromCny(salePriceCny, card.package),
+        metadata: {
+          ...(item.metadata && typeof item.metadata === 'object' ? item.metadata : {}),
+          pricingCardId: card.id,
+          pricingCardName: card.name,
+          salePriceCny,
+          membershipSnapshot: {
+            cardId: card.id,
+            cardName: card.name,
+            packageName: card.package.name,
+            price: card.package.price,
+            bonusPoints: card.package.bonusPoints,
+            durationDays: card.package.durationDays,
+            pointsDurationDays: card.package.pointsDurationDays,
+            unitPriceCny: card.unitPriceCny,
+          },
+        },
+      }
+    }))
+  }
+
+  async membershipOptions(actorId = '') {
+    if (!this.membershipCards) return []
+    if (!actorId) return []
+    const cards = await this.membershipCards.listByOwner(actorId)
+    return cards.map((card) => ({
+      id: card.id,
+      name: card.name,
+      status: card.status,
+      systemBuiltin: card.systemBuiltin,
+      package: card.package,
+      unitPriceCny: card.unitPriceCny,
+      usable: card.status === 'enabled' && card.unitPriceCny !== null,
+      reason: card.status !== 'enabled' ? '会员卡已停用' : (card.unitPriceCny === null ? '未设置价格或赠送积分' : ''),
+    }))
   }
 
   async quote(planId, events, organizationId = '') {

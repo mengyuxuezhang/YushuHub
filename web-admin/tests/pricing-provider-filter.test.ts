@@ -4,7 +4,7 @@ import PricingCenterView from '@/views/models/PricingCenterView.vue'
 import * as pricing from '@/api/pricing-center'
 import { listModelProviders } from '@/api/model-service'
 
-vi.mock('@/api/pricing-center', () => ({ listPricingPlans: vi.fn(), listModelCapabilities: vi.fn() }))
+vi.mock('@/api/pricing-center', () => ({ listPricingPlans: vi.fn(), listModelCapabilities: vi.fn(), listMembershipPricingOptions: vi.fn() }))
 vi.mock('@/api/model-service', () => ({ listModelProviders: vi.fn() }))
 vi.mock('@/components/models/PricingPlanDrawer.vue', () => ({ default: { template: '<div />' } }))
 
@@ -24,6 +24,7 @@ describe('text pricing provider filter', () => {
       { id: 'new-a', providerId: 'a', taskType: 'chat', status: 'enabled' },
       { id: 'audio-b', providerId: 'b', taskType: 'speech_synthesis', status: 'enabled' },
     ] as never)
+    vi.mocked(pricing.listMembershipPricingOptions).mockResolvedValue([] as never)
     const host = document.createElement('div')
     const app = createApp(PricingCenterView, { group: 'text' }).use(createPinia())
     app.mount(host)

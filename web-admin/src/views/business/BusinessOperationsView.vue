@@ -9,6 +9,7 @@ import CreditsTable from "@/components/business/CreditsTable.vue";
 import BusinessSearchToolbar from "@/components/business/BusinessSearchToolbar.vue";
 import RedeemCodesTable from "@/components/business/RedeemCodesTable.vue";
 import {useBusinessOperations,type BusinessSection} from "@/composables/business/useBusinessOperations";
+import {formatUnitPriceCny,membershipUnitPriceCny} from "@/utils/pricing-points";
 
 const auth = useAuthStore();
 const props = defineProps<{ section: BusinessSection }>();
@@ -22,6 +23,8 @@ const meta = {
 }[props.section];
 const initials=(item:any)=>String(item.displayName||item.username||"用户").slice(0,2);
 const packageOf=(item:any)=>item.package||item.packages?.[0]||{};
+const priceOf=(item:any)=>Number(packageOf(item).price||0);
+const unitPriceOf=(item:any)=>membershipUnitPriceCny(packageOf(item).price,packageOf(item).bonusPoints);
 function formatDate(value:any){
   if(!value) return "—"
   const date=new Date(value)
@@ -190,6 +193,10 @@ function formatDate(value:any){
             }}
             · {{ packageOf(card).bonusPoints || 0 }} 积分</small
           >
+          <small class="cell-note membership-unit-price">
+            {{ priceOf(card) > 0 ? `售价 ¥${priceOf(card)}` : "未设置售价" }} · 1 积分 =
+            {{ formatUnitPriceCny(unitPriceOf(card)) }}
+          </small>
         </div>
         <footer>
           <button class="secondary-button" @click="b.openEdit(card)">

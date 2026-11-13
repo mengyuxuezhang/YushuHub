@@ -13,7 +13,37 @@ export interface PricingComponent {
   costAmount: number
   costCurrency: string
   salePoints: number
+  pricingCardId?: string
+  salePriceCny?: number
+  membershipSnapshot?: MembershipPricingSnapshot | null
   status: 'enabled' | 'disabled'
+}
+export interface MembershipPricingSnapshot {
+  cardId: string
+  cardName: string
+  packageName: string
+  price: number
+  bonusPoints: number
+  durationDays: number
+  pointsDurationDays: number
+  unitPriceCny: number
+}
+export interface MembershipPricingOption {
+  id: string
+  name: string
+  status: string
+  systemBuiltin: boolean
+  package: {
+    name: string
+    price: number
+    bonusPoints: number
+    durationDays: number
+    pointsDurationDays: number
+    originalPrice: number
+  }
+  unitPriceCny: number | null
+  usable: boolean
+  reason: string
 }
 export interface PricingPlan {
   id: string

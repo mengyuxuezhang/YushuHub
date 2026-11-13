@@ -140,6 +140,7 @@ import { assertOrganizationQuota } from '../../src/services/quota-guard.mjs'
 import * as organizationRepository from '../../src/repositories/organizations.mjs'
 import { applyClientUsageDebit, assertClientModelRequestAllowed, getClientCreditState } from '../../src/services/client-billing.mjs'
 import { PricingPlanRepository } from '../../src/repositories/pricing-plans.mjs'
+import { MembershipCardRepository } from '../../src/repositories/membership-cards.mjs'
 import { PricingPlanService } from '../../src/services/pricing-plans.mjs'
 import { ModelCapabilityService } from '../../src/services/model-capability-service.mjs'
 import { ProtocolManifestRegistry, BUILTIN_PROTOCOLS } from '../../src/services/model-invoke/protocol-manifest.mjs'
@@ -6834,7 +6835,8 @@ registerVoiceServiceRoutes(app, privateVoices)
 const protocolManifest = new ProtocolManifestRegistry(BUILTIN_PROTOCOLS)
 const modelServiceV2Sync = new ModelServiceV2Sync(voicePool, protocolManifest)
 registerModelCapabilityRoutes(app, new ModelCapabilityService(voicePool, protocolManifest))
-const pricingPlanService = new PricingPlanService(pricingPlanRepository)
+const membershipCardRepository = new MembershipCardRepository(voicePool)
+const pricingPlanService = new PricingPlanService(pricingPlanRepository, { membershipCards: membershipCardRepository })
 registerPricingCenterRoutes(app, pricingPlanService)
 const modelOperations = new ModelOperationRepository(voicePool)
 const modelInvocation = new ModelInvocationService(new ProtocolAdapterRegistry(protocolManifest, [new MockVideoJobAdapter(), new MockEmbeddingAdapter()]))

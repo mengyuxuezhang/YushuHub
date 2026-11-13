@@ -14,6 +14,7 @@ function parseJson(value, fallback = {}) {
 }
 
 function componentRow(row) {
+  const metadata = parseJson(row.metadata_json)
   return {
     id: row.id,
     meter: row.meter_code,
@@ -25,7 +26,10 @@ function componentRow(row) {
     costAmount: Number(row.cost_amount),
     costCurrency: row.cost_currency,
     salePoints: Number(row.sale_points),
-    metadata: parseJson(row.metadata_json),
+    metadata,
+    pricingCardId: String(metadata.pricingCardId || ''),
+    salePriceCny: Number(metadata.salePriceCny || 0),
+    membershipSnapshot: metadata.membershipSnapshot && typeof metadata.membershipSnapshot === 'object' ? metadata.membershipSnapshot : null,
     status: row.status,
     consumptionMultiplier: Number(row.consumption_multiplier ?? 1),
     sortOrder: Number(row.sort_order || 0),

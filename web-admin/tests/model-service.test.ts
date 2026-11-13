@@ -19,14 +19,40 @@ describe('media pricing units', () => {
     const host = document.createElement('div')
     document.body.append(host)
     const components = ['additional_input_images', 'billable_characters'].map((meter) => ({ meter, phase: 'usage', dimensions: {}, unitSize: meter === 'billable_characters' ? 1000 : 1, costAmount: 0.2, salePoints: 50, costCurrency: 'CNY', status: 'enabled', rounding: 'none' }))
-    const app = createApp({ render: () => h(PricingPlanDrawer, { open: true, saving: false, form: { sourcePlanId: '', capabilityId: '', status: 'enabled', consumptionMultiplier: 1, components }, capabilities: [], meterOptions: ['additional_input_images', 'billable_characters'], meterLabels: { additional_input_images: '额外参考图', billable_characters: '计费字符' } } as never) })
+    const app = createApp({ render: () => h(PricingPlanDrawer, { open: true, saving: false, form: { sourcePlanId: '', capabilityId: '', status: 'enabled', consumptionMultiplier: 1, components }, capabilities: [], meterOptions: ['additional_input_images', 'billable_characters'], meterLabels: { additional_input_images: '额外参考图', billable_characters: '计费字符' }, membershipOptions: [] } as never) })
     app.mount(host)
     try {
       expect(document.body.textContent).toContain('每次请求首张参考图免费')
       expect(document.body.textContent).toContain('汉字计 2 个字符')
       expect(document.body.textContent).toContain('实际少用退回')
-      expect(document.body.textContent).toContain('积分兑换比例')
+      expect(document.body.textContent).toContain('请先在会员卡中设置价格与赠送积分')
+      expect(document.body.textContent).toContain('销售价格（人民币）')
+      expect(document.body.textContent).toContain('积分（自动计算）')
       expect(document.body.textContent).not.toContain('估算毛利')
+    } finally { app.unmount(); host.remove() }
+  })
+
+  it('computes points from the selected membership package and warns when its unit price changed', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const membershipOptions = [{
+      id: 'vip', name: 'VIP 套餐', status: 'enabled', systemBuiltin: false,
+      package: { name: 'VIP 权益', price: 100, bonusPoints: 1_000_000, durationDays: 30, pointsDurationDays: 0, originalPrice: 0 },
+      unitPriceCny: 0.0001, usable: true, reason: '',
+    }]
+    const component = {
+      meter: 'input_tokens', phase: 'usage', dimensions: {}, unitSize: 1_000_000,
+      costAmount: 0.2, salePoints: 5000, costCurrency: 'CNY', status: 'enabled', rounding: 'none',
+      pricingCardId: 'vip', salePriceCny: 0.5,
+      membershipSnapshot: { cardId: 'vip', cardName: 'VIP 套餐', packageName: 'VIP 权益', price: 100, bonusPoints: 1_000_000, durationDays: 30, pointsDurationDays: 0, unitPriceCny: 0.0002 },
+    }
+    const app = createApp({ render: () => h(PricingPlanDrawer, { open: true, saving: false, form: { sourcePlanId: 'plan-1', capabilityId: 'cap-1', status: 'enabled', consumptionMultiplier: 1, components: [component] }, capabilities: [], selectedCapability: undefined, meterOptions: ['input_tokens'], meterLabels: { input_tokens: '输入 Token' }, membershipOptions } as never) })
+    app.mount(host)
+    try {
+      expect(document.body.textContent).toContain('VIP 套餐 · 1 积分 ¥0.0001')
+      expect(document.body.textContent).toContain('5000')
+      expect(document.body.textContent).toContain('积分 = 销售价格 ÷ ¥0.0001')
+      expect(document.body.textContent).toContain('会员卡单价已变更或原套餐不可用')
     } finally { app.unmount(); host.remove() }
   })
 })

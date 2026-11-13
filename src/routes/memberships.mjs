@@ -4,6 +4,7 @@ import { db } from '../db/pool.mjs'
 import { parseJson } from '../utils/parse.mjs'
 import { slugify } from '../utils/slug.mjs'
 import { ensureAccountFreeMembership, ensureFreeMembershipFallback, grantMembershipBenefits } from '../services/memberships.mjs'
+import { membershipUnitPriceCny, normalizeMembershipPackage } from '../services/membership-packages.mjs'
 import { resolveModelServiceScope, modelServiceScopeWhere } from '../services/model-service-scope.mjs'
 
 const DISCOUNT_MODULES = ['copywriting', 'voice_clone', 'voice_synthesis', 'image_clone', 'digital_human', 'digital_human_self', 'video_editing', 'video_extract']
@@ -15,27 +16,9 @@ function safeCardId(value, name = 'membership') {
   return id
 }
 
-function normalizePackage(item = {}, index = 0) {
-  const name = String(item.name || `套餐 ${index + 1}`).trim().slice(0, 120)
-  const durationDays = Math.max(0, Math.floor(Number(item.durationDays ?? item.duration_days ?? 30) || 0))
-  const bonusPoints = Math.max(0, Number(item.bonusPoints ?? item.bonus_points ?? 0) || 0)
-  const pointsDurationDays = Math.max(0, Math.floor(Number(item.pointsDurationDays ?? item.points_duration_days ?? 0) || 0))
-  const price = Math.max(0, Number(item.price ?? 0) || 0)
-  const originalPrice = Math.max(0, Number(item.originalPrice ?? item.original_price ?? 0) || 0)
-  return {
-    name,
-    durationDays,
-    bonusPoints: Math.round(bonusPoints * 1_000_000) / 1_000_000,
-    pointsDurationDays,
-    price: Math.round(price * 100) / 100,
-    originalPrice: Math.round(originalPrice * 100) / 100,
-    showOriginalPrice: item.showOriginalPrice === true || item.show_original_price === true || item.showOriginalPrice === '1' || item.show_original_price === '1',
-  }
-}
-
 function normalizePackages(value) {
   const first = Array.isArray(value) ? value[0] : (value && typeof value === 'object' ? value : null)
-  return [normalizePackage(first || { name: '会员权益', durationDays: 30 }, 0)]
+  return [normalizeMembershipPackage(first || { name: '会员权益', durationDays: 30 }, 0)]
 }
 
 function normalizeCard(row) {
@@ -54,6 +37,7 @@ function normalizeCard(row) {
     status: row.status || 'enabled',
     package: membershipPackage,
     packages: [membershipPackage],
+    unitPriceCny: membershipUnitPriceCny(membershipPackage),
     description: row.description || '',
     createdBy: row.created_by || '',
     systemBuiltin,
@@ -277,7 +261,7 @@ async function assignMembership(userId, input = {}, actor, assertCanAccessEndUse
   const card = await findCard(input.cardId || input.card_id, actor)
   if (!card) throw new Error('会员卡不存在')
   if (card.status !== 'enabled') throw new Error('会员卡已停用')
-  const selected = card.package || card.packages?.[0] || normalizePackage({ name: '会员权益', durationDays: 30 })
+  const selected = card.package || card.packages?.[0] || normalizeMembershipPackage({ name: '会员权益', durationDays: 30 })
   const granted = await grantMembershipBenefits({
     userId,
     card,

@@ -7,7 +7,7 @@ import { useFeedbackStore } from '@/stores/feedback'
 import * as api from '@/api/pricing-center'
 import { listModelProviders } from '@/api/model-service'
 import type { ModelProvider } from '@/types/model-service'
-import type { ModelCapability, PricingComponent, PricingGroup, PricingMeter, PricingPlan } from '@/types/pricing-center'
+import type { MembershipPricingOption, ModelCapability, PricingComponent, PricingGroup, PricingMeter, PricingPlan } from '@/types/pricing-center'
 
 const props = defineProps<{ group: PricingGroup }>()
 const feedback = useFeedbackStore()
@@ -19,7 +19,7 @@ const labels: Record<PricingGroup, { title: string; description: string; tasks: 
   vector: { title: '向量与重排', description: '向量和重排模型能力正在开发。', tasks: ['embedding', 'rerank'] },
 }
 const meterLabels: Record<PricingMeter, string> = { request: '请求次数', input_tokens: '输入 Token', output_tokens: '输出 Token', cached_tokens: '缓存 Token', image: '输出图片', additional_input_images: '额外参考图（首张免费）', billable_characters: '可计费字符', audio_seconds: '音频秒数', video_seconds: '视频秒数', vector_inputs: '向量条数', resource_activation: '资源首次启用' }
-const plans = ref<PricingPlan[]>([]), capabilities = ref<ModelCapability[]>([])
+const plans = ref<PricingPlan[]>([]), capabilities = ref<ModelCapability[]>([]), membershipOptions = ref<MembershipPricingOption[]>([])
 const providers = ref<ModelProvider[]>([]), provider = ref('all')
 const providerNav = computed(() => {
   const items = new Map(providers.value.map(item => [item.id, { id: item.id, name: item.name, count: 0 }]))
@@ -41,7 +41,7 @@ const enabledCount = computed(() => filteredPlans.value.filter(item => item.stat
 const isComingSoon = computed(() => props.group === 'video' || props.group === 'vector')
 
 function component(meter: PricingMeter, phase: PricingComponent['phase'] = 'usage', unitSize = 1, dimensions: Record<string, string> = {}): PricingComponent {
-  return { meter, phase, unitSize, minimumUnits: 0, rounding: 'none', dimensions, costAmount: 0, costCurrency: 'CNY', salePoints: 0, status: 'enabled' }
+  return { meter, phase, unitSize, minimumUnits: 0, rounding: 'none', dimensions, costAmount: 0, costCurrency: 'CNY', salePoints: 0, pricingCardId: '', salePriceCny: 0, status: 'enabled' }
 }
 function defaults(task = ''): PricingComponent[] {
   if (['chat', 'web_search'].includes(task)) return [component('input_tokens', 'usage', 1_000_000), component('cached_tokens', 'usage', 1_000_000), component('output_tokens', 'usage', 1_000_000)]
@@ -53,7 +53,7 @@ function defaults(task = ''): PricingComponent[] {
   if (task === 'embedding') return [component('input_tokens', 'usage', 1_000_000), component('vector_inputs')]
   return [component('request', 'request')]
 }
-async function load() { if (isComingSoon.value) { plans.value = []; capabilities.value = []; return }; loading.value = true; error.value = ''; try { [plans.value, capabilities.value, providers.value] = await Promise.all([api.listPricingPlans(props.group), api.listModelCapabilities(), props.group === 'text' ? listModelProviders() : Promise.resolve([])]); if (provider.value !== 'all' && !providerNav.value.some(item => item.id === provider.value)) provider.value = 'all' } catch (e) { error.value = e instanceof Error ? e.message : String(e) } finally { loading.value = false } }
+async function load() { if (isComingSoon.value) { plans.value = []; capabilities.value = []; return }; loading.value = true; error.value = ''; try { [plans.value, capabilities.value, providers.value, membershipOptions.value] = await Promise.all([api.listPricingPlans(props.group), api.listModelCapabilities(), props.group === 'text' ? listModelProviders() : Promise.resolve([]), api.listMembershipPricingOptions()]); if (provider.value !== 'all' && !providerNav.value.some(item => item.id === provider.value)) provider.value = 'all' } catch (e) { error.value = e instanceof Error ? e.message : String(e) } finally { loading.value = false } }
 function openCreate() { form.sourcePlanId = ''; form.capabilityId = availableCapabilities.value[0]?.id || ''; form.status = 'enabled'; form.consumptionMultiplier = 1; form.components = defaults(availableCapabilities.value[0]?.taskType); drawer.value = true }
 function edit(plan: PricingPlan) { form.sourcePlanId = plan.id; form.capabilityId = plan.capabilityId; form.status = plan.status === 'draft' ? 'draft' : 'enabled'; form.consumptionMultiplier = plan.consumptionMultiplier ?? 1; form.components = plan.components.map(item => ({ ...item, dimensions: { ...item.dimensions } })); drawer.value = true }
 function addComponent() { form.components.push(component('request', 'request')) }
@@ -66,7 +66,14 @@ const meterOptions = computed(() => {
 function resetMeter(item: PricingComponent) { item.dimensions = item.meter === 'image' ? { resolution: '1K' } : item.meter === 'video_seconds' ? { resolution: '720p', quality: 'standard' } : {}; item.phase = item.meter === 'request' ? 'request' : item.meter === 'resource_activation' ? 'activation' : 'usage' }
 function unitLabel(item: PricingComponent) { if (['input_tokens','output_tokens','cached_tokens'].includes(item.meter)) return '每百万 Token'; if (item.meter === 'billable_characters') return '每千计费字符'; if (item.meter === 'audio_seconds') return '每分钟'; if (item.meter === 'image') return '每张'; if (item.meter === 'additional_input_images') return '每张额外参考图'; if (item.meter === 'resource_activation' || item.meter === 'request') return '每次'; return '每单位' }
 function formatConsumptionMultiplier(value: unknown) { const number = Number(value); return (Number.isFinite(number) && number >= 0 ? number : 1).toFixed(2) }
-async function save() { if (!selectedCapability.value || !form.components.length) return; saving.value = true; error.value = ''; try { await api.savePricingPlan({ sourcePlanId: form.sourcePlanId || undefined, capabilityId: selectedCapability.value.id, taskType: selectedCapability.value.taskType, status: form.status, consumptionMultiplier: form.consumptionMultiplier, components: form.components }); drawer.value = false; await load() } catch (e) { error.value = e instanceof Error ? e.message : String(e) } finally { saving.value = false } }
+function invalidComponent() {
+  return form.components.find(item => {
+    const option = membershipOptions.value.find(candidate => candidate.id === item.pricingCardId && candidate.usable)
+    const salePrice = Number(item.salePriceCny)
+    return !option || !Number.isFinite(salePrice) || salePrice < 0
+  })
+}
+async function save() { if (!selectedCapability.value || !form.components.length) return; if (invalidComponent()) { feedback.notify('请为每个计费项选择可用套餐并填写有效的销售价格', 'error'); return }; saving.value = true; error.value = ''; try { await api.savePricingPlan({ sourcePlanId: form.sourcePlanId || undefined, capabilityId: selectedCapability.value.id, taskType: selectedCapability.value.taskType, status: form.status, consumptionMultiplier: form.consumptionMultiplier, components: form.components }); drawer.value = false; await load() } catch (e) { error.value = e instanceof Error ? e.message : String(e) } finally { saving.value = false } }
 async function toggle(plan: PricingPlan) { await api.setPricingPlanStatus(plan.id, plan.status === 'enabled' ? 'disabled' : 'enabled'); await load() }
 function protectedPlan(plan: PricingPlan) { return plan.isProtected }
 async function remove(plan: PricingPlan) { if (protectedPlan(plan)) { feedback.notify('系统内置图片或音频方案不可删除，可直接编辑报价', 'warning'); return }; const accepted = await feedback.confirm({ title: `永久删除 ${plan.displayName} 计费方案？`, message: '删除后无法恢复，历史计费记录仍保留原价格快照。', confirmText: '永久删除', tone: 'danger' }); if (!accepted) return; try { await api.deletePricingPlan(plan.id); await load(); feedback.notify('计费方案已删除', 'success') } catch (e) { feedback.notify(e instanceof Error ? e.message : String(e), 'error') } }
@@ -87,7 +94,7 @@ onMounted(load)
     </nav>
     <div class="key-pool-content"><div class="pricing-metrics"><article class="panel-card"><span>方案总数</span><strong>{{ filteredPlans.length }}</strong></article><article class="panel-card"><span>生效方案</span><strong>{{ enabledCount }}</strong></article></div>
 <div class="table-panel panel-card"><div v-if="loading && !plans.length" class="table-loading">正在加载计费方案…</div><div v-else-if="!filteredPlans.length" class="empty-state"><CircleDollarSign :size="36" /><h2>{{ group === 'text' && provider !== 'all' ? '该服务商暂无计费方案' : '暂无计费方案' }}</h2><p>先为模型配置明确的任务能力，再创建由多个计费项组成的方案。</p></div><div v-else class="data-table-scroll"><table class="data-table"><thead><tr><th>模型与任务</th><th>消费倍率</th><th>计费项</th><th>状态</th><th>更新时间</th><th class="action-column">操作</th></tr></thead><tbody><tr v-for="plan in filteredPlans" :key="plan.id"><td><div class="entity-cell"><span class="entity-avatar"><CircleDollarSign :size="18" /></span><div><strong>{{ plan.displayName }}</strong><span>{{ plan.providerName }} · {{ plan.taskType }}</span><small>{{ plan.modelId }}</small><span v-if="protectedPlan(plan)" class="soft-tag system-tag">系统内置 · 可编辑不可删除</span></div></div></td><td>{{ formatConsumptionMultiplier(plan.consumptionMultiplier) }}×</td><td><div class="component-summary"><span v-for="item in plan.components" :key="item.id">{{ meterLabels[item.meter] }} · {{ item.salePoints }} 积分（{{ unitLabel(item) }}）</span></div></td><td><StatusBadge :status="plan.status" /></td><td><span class="date-cell">{{ plan.updatedAt ? new Date(plan.updatedAt).toLocaleString('zh-CN') : '—' }}</span></td><td class="action-column"><div class="row-actions"><button class="text-button" @click="edit(plan)"><Pencil :size="14" />编辑报价</button><button class="text-button" @click="toggle(plan)">{{ plan.status === 'enabled' ? '停用' : '启用' }}</button><button v-if="!protectedPlan(plan)" class="icon-danger" title="永久删除" @click="remove(plan)"><Trash2 :size="16" /></button></div></td></tr></tbody></table></div></div></div></div></template>
-<PricingPlanDrawer :open="drawer" :saving="saving" :form="form" :capabilities="drawerCapabilities" :selected-capability="selectedCapability" :meter-options="meterOptions" :meter-labels="meterLabels" @close="drawer=false" @save="save" @add-component="addComponent" @remove-component="removeComponent" @reset-meter="resetMeter" />
+<PricingPlanDrawer :open="drawer" :saving="saving" :form="form" :capabilities="drawerCapabilities" :selected-capability="selectedCapability" :meter-options="meterOptions" :meter-labels="meterLabels" :membership-options="membershipOptions" @close="drawer=false" @save="save" @add-component="addComponent" @remove-component="removeComponent" @reset-meter="resetMeter" />
 </section></template>
 
 <style scoped>

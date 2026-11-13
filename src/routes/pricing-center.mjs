@@ -2,6 +2,7 @@ import { requireAuth, requireModelServiceManager, requirePermission } from '../m
 import { resolveModelServiceScope } from '../services/model-service-scope.mjs'
 
 function organizationId(req) { return resolveModelServiceScope(req.organizationContext).organizationId || '' }
+function actorId(req) { return req.dataActor?.id || req.user?.id || '' }
 function failure(res, error) { res.status(error?.statusCode || 400).json({ success: false, error: error instanceof Error ? error.message : String(error) }) }
 
 export function registerPricingCenterRoutes(app, service) {
@@ -10,8 +11,11 @@ export function registerPricingCenterRoutes(app, service) {
   app.get('/api/pricing-plans', ...guard, async (req, res) => {
     try { res.json({ success: true, data: await service.list(req.query, organizationId(req)) }) } catch (error) { failure(res, error) }
   })
+  app.get('/api/pricing-plans/membership-options', ...guard, async (req, res) => {
+    try { res.json({ success: true, data: await service.membershipOptions(actorId(req)) }) } catch (error) { failure(res, error) }
+  })
   app.post('/api/pricing-plans', ...guard, async (req, res) => {
-    try { res.json({ success: true, data: await service.save(req.body || {}, organizationId(req)) }) } catch (error) { failure(res, error) }
+    try { res.json({ success: true, data: await service.save(req.body || {}, organizationId(req), actorId(req)) }) } catch (error) { failure(res, error) }
   })
   app.post('/api/pricing-plans/:id/quote', ...guard, async (req, res) => {
     try { res.json({ success: true, data: await service.quote(req.params.id, req.body?.events || [], organizationId(req)) }) } catch (error) { failure(res, error) }

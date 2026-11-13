@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Plus, X } from '@lucide/vue'
-import type { ModelCapability, PricingComponent, PricingMeter } from '@/types/pricing-center'
+import { formatPoints, formatUnitPriceCny, pointsFromSalePrice } from '@/utils/pricing-points'
+import type { MembershipPricingOption, ModelCapability, PricingComponent, PricingMeter } from '@/types/pricing-center'
 
-defineProps<{
+const props = defineProps<{
   open: boolean
   saving: boolean
   form: {
@@ -16,6 +17,7 @@ defineProps<{
   selectedCapability?: ModelCapability
   meterOptions: PricingMeter[]
   meterLabels: Record<PricingMeter, string>
+  membershipOptions: MembershipPricingOption[]
 }>()
 
 const emit = defineEmits<{
@@ -25,6 +27,22 @@ const emit = defineEmits<{
   removeComponent: [index: number]
   resetMeter: [component: PricingComponent]
 }>()
+
+function membershipOption(item: PricingComponent) {
+  return props.membershipOptions.find(option => option.id === item.pricingCardId)
+}
+function unitPriceOf(item: PricingComponent) {
+  return membershipOption(item)?.unitPriceCny ?? null
+}
+function calculatedPoints(item: PricingComponent) {
+  return formatPoints(pointsFromSalePrice(item.salePriceCny, unitPriceOf(item)))
+}
+function snapshotChanged(item: PricingComponent) {
+  return Boolean(item.membershipSnapshot) && item.membershipSnapshot?.unitPriceCny !== unitPriceOf(item)
+}
+function optionLabel(option: MembershipPricingOption) {
+  return option.usable ? `${option.name} · 1 积分 ${formatUnitPriceCny(option.unitPriceCny)}` : `${option.name} · ${option.reason}`
+}
 
 function unitLabel(item: PricingComponent) {
   if (['input_tokens', 'output_tokens', 'cached_tokens'].includes(item.meter)) return '每百万 Token'
@@ -66,21 +84,24 @@ function unitLabel(item: PricingComponent) {
                 <label><span>计量项</span><select v-model="item.meter" @change="emit('resetMeter', item)"><option v-for="key in meterOptions" :key="key" :value="key">{{ meterLabels[key] }}</option></select></label>
                 <label><span>扣费阶段</span><select v-model="item.phase"><option value="request">请求</option><option value="preview">试听</option><option value="activation">首次启用</option><option value="usage">实际用量</option></select></label>
                 <label v-if="item.meter==='image'"><span>图片规格</span><select v-model="item.dimensions.resolution"><option value="1K">1K</option><option value="1.5K">1.5K</option><option value="2K">2K</option></select></label>
+                <label><span>套餐</span><select v-model="item.pricingCardId"><option value="">请选择套餐</option><option v-for="option in membershipOptions" :key="option.id" :value="option.id" :disabled="!option.usable">{{ optionLabel(option) }}</option></select><small v-if="!membershipOptions.some(option => option.usable)">请先在会员卡中设置价格与赠送积分。</small></label>
                 <label><span>厂商成本（人民币）</span><input v-model.number="item.costAmount" type="number" min="0" step="0.000001" /></label>
-                <label><span>用户售价（积分）</span><input v-model.number="item.salePoints" type="number" min="0" step="0.000001" /></label>
+                <label><span>销售价格（人民币）</span><input v-model.number="item.salePriceCny" type="number" min="0" step="0.000001" /><small>按{{ unitLabel(item) }}计费。</small></label>
+                <label><span>积分（自动计算）</span><output class="points-output">{{ calculatedPoints(item) }}</output><small v-if="unitPriceOf(item) !== null">积分 = 销售价格 ÷ {{ formatUnitPriceCny(unitPriceOf(item)) }}</small><small v-else>选择有效套餐后自动计算。</small></label>
               </div>
               <div v-if="item.meter==='additional_input_images'" class="component-foot">每次请求首张参考图免费，从第二张起按实际张数收费。</div>
               <div v-if="item.meter==='billable_characters'" class="component-foot">MiniMax：汉字计 2 个字符，其他字符计 1 个；按比例收费，不足千字不取整。试听按上限确认额度，实际少用退回。</div>
-              <div class="component-foot">成本为人民币，售价为积分；实际毛利需按会员卡的积分兑换比例计算。</div>
+              <div v-if="snapshotChanged(item)" class="component-foot component-warning">会员卡单价已变更或原套餐不可用，保存将按当前所选套餐的单价重新计算积分。</div>
+              <div class="component-foot">厂商成本与销售价格均为人民币；积分按所选会员卡套餐的积分单价自动计算，用于桌面端扣费。</div>
             </article>
           </section>
         </div>
-        <footer class="drawer-footer"><button class="secondary-button" @click="emit('close')">取消</button><button class="primary-button" :disabled="saving || !form.components.length" @click="emit('save')">{{ saving ? '保存中…' : form.sourcePlanId ? '保存修改' : '创建方案' }}</button></footer>
+        <footer class="drawer-footer"><button class="secondary-button" @click="emit('close')">取消</button><button class="primary-button" :disabled="saving || !form.components.length || !membershipOptions.some(option => option.usable)" @click="emit('save')">{{ saving ? '保存中…' : form.sourcePlanId ? '保存修改' : '创建方案' }}</button></footer>
       </aside>
     </div>
   </Teleport>
 </template>
 
 <style scoped>
-.pricing-drawer{width:min(820px,calc(100vw - 24px))}.drawer-header p{margin:5px 0 0;color:var(--color-text-secondary);font-size:12px}.plan-grid{grid-template-columns:minmax(0,1.35fr) minmax(180px,.65fr)}.plan-grid select{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.component-editor .section-heading{align-items:center}.component-editor .section-heading>div{flex:1}.component-card{border:1px solid var(--color-border-soft);border-radius:16px;padding:16px;margin-top:14px;background:linear-gradient(145deg,var(--color-surface-2),var(--color-surface-1));box-shadow:0 8px 24px rgba(15,23,42,.035)}.component-title{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;padding-bottom:12px;margin-bottom:14px;border-bottom:1px solid var(--color-border-soft)}.component-title strong{font-size:14px}.component-title>span{color:var(--color-text-secondary);font-size:12px}.component-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.component-grid input,.component-grid select{box-sizing:border-box;width:100%;min-width:0}.component-foot{display:flex;justify-content:flex-end;gap:6px;margin-top:12px;color:var(--color-text-secondary);font-size:12px}.component-foot strong{color:var(--color-text-primary)}.compact{padding:7px 10px}@media(max-width:900px){.plan-grid,.component-grid{grid-template-columns:1fr}}
+.pricing-drawer{width:min(820px,calc(100vw - 24px))}.drawer-header p{margin:5px 0 0;color:var(--color-text-secondary);font-size:12px}.plan-grid{grid-template-columns:minmax(0,1.35fr) minmax(180px,.65fr)}.plan-grid select{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.component-editor .section-heading{align-items:center}.component-editor .section-heading>div{flex:1}.component-card{border:1px solid var(--color-border-soft);border-radius:16px;padding:16px;margin-top:14px;background:linear-gradient(145deg,var(--color-surface-2),var(--color-surface-1));box-shadow:0 8px 24px rgba(15,23,42,.035)}.component-title{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;padding-bottom:12px;margin-bottom:14px;border-bottom:1px solid var(--color-border-soft)}.component-title strong{font-size:14px}.component-title>span{color:var(--color-text-secondary);font-size:12px}.component-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.component-grid input,.component-grid select{box-sizing:border-box;width:100%;min-width:0}.points-output{display:flex;align-items:center;min-height:38px;padding:0 12px;border-radius:10px;background:var(--color-surface-3,rgba(148,163,184,.12));font-weight:600}.component-foot{display:flex;justify-content:flex-end;gap:6px;margin-top:12px;color:var(--color-text-secondary);font-size:12px}.component-foot strong{color:var(--color-text-primary)}.component-warning{margin-top:8px;color:var(--color-warning,#b45309)}.compact{padding:7px 10px}@media(max-width:900px){.plan-grid,.component-grid{grid-template-columns:1fr}}
 </style>
