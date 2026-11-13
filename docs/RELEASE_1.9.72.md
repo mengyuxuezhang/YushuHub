@@ -20,6 +20,8 @@
 
 不可变标签 `v1.9.72` 指向发布提交 `77c790e`，主分支和标签已推送。正式 ZIP `agent-ai-admin-v1.9.72.zip` 已生成并通过隔离审计（229 个文件、0 项违规），清单 `latest.json` 版本、发布时间与历史 50 项已更新，SHA-256 为 `89cbf1676cacee296455b7d030a8ea41aefac63f77d3528398977461f4c4ddcb`。
 
+官方更新源已发布：`https://updates.okpa.cn/agent/ai-admin/latest.json` 指向 1.9.72，历史保留 50 项（最新 1.9.72，最旧 1.9.21），ZIP 公网大小为 906301 字节，公网重新下载的 SHA-256 与清单 `89cbf1676cacee296455b7d030a8ea41aefac63f77d3528398977461f4c4ddcb` 一致；发布前的清单已备份为 `latest.json.bak-v1.9.71-20261113-134806`。
+
 测试专用服务器已升级到 1.9.72，PM2 进程在线，配置、用户与业务数据未变更，部署前应用与数据库已备份到 `/root/yushu-deploy-backups/admin-1.9.72`。
 
-正式生产部署与官方更新源（`https://updates.okpa.cn/agent/ai-admin`）发布需维护者授权后的运维通道执行，本次未包含；下游升级仍需单独授权。
+正式生产部署需维护者授权后的运维通道执行，本次未包含；下游实际升级仍需单独授权，GitHub Release 页面由维护者创建并附上同一 ZIP。
