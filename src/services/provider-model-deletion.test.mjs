@@ -24,6 +24,11 @@ test('deleted voice history and settled tasks remain intact when a model is remo
   assert.equal(f.calls.some(sql => /DELETE FROM ai_(private_voices|model_operations|provider_models)/.test(sql)), false)
   assert.ok(f.calls.includes('commit'))
 })
+test('the historical Seedream model can use ordinary model deletion', async () => {
+  const f = fixture()
+  assert.equal((await deleteProviderModel(f.pool, 'system-model-seedream-pro', scope)).deleted, true)
+  assert.ok(f.calls.some(sql => sql.includes('archived_at=CURRENT_TIMESTAMP')))
+})
 for (const [name, options] of [['live voices', { voice: true }], ['pending model tasks', { tasks: 1 }], ['sample cleanup', { pendingVoices: 1 }]]) {
   test(`model deletion rejects ${name}`, async () => {
     const f = fixture(options)

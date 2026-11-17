@@ -1,5 +1,5 @@
 import { ImageTaskService } from './image-tasks.mjs'
-import { SYSTEM_IMAGE_MODEL_IDENTIFIERS } from './image-generation.mjs'
+import { SEEDREAM_MODEL_IDENTIFIERS } from './image-generation.mjs'
 
 export function createManagedImageTasks({ pool, operations, resolveModelProxyContext, listClientModelCatalog, pricingPlanRepository, legacyPricingProjection }) {
   return {
@@ -22,8 +22,8 @@ export function createManagedImageTasks({ pool, operations, resolveModelProxyCon
         const plan = await pricingPlanRepository.findActiveByCapability(row.capability_id, user.organizationId || '')
         result.push({ id: row.id, modelId: model.id, name: model.name, providerName: model.providerName,
           configured: model.configured && Boolean(plan), pricing: plan ? legacyPricingProjection(plan) : undefined,
-          sizes: SYSTEM_IMAGE_MODEL_IDENTIFIERS.includes(model.id) ? ['1K', '1.5K', '2K'] : ['1024x1024', '1536x1024', '1024x1536'],
-          supportsReferences: SYSTEM_IMAGE_MODEL_IDENTIFIERS.includes(model.id), maxImages: 1 })
+          sizes: SEEDREAM_MODEL_IDENTIFIERS.includes(model.id) ? ['1K', '1.5K', '2K'] : ['1024x1024', '1536x1024', '1024x1536'],
+          supportsReferences: SEEDREAM_MODEL_IDENTIFIERS.includes(model.id), maxImages: 1 })
       }
       return result
     },

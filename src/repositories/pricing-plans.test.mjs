@@ -22,7 +22,7 @@ test('pricing lists global system plans for an organization and marks them prote
   assert.equal(plans[0].isProtected, true)
   assert.equal(plans[0].consumptionMultiplier, 1.26)
   assert.match(calls[0][0], /p\.organization_id=\? OR p\.provider_model_id IN/)
-  assert.deepEqual(calls[0][1].slice(0, 3), ['tenant-a', 'system-model-seedream-pro', 'system-model-minimax-speech'])
+  assert.deepEqual(calls[0][1].slice(0, 2), ['tenant-a', 'system-model-minimax-speech'])
 })
 
 test('saving an existing capability without sourcePlanId updates its current quote', async () => {

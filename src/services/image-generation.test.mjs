@@ -4,11 +4,15 @@ import test from 'node:test'
 import {
   IMAGE_RESOLUTION_TIERS,
   IMAGE_BILLING_TYPE,
-  SYSTEM_IMAGE_MODEL,
   SYSTEM_IMAGE_PROVIDER_ID,
   SYSTEM_IMAGE_MODEL_ID,
   SYSTEM_IMAGE_PRICING_ID,
-  SYSTEM_IMAGE_MODEL_IDENTIFIERS,
+  SYSTEM_AUDIO_MODEL_ID,
+  SYSTEM_AUDIO_PROVIDER_ID,
+  SYSTEM_AUDIO_PRICING_ID,
+  SYSTEM_AUDIO_ACCOUNT_ID,
+  isSystemManagedModelId,
+  SEEDREAM_MODEL_IDENTIFIERS,
   isSystemImageRecordId,
   assertNotSystemImageRecord,
   normalizeImageSize,
@@ -26,20 +30,16 @@ test('image resolution tiers are frozen and ordered', () => {
   assert.equal(IMAGE_BILLING_TYPE, 'per_image_resolution')
 })
 
-test('system image model description includes the official activation instructions', () => {
-  assert.equal(
-    SYSTEM_IMAGE_MODEL.description,
-    '豆包专业图片生成模型，支持文生图、单图生图与最多 10 张参考图融合。首次使用请先由代理商前往 https://console.volcengine.com/ark/region:cn-beijing/model/detail?name=doubao-seedream-5-0-pro 页面，点击「API 接入 - 快速接入测试」并开通该模型，否则生成请求会因模型未开通而失败。',
-  )
-})
-
-test('system image record ids are recognized and guarded', () => {
+test('historical Seedream records are ordinary configuration, while managed audio stays protected', () => {
   for (const id of [SYSTEM_IMAGE_PROVIDER_ID, SYSTEM_IMAGE_MODEL_ID, SYSTEM_IMAGE_PRICING_ID]) {
-    assert.ok(isSystemImageRecordId(id))
+    assert.equal(isSystemImageRecordId(id), false)
+    assert.doesNotThrow(() => assertNotSystemImageRecord(id))
   }
+  assert.equal(isSystemManagedModelId(SYSTEM_IMAGE_MODEL_ID), false)
+  assert.equal(isSystemManagedModelId(SYSTEM_AUDIO_MODEL_ID), true)
+  for (const id of [SYSTEM_AUDIO_PROVIDER_ID, SYSTEM_AUDIO_MODEL_ID, SYSTEM_AUDIO_PRICING_ID, SYSTEM_AUDIO_ACCOUNT_ID]) assert.throws(() => assertNotSystemImageRecord(id), /系统内置音频配置/)
   assert.equal(isSystemImageRecordId('normal-provider'), false)
   assert.equal(isSystemImageRecordId(''), false)
-  assert.throws(() => assertNotSystemImageRecord(SYSTEM_IMAGE_PRICING_ID, '该计费规则'), /系统内置图片或音频配置/)
   assert.doesNotThrow(() => assertNotSystemImageRecord('normal-provider', '该服务商'))
 })
 
@@ -170,5 +170,5 @@ test('image generation response is normalized with usage for billing', () => {
   assert.equal(empty.model, 'fallback')
   assert.deepEqual(empty.images, [])
   assert.equal(empty.usage.generated_images, 0)
-  assert.ok(SYSTEM_IMAGE_MODEL_IDENTIFIERS.includes('doubao-seedream-5-0-pro-260628'))
+  assert.ok(SEEDREAM_MODEL_IDENTIFIERS.includes('doubao-seedream-5-0-pro-260628'))
 })

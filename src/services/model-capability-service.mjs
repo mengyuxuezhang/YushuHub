@@ -89,7 +89,7 @@ export class ModelCapabilityService {
       const [[row]] = await connection.query(`SELECT c.*,m.id AS model_id FROM ai_model_task_capabilities c
         JOIN ai_provider_models m ON m.id=c.provider_model_id WHERE c.id=? AND m.archived_at IS NULL AND c.organization_id=? FOR UPDATE`, [id, organizationId])
       if (!row) throw Object.assign(new Error('模型能力不存在'), { statusCode: 404 })
-      if (isSystemManagedModelId(row.model_id)) throw new Error('系统内置图片或音频能力不允许删除，只能编辑')
+      if (isSystemManagedModelId(row.model_id)) throw new Error('系统内置或中心托管能力不允许删除，只能编辑')
       const [[plans]] = await connection.query('SELECT COUNT(*) AS total FROM ai_model_pricing_plans WHERE capability_id=?', [id])
       const [[operations]] = await connection.query('SELECT COUNT(*) AS total FROM ai_model_operations WHERE capability_id=?', [id])
       if (Number(plans?.total || 0) || Number(operations?.total || 0)) throw new Error('该能力已绑定计费方案或任务，不能删除')

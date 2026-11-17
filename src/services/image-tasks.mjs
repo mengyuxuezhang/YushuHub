@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { normalizeImageGenerationRequest, buildUpstreamImagePayload, normalizeImageGenerationResponse, SYSTEM_IMAGE_MODEL_IDENTIFIERS } from './image-generation.mjs'
+import { normalizeImageGenerationRequest, buildUpstreamImagePayload, normalizeImageGenerationResponse, SEEDREAM_MODEL_IDENTIFIERS } from './image-generation.mjs'
 import { imageUsageEvents } from './media-billing.mjs'
 import { quotePricing, pricingSnapshot, usageEvent } from './compound-pricing.mjs'
 
@@ -22,7 +22,7 @@ export function normalizeImageTask(input) {
 }
 
 export function imageTaskPayload(request, model) {
-  if (SYSTEM_IMAGE_MODEL_IDENTIFIERS.includes(model)) return buildUpstreamImagePayload(request, model)
+  if (SEEDREAM_MODEL_IDENTIFIERS.includes(model)) return buildUpstreamImagePayload(request, model)
   if (request.referenceImages.length) throw fail('此OpenAI兼容文生图入口不支持参考图，请选择支持参考图的模型', 400, 'IMAGE_TASK_REFERENCE_UNSUPPORTED')
   if (!request.size.pixels) throw fail('此模型请使用明确像素尺寸，例如1024x1024')
   if (request.watermark) throw fail('此OpenAI兼容模型未声明水印参数')

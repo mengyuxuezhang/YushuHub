@@ -164,7 +164,7 @@ export class PricingPlanRepository {
       if (!row) throw Object.assign(new Error('计费方案不存在'), { statusCode: 404 })
       if (row.status === 'enabled') throw new Error('生效中的计费方案不能删除，请先停用')
       if (row.sync_source === 'center' || isSystemManagedModelId(row.provider_model_id)) {
-        throw new Error('系统内置图片或音频计费方案不允许删除，可直接编辑报价')
+        throw new Error('系统内置或中心托管计费方案不允许删除，可直接编辑报价')
       }
       const [[usage]] = await connection.query(`SELECT COUNT(*) AS total FROM ai_model_operations
         WHERE capability_id=? AND JSON_UNQUOTE(JSON_EXTRACT(pricing_snapshot_json,'$.plan.id'))=?`, [row.capability_id, id])

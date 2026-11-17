@@ -1,8 +1,10 @@
-// 图片生成基座服务：归一化桌面端请求、构造上游载荷、分辨率分档计费与系统级固定记录守护。
+// 图片生成基座服务：归一化桌面端请求、构造上游载荷、分辨率分档计费与受管记录守护。
 // 供应商差异收敛在此层，路由与组装层只做转发。
 
 export const IMAGE_RESOLUTION_TIERS = Object.freeze(['1K', '1.5K', '2K'])
 
+// Historical record IDs remain stable for existing configurations; they no longer
+// confer built-in privileges or cause automatic creation.
 export const SYSTEM_IMAGE_PROVIDER_ID = 'system-image-volcengine-ark'
 export const SYSTEM_IMAGE_MODEL_ID = 'system-model-seedream-pro'
 export const SYSTEM_IMAGE_PRICING_ID = 'system-pricing-seedream-pro'
@@ -12,62 +14,25 @@ export const SYSTEM_AUDIO_PROVIDER_ID = 'system-audio-minimax'
 export const SYSTEM_AUDIO_MODEL_ID = 'system-model-minimax-speech'
 export const SYSTEM_AUDIO_ACCOUNT_ID = 'system-account-minimax-speech'
 export const SYSTEM_AUDIO_PRICING_ID = 'system-pricing-minimax-speech'
-export const SYSTEM_MANAGED_MODEL_IDS = Object.freeze([SYSTEM_IMAGE_MODEL_ID, SYSTEM_AUDIO_MODEL_ID])
+export const SYSTEM_MANAGED_MODEL_IDS = Object.freeze([SYSTEM_AUDIO_MODEL_ID])
 
 export function isSystemManagedModelId(id) {
   return SYSTEM_MANAGED_MODEL_IDS.includes(String(id || '').trim())
 }
 
-export const SYSTEM_IMAGE_MODEL_IDENTIFIERS = Object.freeze([
+export const SEEDREAM_MODEL_IDENTIFIERS = Object.freeze([
   'doubao-seedream-5-0-pro-260628',
 ])
 
 export const IMAGE_BILLING_TYPE = 'per_image_resolution'
 
-export const SYSTEM_IMAGE_PROVIDER = Object.freeze({
-  id: SYSTEM_IMAGE_PROVIDER_ID,
-  name: '火山方舟（图片生成）',
-  protocol: 'openai-compatible',
-  baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-  status: 'enabled',
-  isDefault: false,
-  timeoutMs: 300000,
-  sortOrder: 100,
-  notes: '系统内置图片生成服务商，不允许删除',
-})
-
-export const SYSTEM_IMAGE_MODEL = Object.freeze({
-  id: SYSTEM_IMAGE_MODEL_ID,
-  providerId: SYSTEM_IMAGE_PROVIDER_ID,
-  modelId: 'doubao-seedream-5-0-pro-260628',
-  displayName: 'Doubao Seedream 5.0 Pro',
-  description: '豆包专业图片生成模型，支持文生图、单图生图与最多 10 张参考图融合。首次使用请先由代理商前往 https://console.volcengine.com/ark/region:cn-beijing/model/detail?name=doubao-seedream-5-0-pro 页面，点击「API 接入 - 快速接入测试」并开通该模型，否则生成请求会因模型未开通而失败。',
-  modelType: 'image',
-  endpointPath: '/images/generations',
-  status: 'enabled',
-  isDefault: true,
-  capabilities: ['image_generation', 'image_to_image', 'multi_reference_image'],
-  contextWindow: 0,
-  sortOrder: 100,
-})
-
-// 默认分档计费（每张）：可由管理后台在计费规则菜单调整价格，不允许删除规则。
-export const SYSTEM_IMAGE_PRICING = Object.freeze({
-  id: SYSTEM_IMAGE_PRICING_ID,
-  billingType: IMAGE_BILLING_TYPE,
-  resolutionPoints: { '1K': 10, '1.5K': 10, '2K': 20 },
-  resolutionCostPoints: { '1K': 10, '1.5K': 10, '2K': 20 },
-  status: 'enabled',
-})
-
 export function isSystemImageRecordId(id) {
   const value = String(id || '').trim()
-  return [SYSTEM_IMAGE_PROVIDER_ID, SYSTEM_IMAGE_MODEL_ID, SYSTEM_IMAGE_PRICING_ID,
-    SYSTEM_AUDIO_PROVIDER_ID, SYSTEM_AUDIO_MODEL_ID, SYSTEM_AUDIO_ACCOUNT_ID, SYSTEM_AUDIO_PRICING_ID].includes(value)
+  return [SYSTEM_AUDIO_PROVIDER_ID, SYSTEM_AUDIO_MODEL_ID, SYSTEM_AUDIO_ACCOUNT_ID, SYSTEM_AUDIO_PRICING_ID].includes(value)
 }
 
 export function assertNotSystemImageRecord(id, label = '该记录') {
-  if (isSystemImageRecordId(id)) throw new Error(`${label}为系统内置图片或音频配置，不允许删除，只能编辑`)
+  if (isSystemImageRecordId(id)) throw new Error(`${label}为系统内置音频配置，不允许删除，只能编辑`)
 }
 
 // ---------- 请求归一化 ----------

@@ -71,13 +71,7 @@ import {
 import { setRedeemCodeDependencies, redeemCodeForEndUser } from '../../src/services/redeem-codes.mjs'
 import {
   IMAGE_BILLING_TYPE,
-  SYSTEM_IMAGE_PROVIDER,
-  SYSTEM_IMAGE_MODEL,
-  SYSTEM_IMAGE_PRICING,
   SYSTEM_AUDIO_PROVIDER_ID,
-  SYSTEM_AUDIO_MODEL_ID,
-  SYSTEM_AUDIO_ACCOUNT_ID,
-  SYSTEM_AUDIO_PRICING_ID,
   isSystemImageRecordId,
   normalizeImageGenerationRequest,
   normalizeImageResolutionPoints,
@@ -85,7 +79,7 @@ import {
   normalizeImageGenerationResponse,
   calculateImageBillingPoints,
 } from '../../src/services/image-generation.mjs'
-import { migrateLegacySystemImageRecords } from '../../src/services/image-generation-migration.mjs'
+import { seedBuiltinAudioModels } from '../../src/services/builtin-model-seeding.mjs'
 import { registerRedeemCodeRoutes } from '../../src/routes/redeem-codes.mjs'
 import { registerAuthRoutes } from '../../src/routes/auth.mjs'
 import { registerSystemRoutes } from '../../src/routes/platform-settings.mjs'
@@ -4991,154 +4985,9 @@ function isSyncEditable(row = {}, localPayload, remoteHash) {
 }
 
 async function seedDefaultModelProviderData() {
-  // Providers, keys, models, and pricing are managed explicitly in the admin console,
-  // except the system-level image generation records which are seeded and pinned here.
-  await db().query(
-    `INSERT INTO ai_model_providers (id, name, protocol, base_url, status, is_default, timeout_ms, sort_order, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-      name = VALUES(name),
-      protocol = VALUES(protocol),
-      base_url = VALUES(base_url),
-      status = VALUES(status),
-      timeout_ms = VALUES(timeout_ms),
-      sort_order = VALUES(sort_order),
-      notes = VALUES(notes)`,
-    [
-      SYSTEM_IMAGE_PROVIDER.id,
-      SYSTEM_IMAGE_PROVIDER.name,
-      SYSTEM_IMAGE_PROVIDER.protocol,
-      SYSTEM_IMAGE_PROVIDER.baseUrl,
-      SYSTEM_IMAGE_PROVIDER.status,
-      SYSTEM_IMAGE_PROVIDER.isDefault ? 1 : 0,
-      SYSTEM_IMAGE_PROVIDER.timeoutMs,
-      SYSTEM_IMAGE_PROVIDER.sortOrder,
-      SYSTEM_IMAGE_PROVIDER.notes,
-    ],
-  )
-  await db().query(
-    `INSERT INTO ai_provider_models (id, provider_id, model_id, display_name, description, model_type, endpoint_path, status, is_default, capabilities, context_window, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-      model_id = VALUES(model_id),
-      display_name = VALUES(display_name),
-      description = VALUES(description),
-      model_type = VALUES(model_type),
-      endpoint_path = VALUES(endpoint_path),
-      status = VALUES(status),
-      is_default = VALUES(is_default),
-      capabilities = VALUES(capabilities),
-      context_window = VALUES(context_window),
-      sort_order = VALUES(sort_order)`,
-    [
-      SYSTEM_IMAGE_MODEL.id,
-      SYSTEM_IMAGE_MODEL.providerId,
-      SYSTEM_IMAGE_MODEL.modelId,
-      SYSTEM_IMAGE_MODEL.displayName,
-      SYSTEM_IMAGE_MODEL.description,
-      SYSTEM_IMAGE_MODEL.modelType,
-      SYSTEM_IMAGE_MODEL.endpointPath,
-      SYSTEM_IMAGE_MODEL.status,
-      SYSTEM_IMAGE_MODEL.isDefault ? 1 : 0,
-      JSON.stringify(SYSTEM_IMAGE_MODEL.capabilities),
-      SYSTEM_IMAGE_MODEL.contextWindow,
-      SYSTEM_IMAGE_MODEL.sortOrder,
-    ],
-  )
-  await migrateLegacySystemImageRecords(db())
-  await db().query(
-    `INSERT INTO ai_model_pricing_rules (id, provider_id, provider_model_id, billing_type, resolution_points, resolution_cost_points, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-      billing_type = VALUES(billing_type)`,
-    [
-      SYSTEM_IMAGE_PRICING.id,
-      SYSTEM_IMAGE_PROVIDER.id,
-      SYSTEM_IMAGE_MODEL.id,
-      SYSTEM_IMAGE_PRICING.billingType,
-      JSON.stringify(SYSTEM_IMAGE_PRICING.resolutionPoints),
-      JSON.stringify(SYSTEM_IMAGE_PRICING.resolutionCostPoints),
-      SYSTEM_IMAGE_PRICING.status,
-    ],
-  )
-  const preferredImageCapabilityId = 'system-capability-seedream-pro'
-  await db().query(`INSERT INTO ai_model_task_capabilities
-    (id,organization_id,provider_model_id,task_type,protocol_adapter,connection_role,endpoint_path,config_json,status)
-    VALUES (?,'',?,'image_generation','openai.images','image','/images/generations',JSON_OBJECT(),'enabled')
-    ON DUPLICATE KEY UPDATE protocol_adapter=VALUES(protocol_adapter),endpoint_path=VALUES(endpoint_path)`,
-  [preferredImageCapabilityId, SYSTEM_IMAGE_MODEL.id])
-  const [[imageCapability]] = await db().query("SELECT id FROM ai_model_task_capabilities WHERE provider_model_id=? AND task_type='image_generation'", [SYSTEM_IMAGE_MODEL.id])
-  const imageCapabilityId = imageCapability.id
-  const preferredImagePlanId = 'system-plan-seedream-pro'
-  await db().query(`INSERT IGNORE INTO ai_model_pricing_plans
-    (id,organization_id,provider_model_id,capability_id,task_type,version,status,consumption_multiplier)
-    VALUES (?,'',?,?,'image_generation',1,'enabled',1)`, [preferredImagePlanId, SYSTEM_IMAGE_MODEL.id, imageCapabilityId])
-  const [[imagePlan]] = await db().query('SELECT id FROM ai_model_pricing_plans WHERE capability_id=?', [imageCapabilityId])
-  const imagePlanId = imagePlan.id
-  for (const [index, tier] of ['1K','1.5K','2K'].entries()) {
-    const componentId = `system-pc-seedream-${tier.replace('.','-')}`
-    await db().query(`DELETE own FROM ai_model_pricing_components own
-      JOIN ai_model_pricing_components existing ON existing.plan_id=own.plan_id AND existing.id<>own.id
-        AND existing.meter_code='image' AND existing.charge_phase='usage'
-        AND JSON_UNQUOTE(JSON_EXTRACT(existing.dimensions_json,'$.resolution'))=?
-      WHERE own.id=? AND own.plan_id=?`, [tier, componentId, imagePlanId])
-    const [[existing]] = await db().query(`SELECT id FROM ai_model_pricing_components WHERE plan_id=? AND meter_code='image'
-      AND charge_phase='usage' AND JSON_UNQUOTE(JSON_EXTRACT(dimensions_json,'$.resolution'))=? LIMIT 1`, [imagePlanId, tier])
-    if (!existing) await db().query(`INSERT INTO ai_model_pricing_components
-      (id,plan_id,meter_code,charge_phase,unit_size,dimensions_json,cost_amount,cost_currency,sale_points,status,sort_order)
-      VALUES (?,?,'image','usage',1,?,?,'CNY',?,'enabled',?)`,
-    [componentId, imagePlanId, JSON.stringify({ resolution: tier }), SYSTEM_IMAGE_PRICING.resolutionCostPoints[tier], SYSTEM_IMAGE_PRICING.resolutionPoints[tier], index * 10])
-  }
-  await db().query(`INSERT INTO ai_model_providers
-    (id,name,protocol,base_url,status,is_default,timeout_ms,sort_order,notes)
-    VALUES (?,?, 'openai-compatible','https://api.minimax.chat','enabled',0,120000,110,?)
-    ON DUPLICATE KEY UPDATE name=VALUES(name),protocol=VALUES(protocol),base_url=VALUES(base_url),timeout_ms=VALUES(timeout_ms),notes=VALUES(notes)`,
-  [SYSTEM_AUDIO_PROVIDER_ID, 'MiniMax（语音与音色）', '系统内置语音服务；仅需配置唯一 Key，其余参数可编辑但不可删除'])
-  await db().query(`INSERT INTO ai_provider_models
-    (id,provider_id,model_id,display_name,description,model_type,endpoint_path,status,is_default,capabilities,context_window,sort_order)
-    VALUES (?,?,?,'MiniMax Speech 2.8 Turbo','系统内置语音合成与私有音色模型','audio','/v1/t2a_v2','enabled',1,?,0,110)
-    ON DUPLICATE KEY UPDATE model_id=VALUES(model_id),display_name=VALUES(display_name),description=VALUES(description),model_type=VALUES(model_type),endpoint_path=VALUES(endpoint_path),capabilities=VALUES(capabilities)`,
-  [SYSTEM_AUDIO_MODEL_ID, SYSTEM_AUDIO_PROVIDER_ID, 'speech-2.8-turbo', JSON.stringify(['speech_synthesis','voice_cloning'])])
-  await db().query(`INSERT INTO ai_model_upstream_accounts
-    (id,organization_id,owner_user_id,provider_id,name,region,status,notes)
-    VALUES (?,'','admin',?,'MiniMax 固定语音账号','','enabled','系统内置资源边界，仅需配置唯一 Key，不允许删除')
-    ON DUPLICATE KEY UPDATE name=VALUES(name),notes=VALUES(notes)`, [SYSTEM_AUDIO_ACCOUNT_ID, SYSTEM_AUDIO_PROVIDER_ID])
-  await db().query(`INSERT INTO ai_model_pricing_rules
-    (id,provider_id,provider_model_id,billing_type,points_per_request,voice_preview_points,voice_activation_points,voice_points_per_1k_chars,consumption_multiplier,status)
-    VALUES (?,?,?,'per_request',0,3,20,3,1,'enabled')
-    ON DUPLICATE KEY UPDATE billing_type=VALUES(billing_type)`, [SYSTEM_AUDIO_PRICING_ID, SYSTEM_AUDIO_PROVIDER_ID, SYSTEM_AUDIO_MODEL_ID])
-  const preferredAudioCapabilityId = 'system-capability-minimax-speech'
-  await db().query(`INSERT INTO ai_model_task_capabilities
-    (id,organization_id,provider_model_id,task_type,protocol_adapter,upstream_account_id,connection_role,endpoint_path,config_json,status)
-    VALUES (?,'',?,'speech_synthesis','minimax.t2a',?,'voice','/v1/t2a_v2',JSON_OBJECT(),'enabled')
-    ON DUPLICATE KEY UPDATE protocol_adapter=VALUES(protocol_adapter),upstream_account_id=VALUES(upstream_account_id),endpoint_path=VALUES(endpoint_path)`,
-  [preferredAudioCapabilityId, SYSTEM_AUDIO_MODEL_ID, SYSTEM_AUDIO_ACCOUNT_ID])
-  const [[audioCapability]] = await db().query("SELECT id FROM ai_model_task_capabilities WHERE provider_model_id=? AND task_type='speech_synthesis'", [SYSTEM_AUDIO_MODEL_ID])
-  const audioCapabilityId = audioCapability.id
-  const preferredAudioPlanId = 'system-plan-minimax-speech'
-  await db().query(`INSERT IGNORE INTO ai_model_pricing_plans
-    (id,organization_id,provider_model_id,capability_id,task_type,version,status,consumption_multiplier)
-    VALUES (?,'',?,?,'speech_synthesis',1,'enabled',1)`, [preferredAudioPlanId, SYSTEM_AUDIO_MODEL_ID, audioCapabilityId])
-  const [[audioPlan]] = await db().query('SELECT id FROM ai_model_pricing_plans WHERE capability_id=?', [audioCapabilityId])
-  const audioPlanId = audioPlan.id
-  for (const item of [
-    ['preview','billable_characters','preview',1000,3,10],
-    ['activation','resource_activation','activation',1,20,20],
-    ['usage','billable_characters','usage',1000,3,30],
-  ]) {
-    const componentId = `system-pc-minimax-${item[0]}`
-    await db().query(`DELETE own FROM ai_model_pricing_components own
-      JOIN ai_model_pricing_components existing ON existing.plan_id=own.plan_id AND existing.id<>own.id
-        AND existing.meter_code=? AND existing.charge_phase=?
-        AND JSON_LENGTH(COALESCE(existing.dimensions_json,JSON_OBJECT()))=0
-      WHERE own.id=? AND own.plan_id=?`, [item[1], item[2], componentId, audioPlanId])
-    const [[existing]] = await db().query(`SELECT id FROM ai_model_pricing_components
-      WHERE plan_id=? AND meter_code=? AND charge_phase=? AND JSON_LENGTH(COALESCE(dimensions_json,JSON_OBJECT()))=0 LIMIT 1`, [audioPlanId, item[1], item[2]])
-    if (!existing) await db().query(`INSERT INTO ai_model_pricing_components
-      (id,plan_id,meter_code,charge_phase,unit_size,cost_amount,cost_currency,sale_points,status,sort_order)
-      VALUES (?,?,?,?,?,0,'CNY',?,'enabled',?)`, [componentId, audioPlanId, item[1], item[2], item[3], item[4], item[5]])
-  }
+  await seedBuiltinAudioModels(db())
 }
+
 async function listModelProviders(actor = null, scope = null) {
   const rows = await queryModelProviders(db(), actor, scope)
   return rows.map((row) => ({
