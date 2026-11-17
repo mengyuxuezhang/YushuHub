@@ -149,6 +149,9 @@ import { ProtocolAdapterRegistry, ModelInvocationService } from '../../src/servi
 import { MockEmbeddingAdapter, MockVideoJobAdapter } from '../../src/services/model-invoke/mock-adapters.mjs'
 import { ModelOperationRepository } from '../../src/repositories/model-operations.mjs'
 import { ModelTaskService } from '../../src/services/model-task-service.mjs'
+import { createManagedImageTasks } from '../../src/services/managed-image-tasks.mjs'
+import { registerImageTaskRoutes } from '../../src/routes/image-tasks.mjs'
+import { normalizeImageEndpoint } from '../../src/services/image-endpoint.mjs'
 import { UpstreamAccountService } from '../../src/services/upstream-accounts.mjs'
 import { ModelServiceV2Sync } from '../../src/services/model-service-v2-sync.mjs'
 import { assertSupplierBuildQuota, normalizeSupplierProjectIds, planSupplierProjectReservation } from '../../src/services/supplier-quotas.mjs'
@@ -4837,8 +4840,8 @@ function normalizeProviderModelType(value) {
 
 function normalizeModelEndpointPath(value, modelType = 'text') {
   const raw = String(value || '').trim()
+  if (modelType === 'image') return normalizeImageEndpoint(raw)
   if (!raw) {
-    if (modelType === 'image') return '/images/generations'
     if (modelType === 'search') return '/v1/web-search'
     return '/chat/completions'
   }
@@ -6861,6 +6864,12 @@ const modelTasks = new ModelTaskService({
   },
 })
 registerModelTaskRoutes(app, modelTasks)
+
+registerImageTaskRoutes(app, {
+  findUser: findEndUserById,
+  ...createManagedImageTasks({ pool: voicePool, operations: modelOperations, resolveModelProxyContext,
+    listClientModelCatalog, pricingPlanRepository, legacyPricingProjection }),
+})
 
 registerUserRoutes(app, {
   findUserById,

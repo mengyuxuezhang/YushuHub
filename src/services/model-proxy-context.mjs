@@ -19,6 +19,7 @@ export function createModelProxyContextResolver(deps) {
     let where = "WHERE m.archived_at IS NULL AND m.status = 'enabled' AND p.status = 'enabled'"
     if (organizationId) { where += ' AND m.organization_id = ?'; params.push(organizationId) }
     if (targetModelType) { where += ' AND m.model_type = ?'; params.push(targetModelType) }
+    if (options.providerModelId) { where += ' AND m.id = ?'; params.push(options.providerModelId) }
     if (targetModel) { where += ' AND m.model_id = ?'; params.push(targetModel) }
     const [rows] = await db().query(
       `SELECT m.*, p.name AS provider_name, p.base_url, p.protocol, p.timeout_ms, p.status AS provider_status, p.is_default AS provider_is_default, p.sort_order AS provider_sort_order

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { SYSTEM_AUDIO_ACCOUNT_ID, SYSTEM_AUDIO_PROVIDER_ID } from './image-generation.mjs'
+import { normalizeImageEndpoint } from './image-endpoint.mjs'
 
 function automaticAccountId(providerId, organizationId, ownerUserId) {
   if (providerId === SYSTEM_AUDIO_PROVIDER_ID && !organizationId) return SYSTEM_AUDIO_ACCOUNT_ID
@@ -50,10 +51,11 @@ export function automaticCapabilityPreset(modelType, providerId) {
 }
 
 export async function syncAutomaticModelCapability(connection, {
-  modelId, providerId, modelType, organizationId = '', ownerUserId = 'admin', status = 'enabled',
+  modelId, providerId, modelType, organizationId = '', ownerUserId = 'admin', status = 'enabled', endpointPath = '',
 }) {
   const preset = automaticCapabilityPreset(modelType, providerId)
   if (!preset) return null
+  if (modelType === 'image') preset.endpointPath = normalizeImageEndpoint(endpointPath)
   const managedVoice = preset.protocolAdapter === 'minimax.t2a'
   const accountId = await ensureAutomaticUpstreamAccount(connection, { providerId, organizationId, ownerUserId, managedVoice })
   const [[existing]] = await connection.query(`SELECT id,config_revision FROM ai_model_task_capabilities

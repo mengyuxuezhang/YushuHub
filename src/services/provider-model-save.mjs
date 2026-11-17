@@ -49,6 +49,7 @@ export async function saveProviderModelRecord(pool, model, scope) {
     await syncAutomaticModelCapability(conn, {
       modelId: id, providerId: model.provider.id, modelType: model.modelType,
       organizationId, status: model.status,
+      endpointPath: model.endpointPath,
     })
     await conn.commit()
     return id

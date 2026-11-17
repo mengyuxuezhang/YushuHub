@@ -21,7 +21,7 @@ export class ModelOperationRepository {
 
   async reserve(user, input) {
     const points = Number(input.points || 0)
-    if (!user?.id || !user.organizationId || !input.capabilityId || !input.taskType || !input.operationType
+    if (!user?.id || typeof user.organizationId !== 'string' || !input.capabilityId || !input.taskType || !input.operationType
       || !/^[a-zA-Z0-9_-]{8,128}$/.test(input.idempotencyKey || '') || !/^[a-f0-9]{64}$/.test(input.fingerprint || '')
       || !Number.isFinite(points) || points < 0 || !input.adapterId || !Number.isSafeInteger(input.configRevision) || input.configRevision < 1) {
       throw fail('MODEL_TASK_INPUT_INVALID', '任务参数无效', 400)
@@ -46,6 +46,12 @@ export class ModelOperationRepository {
       const [[row]] = await connection.query('SELECT * FROM ai_model_operations WHERE id=?', [id])
       return { created: true, operation: row }
     })
+  }
+
+  async findByRequest(user, operationType, requestId) {
+    const [[row]] = await this.pool.query('SELECT * FROM ai_model_operations WHERE user_id=? AND organization_id=? AND operation_type=? AND idempotency_key=?', [user.id, user.organizationId, operationType, requestId])
+    if (!row) throw fail('MODEL_TASK_NOT_FOUND', '任务不存在', 404)
+    return row
   }
 
   async start(user, id) {
