@@ -190,8 +190,8 @@ export function normalizeImageGenerationResponse(payload = {}, context = {}, req
   const usage = {
     input_images: inputImages,
     generated_images: Math.max(0, Math.floor(Number(rawUsage.generated_images ?? images.length ?? 0))),
-    output_tokens: Math.max(0, Math.floor(Number(rawUsage.output_tokens || 0))),
-    total_tokens: Math.max(0, Math.floor(Number(rawUsage.total_tokens || rawUsage.output_tokens || 0))),
+    output_tokens: Math.max(0, Math.floor(Number(rawUsage.output_tokens ?? rawUsage.completion_tokens ?? 0))),
+    total_tokens: Math.max(0, Math.floor(Number(rawUsage.total_tokens ?? ((Number(rawUsage.input_tokens ?? rawUsage.prompt_tokens) || 0) + (Number(rawUsage.output_tokens ?? rawUsage.completion_tokens) || 0))))),
     image_sizes: images.map((item) => item.size).filter(Boolean),
   }
   return {

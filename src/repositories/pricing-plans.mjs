@@ -1,3 +1,5 @@
+import { assertImagePlan } from '../services/image-task-billing.mjs'
+import { configuredImageSpecs } from '../services/image-model-specs.mjs'
 import { randomUUID } from 'node:crypto'
 import { isSystemManagedModelId, SYSTEM_MANAGED_MODEL_IDS } from '../services/image-generation.mjs'
 import { normalizeConsumptionMultiplier } from '../services/model-pricing.mjs'
@@ -104,6 +106,11 @@ export class PricingPlanRepository {
       const [[capability]] = await connection.query(`SELECT c.*,m.provider_id FROM ai_model_task_capabilities c
         JOIN ai_provider_models m ON m.id=c.provider_model_id WHERE c.id=? AND m.archived_at IS NULL AND ${scope.clause} FOR UPDATE`, [input.capabilityId, ...scope.values])
       if (!capability || capability.task_type !== normalized.taskType) throw Object.assign(new Error('模型能力不存在或任务类型不匹配'), { statusCode: 404 })
+      if (normalized.taskType.startsWith('image_') && normalized.status === 'enabled') {
+        const config = configuredImageSpecs(capability.config_json)
+        if (!config) throw new Error('请先在模型目录保存图片生成规格')
+        assertImagePlan(normalized, config)
+      }
       const planOrganizationId = isSystemManagedModelId(capability.provider_model_id) ? '' : organizationId
       const sourcePlanId = String(input.sourcePlanId || '').trim()
       const [[current]] = await connection.query('SELECT id FROM ai_model_pricing_plans WHERE capability_id=? AND organization_id=? FOR UPDATE', [capability.id, planOrganizationId])
@@ -146,6 +153,13 @@ export class PricingPlanRepository {
       const scope = systemScope(organizationId)
       const [[row]] = await connection.query(`SELECT p.* FROM ai_model_pricing_plans p JOIN ai_provider_models m ON m.id=p.provider_model_id WHERE p.id=? AND m.archived_at IS NULL AND ${scope.clause} FOR UPDATE`, [id, ...scope.values])
       if (!row) throw Object.assign(new Error('计费方案不存在'), { statusCode: 404 })
+      if (status === 'enabled' && row.task_type?.startsWith('image_')) {
+        const [[capability]] = await connection.query('SELECT config_json FROM ai_model_task_capabilities WHERE id=? FOR UPDATE', [row.capability_id])
+        const [components] = await connection.query('SELECT * FROM ai_model_pricing_components WHERE plan_id=? ORDER BY sort_order,id', [id])
+        const config = configuredImageSpecs(capability?.config_json)
+        if (!config) throw new Error('请先配置图片生成规格')
+        assertImagePlan(planRow(row, components.map(componentRow)), config)
+      }
       if (status === 'enabled') await connection.query("UPDATE ai_model_pricing_plans SET status='disabled' WHERE capability_id=? AND organization_id=? AND status='enabled'", [row.capability_id, row.organization_id || ''])
       await connection.query('UPDATE ai_model_pricing_plans SET status=? WHERE id=?', [status, id])
       await connection.commit()

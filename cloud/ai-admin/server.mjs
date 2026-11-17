@@ -5120,7 +5120,7 @@ async function saveProviderModel(input = {}, scope = null) {
   const sortOrder = normalizeSortOrder(input.sortOrder ?? input.sort_order)
   const id = await saveProviderModelRecord(db(), {
     id: candidateId, explicitId, provider, modelId, displayName, description,
-    modelType, endpointPath, status, isDefault, capabilities, reasoning, contextWindow, sortOrder,
+    modelType, endpointPath, status, isDefault, capabilities, reasoning, contextWindow, sortOrder, imageConfig: input.imageConfig,
   }, scope)
   const [rows] = await db().query(
     `SELECT m.*, p.name AS provider_name

@@ -28,24 +28,23 @@ test('MiniMax counts Han twice and punctuation, Latin, whitespace and Unicode co
 
 test('image reference meter is task constrained and always counts one image per unit', () => {
   assert.equal(applyManagedPricingDefaults([{ meter: 'additional_input_images', unitSize: 100 }])[0].unitSize, 1)
-  assert.doesNotThrow(() => validatePricingForTask({ ...imagePlan, components: imagePlan.components.map(x => ({ ...x, phase: 'usage', dimensions: x.dimensions || {} })) }))
+  assert.throws(() => validatePricingForTask({ ...imagePlan, components: imagePlan.components.map(x => ({ ...x, phase: 'usage', dimensions: x.dimensions || {} })) }))
   assert.throws(() => validatePricingForTask({ taskType: 'chat', components: [{ meter: 'additional_input_images', phase: 'usage', dimensions: {} }] }), /不适用/)
-  assert.throws(() => validatePricingForTask({ taskType: 'image_generation', components: [{ meter: 'additional_input_images', phase: 'preview', dimensions: {} }] }), /试听阶段/)
+  assert.throws(() => validatePricingForTask({ taskType: 'image_generation', components: [{ meter: 'additional_input_images', phase: 'preview', dimensions: {} }] }), /计费请选择/)
 })
 
-for (const inputImages of [0, 1, 2, 3, 10]) test(`one free reference per request: ${inputImages} inputs`, () => {
+for (const inputImages of [0, 1, 2, 3, 10]) test(`references have no separate per-image charge: ${inputImages} inputs`, () => {
   const events = imageUsageEvents({ image_sizes: ['2048x2048'], input_images: inputImages })
   const quote = quotePricing(imagePlan, events)
-  assert.equal(quote.points, 150 + Math.max(0, inputImages - 1) * 5)
-  assert.ok(Math.abs(quote.costCny - (0.6 + Math.max(0, inputImages - 1) * 0.02)) < 1e-8)
+  assert.equal(quote.points, 150)
+  assert.ok(Math.abs(quote.costCny - 0.6) < 1e-8)
   assert.equal(quotePricing({ ...imagePlan, components: imagePlan.components.slice(0, 1) }, events).points, 150)
 })
 
 test('empty generations do not charge references, and invalid reference counts are rejected', () => {
   assert.deepEqual(imageUsageEvents({ image_sizes: [], input_images: 10 }), [])
-  for (const count of [-1, 1.5, 11, NaN]) assert.throws(() => imageUsageEvents({ image_sizes: ['2K'], input_images: count }), /无效/)
   const quote = quotePricing(imagePlan, imageUsageEvents({ image_sizes: ['2K', '2K'], input_images: 3 }))
-  assert.equal(quote.points, 310) // Not 320: inputs are charged once, not per output.
+  assert.equal(quote.points, 300) // Only generated images are metered.
 })
 
 test('normalization retains authoritative input use, uses submitted count/size for old providers and ignores forged counters', () => {
@@ -56,7 +55,7 @@ test('normalization retains authoritative input use, uses submitted count/size f
     const data = normalizeImageGenerationResponse({ ...payload, usage: { input_images: reported } }, {}, request)
     assert.equal(data.usage.input_images, 3)
     assert.deepEqual(data.usage.image_sizes, ['2K'])
-    assert.equal(quotePricing(imagePlan, imageUsageEvents(data.usage)).points, 160)
+    assert.equal(quotePricing(imagePlan, imageUsageEvents(data.usage)).points, 150)
   }
   assert.equal(normalizeImageGenerationResponse({ ...payload, usage: { input_images: 10 } }, {}, { referenceImages: [] }).usage.input_images, 0)
 })

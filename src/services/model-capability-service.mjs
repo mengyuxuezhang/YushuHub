@@ -1,3 +1,4 @@
+import { normalizeImageSpecs } from './image-model-specs.mjs'
 import { randomUUID } from 'node:crypto'
 import { normalizeTaskCapability } from './model-capabilities.mjs'
 import { isSystemManagedModelId, SYSTEM_MANAGED_MODEL_IDS } from './image-generation.mjs'
@@ -75,7 +76,7 @@ export class ModelCapabilityService {
         upstream_account_id=VALUES(upstream_account_id),connection_role=VALUES(connection_role),endpoint_path=VALUES(endpoint_path),
         config_json=VALUES(config_json),config_revision=VALUES(config_revision),status=VALUES(status)`,
       [id, organizationId, model.id, normalized.taskType, normalized.protocolAdapter, accountId || null, connectionRole,
-        endpoints.submit || '', JSON.stringify({ endpoints, parameters: input.parameters && typeof input.parameters === 'object' ? input.parameters : {} }), revision, normalized.status])
+        endpoints.submit || '', JSON.stringify({ endpoints, parameters: input.parameters && typeof input.parameters === 'object' ? input.parameters : {}, ...(normalized.taskType === 'image_generation' ? { image: normalizeImageSpecs(input.image || input.config?.image) } : {}) }), revision, normalized.status])
       await connection.commit()
       return (await this.list({ organizationId, providerModelId: model.id, taskType: normalized.taskType }))[0]
     } catch (error) { await connection.rollback().catch(() => {}); throw error }

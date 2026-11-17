@@ -1,3 +1,4 @@
+import { imageSpecTemplate } from '../src/services/image-model-specs.mjs'
 // Requires a locally cached mysql:5.7 image. Creates and removes only its own
 // temporary container; no credentials, volumes or existing databases are reused.
 import assert from 'node:assert/strict'
@@ -39,8 +40,8 @@ try {
   await pool.query("INSERT INTO ai_model_task_capabilities VALUES ('cap','model','enabled')")
   const operations = new ModelOperationRepository(pool)
   let calls = 0, status = 200
-  const plan = { id: 'plan', capabilityId: 'cap', taskType: 'image_generation', status: 'enabled', components: [{ id: 'one', meter: 'image', unitSize: 1, phase: 'usage', salePoints: 10, costAmount: 0, costCurrency: 'CNY', dimensions: { resolution: '1K' } }] }
-  const service = new ImageTaskService({ operations, resolveContext: async () => ({ model: { modelId: 'image-test' }, provider: { id: 'provider', name: 'Fixture', baseUrl: 'https://fixture.invalid/v1' }, key: { apiKey: 'temporary-fixture-only' }, capabilityId: 'cap', configRevision: 1, pricingPlan: plan, pricingRates: { CNY: 1 } }),
+  const plan = { id: 'plan', imageConfig: {...imageSpecTemplate(),specs:[{size:'1024x1024',resolution:'1K',aspectRatio:'1:1'}]}, capabilityId: 'cap', taskType: 'image_generation', status: 'enabled', components: [{ id: 'one', meter: 'image', unitSize: 1, phase: 'usage', salePoints: 10, costAmount: 0, costCurrency: 'CNY', dimensions: { resolution: '1K' } }] }
+  const service = new ImageTaskService({ operations, resolveContext: async () => ({ model: { modelId: 'image-test' }, provider: { id: 'provider', name: 'Fixture', baseUrl: 'https://fixture.invalid/v1' }, key: { apiKey: 'temporary-fixture-only' }, imageConfig: {...imageSpecTemplate(),specs:[{size:'1024x1024',resolution:'1K',aspectRatio:'1:1'}]}, capabilityId: 'cap', configRevision: 1, pricingPlan: plan, pricingRates: { CNY: 1 } }),
     fetchImpl: async () => { calls++; await delay(20); return Response.json({ data: [{ b64_json: 'iVBORw0KGgo=', size: '1024x1024' }] }, { status }) } })
   const user = { id: 'user-a', organizationId: 'org-a' }, other = { id: 'user-b', organizationId: 'org-b' }
   const input = { requestId: 'concurrent-0001', model: 'model', prompt: 'fixture', size: '1024x1024' }

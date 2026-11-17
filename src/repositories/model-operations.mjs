@@ -76,7 +76,7 @@ export class ModelOperationRepository {
       if (!row) throw fail('MODEL_TASK_NOT_FOUND', '任务不存在', 404)
       if (['succeeded', 'failed'].includes(row.status)) return row
       if (input.status === 'outcome_unknown') {
-        await connection.query("UPDATE ai_model_operations SET status='outcome_unknown',error_kind=?,error_code=? WHERE id=?", [input.errorKind || 'outcome_unknown', input.errorCode || '', id])
+        await connection.query("UPDATE ai_model_operations SET status='outcome_unknown',error_kind=?,error_code=?,result_json=COALESCE(?,result_json),usage_json=COALESCE(?,usage_json) WHERE id=?", [input.errorKind || 'outcome_unknown', input.errorCode || '', safeJson(input.result), safeJson(input.usage), id])
         return { ...row, status: 'outcome_unknown' }
       }
       const finalPoints = input.status === 'succeeded' ? settled : 0

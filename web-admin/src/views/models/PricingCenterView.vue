@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { CircleDollarSign, Pencil, Plus, RefreshCw, Trash2 } from '@lucide/vue'
 import StatusBadge from '@/components/common/StatusBadge.vue'
+import { labels, meterLabels } from '@/utils/pricing-labels'
 import PricingPlanDrawer from '@/components/models/PricingPlanDrawer.vue'
 import { useFeedbackStore } from '@/stores/feedback'
 import * as api from '@/api/pricing-center'
@@ -11,14 +12,6 @@ import type { MembershipPricingOption, ModelCapability, PricingComponent, Pricin
 
 const props = defineProps<{ group: PricingGroup }>()
 const feedback = useFeedbackStore()
-const labels: Record<PricingGroup, { title: string; description: string; tasks: string[] }> = {
-  text: { title: '文本与搜索', description: '按输入、输出、缓存 Token 或请求次数组合计费。', tasks: ['chat', 'web_search'] },
-  image: { title: '图片', description: '按张数、分辨率和质量维护成本与售价。', tasks: ['image_generation', 'image_edit'] },
-  audio: { title: '语音与音频', description: '支持试听、首次启用、字符和音频时长计费。', tasks: ['speech_synthesis', 'speech_recognition'] },
-  video: { title: '视频', description: '视频模型协议与计费能力正在开发。', tasks: ['video_generation'] },
-  vector: { title: '向量与重排', description: '向量和重排模型能力正在开发。', tasks: ['embedding', 'rerank'] },
-}
-const meterLabels: Record<PricingMeter, string> = { request: '请求次数', input_tokens: '输入 Token', output_tokens: '输出 Token', cached_tokens: '缓存 Token', image: '输出图片', additional_input_images: '额外参考图（首张免费）', billable_characters: '可计费字符', audio_seconds: '音频秒数', video_seconds: '视频秒数', vector_inputs: '向量条数', resource_activation: '资源首次启用' }
 const plans = ref<PricingPlan[]>([]), capabilities = ref<ModelCapability[]>([]), membershipOptions = ref<MembershipPricingOption[]>([])
 const providers = ref<ModelProvider[]>([]), provider = ref('all')
 const providerNav = computed(() => {
@@ -46,7 +39,7 @@ function component(meter: PricingMeter, phase: PricingComponent['phase'] = 'usag
 function defaults(task = ''): PricingComponent[] {
   if (['chat', 'web_search'].includes(task)) return [component('input_tokens', 'usage', 1_000_000), component('cached_tokens', 'usage', 1_000_000), component('output_tokens', 'usage', 1_000_000)]
   if (task === 'rerank') return [component('input_tokens', 'usage', 1_000_000)]
-  if (task.startsWith('image_')) return [...['1K', '1.5K', '2K'].map(resolution => component('image', 'usage', 1, { resolution })), component('additional_input_images')]
+  if (task.startsWith('image_')) return [component('request', 'request')]
   if (task === 'speech_synthesis') return [component('billable_characters', 'preview', 1000), component('resource_activation', 'activation'), component('billable_characters', 'usage', 1000)]
   if (task === 'speech_recognition') return [component('audio_seconds', 'usage', 60, {},)]
   if (task === 'video_generation') return [component('video_seconds', 'usage', 1, { resolution: '720p' })]
@@ -55,12 +48,12 @@ function defaults(task = ''): PricingComponent[] {
 }
 async function load() { if (isComingSoon.value) { plans.value = []; capabilities.value = []; return }; loading.value = true; error.value = ''; try { [plans.value, capabilities.value, providers.value, membershipOptions.value] = await Promise.all([api.listPricingPlans(props.group), api.listModelCapabilities(), props.group === 'text' ? listModelProviders() : Promise.resolve([]), api.listMembershipPricingOptions()]); if (provider.value !== 'all' && !providerNav.value.some(item => item.id === provider.value)) provider.value = 'all' } catch (e) { error.value = e instanceof Error ? e.message : String(e) } finally { loading.value = false } }
 function openCreate() { form.sourcePlanId = ''; form.capabilityId = availableCapabilities.value[0]?.id || ''; form.status = 'enabled'; form.consumptionMultiplier = 1; form.components = defaults(availableCapabilities.value[0]?.taskType); drawer.value = true }
-function edit(plan: PricingPlan) { form.sourcePlanId = plan.id; form.capabilityId = plan.capabilityId; form.status = plan.status === 'draft' ? 'draft' : 'enabled'; form.consumptionMultiplier = plan.consumptionMultiplier ?? 1; form.components = plan.components.map(item => ({ ...item, dimensions: { ...item.dimensions } })); drawer.value = true }
+function edit(plan: PricingPlan) { form.sourcePlanId = plan.id; form.capabilityId = plan.capabilityId; form.status = plan.status === 'draft' ? 'draft' : 'enabled'; form.consumptionMultiplier = plan.consumptionMultiplier ?? 1; form.components = plan.components.filter(item => !(plan.taskType.startsWith('image_') && item.meter === 'additional_input_images')).map(item => ({ ...item, dimensions: { ...item.dimensions } })); drawer.value = true }
 function addComponent() { form.components.push(component('request', 'request')) }
 function removeComponent(index: number) { form.components.splice(index, 1) }
 const meterOptions = computed(() => {
   const task = selectedCapability.value?.taskType || ''
-  const allowed: Record<string, PricingMeter[]> = { chat: ['request','input_tokens','cached_tokens','output_tokens'], web_search: ['request','input_tokens','cached_tokens','output_tokens'], rerank: ['request','input_tokens'], image_generation: ['request','image','additional_input_images'], image_edit: ['request','image','additional_input_images'], speech_synthesis: ['request','billable_characters','audio_seconds','resource_activation'], speech_recognition: ['request','audio_seconds'], video_generation: ['request','video_seconds'], embedding: ['request','input_tokens','vector_inputs'] }
+  const allowed: Record<string, PricingMeter[]> = { chat: ['request','input_tokens','cached_tokens','output_tokens'], web_search: ['request','input_tokens','cached_tokens','output_tokens'], rerank: ['request','input_tokens'], image_generation: ['request','image','input_tokens','output_tokens','cached_tokens'], image_edit: ['request','image','input_tokens','output_tokens','cached_tokens'], speech_synthesis: ['request','billable_characters','audio_seconds','resource_activation'], speech_recognition: ['request','audio_seconds'], video_generation: ['request','video_seconds'], embedding: ['request','input_tokens','vector_inputs'] }
   return allowed[task] || ['request']
 })
 function resetMeter(item: PricingComponent) { item.dimensions = item.meter === 'image' ? { resolution: '1K' } : item.meter === 'video_seconds' ? { resolution: '720p', quality: 'standard' } : {}; item.phase = item.meter === 'request' ? 'request' : item.meter === 'resource_activation' ? 'activation' : 'usage' }

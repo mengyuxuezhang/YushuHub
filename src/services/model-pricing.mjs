@@ -100,8 +100,9 @@ export function isFreePricingRule(rule = {}) {
   if (rule.billingType === 'per_request') return Number(rule.pointsPerRequest || 0) <= 0
   if (rule.billingType === IMAGE_BILLING_TYPE) {
     const prices = rule.resolutionPoints || {}
-    return IMAGE_RESOLUTION_TIERS.every((tier) => Number(prices[tier] || 0) <= 0)
+    return Object.keys(prices).length > 0 && Object.values(prices).every(price => Number(price) <= 0)
   }
+  if (rule.imageTokenPrices?.length) return rule.imageTokenPrices.every(item => Number(item.pointsPerMTokens) <= 0)
   return Number(rule.inputPointsPerMTokens || 0) <= 0 && Number(rule.outputPointsPerMTokens || 0) <= 0
 }
 
@@ -113,6 +114,7 @@ export function clientPricingPayload(rule = {}) {
     outputPointsPerMTokens: Number(rule.outputPointsPerMTokens || 0),
     pointsPerRequest: Number(rule.pointsPerRequest || 0),
     resolutionPoints: rule.resolutionPoints || {},
+    ...(rule.imageTokenPrices?.length ? { imageTokenPrices: rule.imageTokenPrices } : {}),
     consumptionMultiplier: normalizeConsumptionMultiplier(rule.consumptionMultiplier ?? rule.consumption_multiplier, 1),
   }
 }

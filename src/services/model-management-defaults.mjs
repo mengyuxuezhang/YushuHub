@@ -1,3 +1,4 @@
+import { imageSpecTemplate, normalizeImageSpecs } from './image-model-specs.mjs'
 import { createHash, randomUUID } from 'node:crypto'
 import { SYSTEM_AUDIO_ACCOUNT_ID, SYSTEM_AUDIO_PROVIDER_ID } from './image-generation.mjs'
 import { normalizeImageEndpoint } from './image-endpoint.mjs'
@@ -51,18 +52,19 @@ export function automaticCapabilityPreset(modelType, providerId) {
 }
 
 export async function syncAutomaticModelCapability(connection, {
-  modelId, providerId, modelType, organizationId = '', ownerUserId = 'admin', status = 'enabled', endpointPath = '',
+  modelId, providerId, modelType, organizationId = '', ownerUserId = 'admin', status = 'enabled', endpointPath = '', imageConfig,
 }) {
   const preset = automaticCapabilityPreset(modelType, providerId)
   if (!preset) return null
   if (modelType === 'image') preset.endpointPath = normalizeImageEndpoint(endpointPath)
   const managedVoice = preset.protocolAdapter === 'minimax.t2a'
   const accountId = await ensureAutomaticUpstreamAccount(connection, { providerId, organizationId, ownerUserId, managedVoice })
-  const [[existing]] = await connection.query(`SELECT id,config_revision FROM ai_model_task_capabilities
+  const [[existing]] = await connection.query(`SELECT id,config_revision,config_json FROM ai_model_task_capabilities
     WHERE provider_model_id=? AND task_type=? FOR UPDATE`, [modelId, preset.taskType])
   const id = existing?.id || randomUUID()
   const revision = Number(existing?.config_revision || 0) + 1
-  const config = { endpoints: { submit: preset.endpointPath }, parameters: {} }
+  const previous = typeof existing?.config_json === 'string' ? JSON.parse(existing.config_json) : existing?.config_json || {}
+  const config = { ...previous, endpoints: { ...previous.endpoints, submit: preset.endpointPath }, parameters: previous.parameters || {}, ...(modelType === 'image' ? { image: imageConfig === undefined ? (previous.image || imageSpecTemplate('openai')) : normalizeImageSpecs(imageConfig) } : {}) }
   await connection.query(`INSERT INTO ai_model_task_capabilities
     (id,organization_id,provider_model_id,task_type,protocol_adapter,upstream_account_id,connection_role,endpoint_path,config_json,config_revision,status)
     VALUES (?,?,?,?,?,?, '',?,?,?,?) ON DUPLICATE KEY UPDATE

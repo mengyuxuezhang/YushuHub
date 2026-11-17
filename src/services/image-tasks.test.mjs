@@ -1,3 +1,4 @@
+import { imageSpecTemplate } from './image-model-specs.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ImageTaskService, normalizeImageTask, imageTaskPayload, publicImageTask } from './image-tasks.mjs'
@@ -6,6 +7,7 @@ const user = { id: 'user-a', organizationId: 'org-a' }
 const input = { requestId: 'request-00000001', model: 'image-a', prompt: '海报', size: '1024x1024' }
 function fixture({ status = 200, outcome, fetchError, balance = 100, pricingRates = { CNY: 1 } } = {}) {
   const rows = new Map(); let count = 0
+  const imageConfig = imageSpecTemplate(); imageConfig.specs = [{size:'1024x1024',resolution:'1K',aspectRatio:'1:1'},{size:'2048x2048',resolution:'2K',aspectRatio:'1:1'}]
   const plan = { id: 'price', capabilityId: 'cap', taskType: 'image_generation', version: 1, status: 'enabled', components: [
     { id: 'image-1k', meter: 'image', phase: 'usage', unitSize: 1, dimensions: { resolution: '1K' }, salePoints: 10, costAmount: 1, costCurrency: 'CNY', status: 'enabled' },
     { id: 'image-2k', meter: 'image', phase: 'usage', unitSize: 1, dimensions: { resolution: '2K' }, salePoints: 20, costAmount: 2, costCurrency: 'CNY', status: 'enabled' },
@@ -32,13 +34,13 @@ function fixture({ status = 200, outcome, fetchError, balance = 100, pricingRate
   const calls = []
   const service = new ImageTaskService({ operations, resolveContext: async (_user, model) => ({
     model: { modelId: model }, provider: { id: 'provider', name: 'Provider', baseUrl: 'https://provider.example/v1' }, key: { apiKey: 'test-secret' },
-    capabilityId: 'cap', configRevision: 1, pricingPlan: plan, pricingRates, endpointPath: '/images/generations',
+    imageConfig, capabilityId: 'cap', configRevision: 1, pricingPlan: plan, pricingRates, endpointPath: '/images/generations',
   }), fetchImpl: async (url, init) => {
     count++; calls.push({ url: String(url), init })
     if (fetchError) throw fetchError
     return new Response(JSON.stringify(outcome ?? { data: [{ b64_json: 'iVBORw0KGgo=', size: '1024x1024' }] }), { status })
   } })
-  return { service, rows, calls, plan, count: () => count, balance: () => balance }
+  return { service, rows, calls, plan, imageConfig, count: () => count, balance: () => balance }
 }
 
 test('two configured models use their actual identifiers and no Seedream fields', async () => {
@@ -84,8 +86,8 @@ for (const config of [{ status: 503 }, { status: 408 }, { fetchError: new Error(
   await h.service.submit(user, input); assert.equal(h.count(), 1)
 })
 test('Seedream retains reference and vendor-specific payload, generic model rejects references before reserve', async () => {
-  const request = normalizeImageTask({ ...input, model: 'doubao-seedream-5-0-pro-260628', referenceImages: ['data:image/png;base64,YQ=='] }).request
-  assert.deepEqual(imageTaskPayload(request, request.model).image, request.referenceImages)
+  const request = normalizeImageTask({ ...input, size: '2K', model: 'doubao-seedream-5-0-pro-260628', referenceImages: ['data:image/png;base64,YQ=='] }).request
+  assert.deepEqual(imageTaskPayload(request, request.model, imageSpecTemplate('seedream')).image, request.referenceImages)
   const h = fixture(); await assert.rejects(h.service.submit(user, { ...input, referenceImages: ['data:image/png;base64,YQ=='] }), /参考图/)
   assert.equal(h.count(), 0); assert.equal(h.balance(), 100)
 })
@@ -93,11 +95,34 @@ test('client price, credentials and arbitrary endpoints cannot enter image tasks
   for (const key of ['apiKey', 'endpoint', 'points', 'estimatedUsage']) assert.throws(() => normalizeImageTask({ ...input, [key]: 'forged' }), /字段/)
 })
 test('size without a matching price is rejected before reservation', async () => {
-  const h = fixture(); await assert.rejects(h.service.submit(user, { ...input, size: '1536x1024' }), /价格/); assert.equal(h.balance(), 100)
+  const h = fixture(); await assert.rejects(h.service.submit(user, { ...input, size: '1536x1024' }), /不支持/); assert.equal(h.balance(), 100)
 })
 test('a request component cannot hide an unpriced image resolution in a compound plan', async () => {
   const h = fixture()
   h.plan.components.push({ id: 'request', meter: 'request', phase: 'request', unitSize: 1, salePoints: 0, costAmount: 0, costCurrency: 'CNY', status: 'enabled' })
-  await assert.rejects(h.service.submit(user, { ...input, size: '1536x1024' }), /价格/)
+  await assert.rejects(h.service.submit(user, { ...input, size: '1024x1024' }), /计费请选择/)
   assert.equal(h.count(), 0); assert.equal(h.balance(), 100)
+})
+test('automatic size uses configured default and fixed quality, independent of model name', async () => {
+  const h = fixture(); h.imageConfig.quality='high'
+  const result = await h.service.submit(user, { ...input, size: 'auto', model: 'arbitrary-new-model' })
+  assert.equal(result.status,'succeeded')
+  assert.deepEqual(JSON.parse(h.calls[0].init.body),{model:'arbitrary-new-model',prompt:'海报',size:'1024x1024',n:1,quality:'high'})
+})
+test('per-request mode charges once for one successful image', async () => {
+  const h=fixture();h.plan.components=[{meter:'request',phase:'request',unitSize:1,salePoints:7,costAmount:1,costCurrency:'CNY',status:'enabled'}]
+  await Promise.all([h.service.submit(user,input),h.service.submit(user,input)])
+  assert.equal(h.balance(),93);assert.equal(h.count(),1)
+})
+test('token success settles actual usage and refunds unused reservation',async()=>{
+  const h=fixture({outcome:{data:[{b64_json:'aGVsbG8=',size:'1024x1024'}],usage:{input_tokens:100,output_tokens:200,total_tokens:300}}})
+  h.imageConfig.usage='openai';h.plan.components=['input_tokens','output_tokens'].map(meter=>({meter,phase:'usage',unitSize:1000000,salePoints:100,costAmount:0,costCurrency:'CNY',status:'enabled'}))
+  const result=await h.service.submit(user,input);assert.equal(result.status,'succeeded');assert.equal(result.points_settled,0.03);assert.ok(Math.abs(h.balance()-99.97)<1e-8)
+  await h.service.submit(user,input);assert.equal(h.count(),1)
+})
+for(const usage of [undefined,{input_tokens:100,output_tokens:2000000},{output_tokens:200}])test(`missing/excessive tokens preserve result and reservation without retry ${JSON.stringify(usage)}`,async()=>{
+  const h=fixture({outcome:{data:[{b64_json:'aGVsbG8=',size:'1024x1024'}],...(usage?{usage}:{})}})
+  h.imageConfig.usage='openai';h.plan.components=['input_tokens','output_tokens'].map(meter=>({meter,phase:'usage',unitSize:1000000,salePoints:100,costAmount:0,costCurrency:'CNY',status:'enabled'}))
+  const result=await h.service.submit(user,input);assert.equal(result.status,'outcome_unknown');assert.ok(result.points_reserved>0);assert.equal(JSON.parse(result.result_json).images.length,1)
+  await h.service.submit(user,input);assert.equal(h.count(),1);assert.ok(h.balance()>=0)
 })

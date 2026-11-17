@@ -1,3 +1,4 @@
+import { backfillImageSpecs, retireImageReferencePricing } from '../services/image-specs-migration.mjs'
 import { consolidatePricingPlans } from '../services/pricing-current-plan-migration.mjs'
 import crypto from 'node:crypto'
 import mysql from 'mysql2/promise'
@@ -830,6 +831,8 @@ export async function initDatabase(options = {}) {
     WHERE model_type IN ('text', 'image', 'search')
   `)
 
+  await backfillImageSpecs(pool)
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ai_model_pricing_rules (
       id VARCHAR(64) PRIMARY KEY,
@@ -1034,6 +1037,7 @@ export async function initDatabase(options = {}) {
   `)
 
   await consolidatePricingPlans(pool)
+  await retireImageReferencePricing(pool)
   await ensureIndex('ai_model_pricing_plans', 'uk_pricing_current_capability_org', 'ADD UNIQUE INDEX uk_pricing_current_capability_org (capability_id, organization_id)')
 
   await pool.query(`

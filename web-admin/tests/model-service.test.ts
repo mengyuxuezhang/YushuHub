@@ -22,7 +22,7 @@ describe('media pricing units', () => {
     const app = createApp({ render: () => h(PricingPlanDrawer, { open: true, saving: false, form: { sourcePlanId: '', capabilityId: '', status: 'enabled', consumptionMultiplier: 1, components }, capabilities: [], meterOptions: ['additional_input_images', 'billable_characters'], meterLabels: { additional_input_images: '额外参考图', billable_characters: '计费字符' }, membershipOptions: [] } as never) })
     app.mount(host)
     try {
-      expect(document.body.textContent).toContain('每次请求首张参考图免费')
+      expect(document.body.textContent).not.toContain('首张参考图免费')
       expect(document.body.textContent).toContain('汉字计 2 个字符')
       expect(document.body.textContent).toContain('实际少用退回')
       expect(document.body.textContent).toContain('请先在会员卡中设置价格与赠送积分')

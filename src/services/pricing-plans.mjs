@@ -1,3 +1,4 @@
+import { imageBillingMode } from './image-task-billing.mjs'
 import { normalizePricingPlan, pricingSnapshot, quotePricing } from './compound-pricing.mjs'
 import { salePointsFromCny } from './membership-packages.mjs'
 
@@ -7,7 +8,7 @@ const TASK_GROUPS = Object.freeze({
 })
 const TASK_METERS = Object.freeze({
   chat: ['request', 'input_tokens', 'output_tokens', 'cached_tokens'], web_search: ['request', 'input_tokens', 'output_tokens', 'cached_tokens'],
-  rerank: ['request', 'input_tokens'], image_generation: ['request', 'image', 'additional_input_images'], image_edit: ['request', 'image', 'additional_input_images'],
+  rerank: ['request', 'input_tokens'], image_generation: ['request', 'image', 'input_tokens', 'output_tokens', 'cached_tokens'], image_edit: ['request', 'image', 'input_tokens', 'output_tokens', 'cached_tokens'],
   speech_synthesis: ['request', 'billable_characters', 'audio_seconds', 'resource_activation'], speech_recognition: ['request', 'audio_seconds'],
   video_generation: ['request', 'video_seconds'], embedding: ['request', 'input_tokens', 'vector_inputs'],
 })
@@ -28,11 +29,21 @@ export function applyManagedPricingDefaults(components = []) {
 export function validatePricingForTask(plan) {
   const allowed = TASK_METERS[plan.taskType]
   if (!allowed) throw new Error('任务类型没有计费模板')
+  const imageTask = plan.taskType.startsWith('image_')
+  if (imageTask) imageBillingMode(plan)
   for (const item of plan.components) {
     if (!allowed.includes(item.meter)) throw new Error(`计量项 ${item.meter} 不适用于任务 ${plan.taskType}`)
     if (item.meter === 'request' && item.phase !== 'request') throw new Error('请求次数只能在请求阶段计费')
     if (item.meter === 'resource_activation' && item.phase !== 'activation') throw new Error('资源首次启用只能在启用阶段计费')
     if (item.phase === 'preview' && !(plan.taskType === 'speech_synthesis' && item.meter === 'billable_characters')) throw new Error('试听阶段只支持语音可计费字符')
+    if (imageTask) {
+      if (item.meter !== 'request' && item.phase !== 'usage') throw new Error('图片计费仅支持成功后的实际用量')
+      const dims = item.dimensions || {}
+      const validImage = item.meter === 'image' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$/.test(dims.resolution || '') && Object.keys(dims).every(k => k === 'resolution')
+      const validToken = ['input_tokens', 'cached_tokens', 'output_tokens'].includes(item.meter) && Object.entries(dims).every(([k,v]) => k === 'modality' && ['text','image'].includes(v))
+      if (!validImage && !validToken && !(item.meter === 'request' && !Object.keys(dims).length)) throw new Error('图片计费规格无效')
+      continue
+    }
     const template = DIMENSION_OPTIONS[item.meter]
     const dimensions = Object.entries(item.dimensions || {})
     if (!template && dimensions.length) throw new Error(`${item.meter} 不支持规格维度`)

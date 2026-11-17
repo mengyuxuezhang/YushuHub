@@ -175,7 +175,8 @@ export function legacyPricingProjection(planInput) {
   const images = active.filter(item => item.meter === 'image' && item.phase === 'usage' && item.dimensions?.resolution)
   if (images.length) return { billingType: 'per_image_resolution', inputPointsPerMTokens: 0, outputPointsPerMTokens: 0,
     pointsPerRequest: 0, resolutionPoints: Object.fromEntries(images.map(item => [item.dimensions.resolution, rounded(Number(item.salePoints) / Number(item.unitSize))])), consumptionMultiplier: plan.consumptionMultiplier }
-  return { billingType: 'per_token', inputPointsPerMTokens: perMillion('input_tokens'), outputPointsPerMTokens: perMillion('output_tokens'),
+  const imageTokenPrices = plan.taskType?.startsWith('image_') ? active.filter(item => ['input_tokens','output_tokens','cached_tokens'].includes(item.meter)).map(item => ({ meter: item.meter, modality: item.dimensions?.modality || '', pointsPerMTokens: rounded(Number(item.salePoints) * (1000000 / Number(item.unitSize))) })) : []
+  return { ...(imageTokenPrices.length ? { imageTokenPrices } : {}), billingType: 'per_token', inputPointsPerMTokens: perMillion('input_tokens') || Math.max(0,...imageTokenPrices.filter(item=>item.meter==='input_tokens').map(item=>item.pointsPerMTokens)), outputPointsPerMTokens: perMillion('output_tokens'),
     pointsPerRequest: 0, resolutionPoints: {}, consumptionMultiplier: plan.consumptionMultiplier }
 }
 

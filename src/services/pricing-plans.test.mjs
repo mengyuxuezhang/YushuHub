@@ -13,7 +13,7 @@ test('task pricing templates accept compound voice/video/vector meters', () => {
 test('task pricing templates reject unrelated meters and invalid phases', () => {
   assert.throws(() => validatePricingForTask(normalizePricingPlan({ taskType: 'embedding', version: 1, components: [{ meter: 'video_seconds' }] })), /不适用/)
   assert.throws(() => validatePricingForTask(normalizePricingPlan({ taskType: 'chat', version: 1, components: [{ meter: 'request', phase: 'usage' }] })), /请求阶段/)
-  assert.throws(() => validatePricingForTask(normalizePricingPlan({ taskType: 'image_generation', version: 1, components: [{ meter: 'image', dimensions: { resolution: '8K' } }] })), /内置选项/)
+  assert.throws(() => validatePricingForTask(normalizePricingPlan({ taskType: 'image_generation', version: 1, components: [{ meter: 'image', dimensions: { resolution: '../invalid' } }] })), /规格无效/)
 })
 
 test('management defaults keep unit sizes internal and all costs in CNY', () => {

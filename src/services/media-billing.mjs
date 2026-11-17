@@ -20,12 +20,5 @@ export function imageUsageEvents(usage = {}) {
     const resolution = resolveResolutionTier(size)
     if (resolution) events.push(usageEvent('image', 1, { dimensions: { resolution } }))
   }
-  // One free reference per request, never per output image. Failed/empty
-  // generations do not create a user charge under the current success policy.
-  if (events.length) {
-    const count = Number(usage.input_images ?? 0)
-    if (!Number.isSafeInteger(count) || count < 0 || count > 10) throw new Error('参考图用量无效')
-    events.push(usageEvent('additional_input_images', Math.max(0, count - 1)))
-  }
   return events
 }

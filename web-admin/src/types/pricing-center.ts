@@ -69,6 +69,7 @@ export interface ModelCapability {
   providerId: string
   taskType: string
   protocolAdapter: string
+  config?: { endpoints?: Record<string, string>; parameters?: Record<string, unknown>; image?: any }
   configRevision: number
   status: 'enabled' | 'disabled'
   isSystem?: boolean

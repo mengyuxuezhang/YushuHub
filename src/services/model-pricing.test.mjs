@@ -103,3 +103,9 @@ test('all billing types recognize an entirely free sales rule', () => {
   assert.equal(isFreePricingRule({ billingType: 'per_image_resolution', resolutionPoints: { '1K': 0, '1.5K': 0, '2K': 0 } }), true)
   assert.equal(isFreePricingRule({ billingType: 'per_token', inputPointsPerMTokens: 0, outputPointsPerMTokens: 1 }), false)
 })
+
+test('custom image resolutions and token detail are never advertised as free',()=>{
+ assert.equal(isFreePricingRule({billingType:'per_image_resolution',resolutionPoints:{'4K':10}}),false);
+ assert.equal(isFreePricingRule({billingType:'per_image_resolution',resolutionPoints:{'4K':0}}),true);
+ assert.equal(isFreePricingRule({billingType:'per_token',imageTokenPrices:[{meter:'cached_tokens',pointsPerMTokens:10}]}),false);
+})
