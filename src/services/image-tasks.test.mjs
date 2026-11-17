@@ -4,7 +4,7 @@ import { ImageTaskService, normalizeImageTask, imageTaskPayload, publicImageTask
 
 const user = { id: 'user-a', organizationId: 'org-a' }
 const input = { requestId: 'request-00000001', model: 'image-a', prompt: '海报', size: '1024x1024' }
-function fixture({ status = 200, outcome, fetchError, balance = 100 } = {}) {
+function fixture({ status = 200, outcome, fetchError, balance = 100, pricingRates = { CNY: 1 } } = {}) {
   const rows = new Map(); let count = 0
   const plan = { id: 'price', capabilityId: 'cap', taskType: 'image_generation', version: 1, status: 'enabled', components: [
     { id: 'image-1k', meter: 'image', phase: 'usage', unitSize: 1, dimensions: { resolution: '1K' }, salePoints: 10, costAmount: 1, costCurrency: 'CNY', status: 'enabled' },
@@ -32,7 +32,7 @@ function fixture({ status = 200, outcome, fetchError, balance = 100 } = {}) {
   const calls = []
   const service = new ImageTaskService({ operations, resolveContext: async (_user, model) => ({
     model: { modelId: model }, provider: { id: 'provider', name: 'Provider', baseUrl: 'https://provider.example/v1' }, key: { apiKey: 'test-secret' },
-    capabilityId: 'cap', configRevision: 1, pricingPlan: plan, pricingRates: { CNY: 1 }, endpointPath: '/images/generations',
+    capabilityId: 'cap', configRevision: 1, pricingPlan: plan, pricingRates, endpointPath: '/images/generations',
   }), fetchImpl: async (url, init) => {
     count++; calls.push({ url: String(url), init })
     if (fetchError) throw fetchError
@@ -48,6 +48,17 @@ test('two configured models use their actual identifiers and no Seedream fields'
     assert.deepEqual(JSON.parse(h.calls[0].init.body), { model, prompt: '海报', size: '1024x1024', n: 1 })
     assert.equal(task.result.requestId, task.id); assert.equal(JSON.stringify(task).includes('test-secret'), false)
   }
+})
+test('a fresh installation without exchange-rate rows can settle CNY images', async () => {
+  const h = fixture({ pricingRates: {} })
+  const task = publicImageTask(await h.service.submit(user, input))
+  assert.equal(task.status, 'succeeded'); assert.equal(task.settledPoints, 10); assert.equal(h.balance(), 90)
+})
+test('a missing foreign-currency rate still rejects before reserving or submitting', async () => {
+  const h = fixture({ pricingRates: {} })
+  h.plan.components.forEach(item => { item.costCurrency = 'USD' })
+  await assert.rejects(h.service.submit(user, input), /USD/)
+  assert.equal(h.count(), 0); assert.equal(h.balance(), 100)
 })
 test('repeated and concurrent submissions invoke once and reserve once', async () => {
   const h = fixture()

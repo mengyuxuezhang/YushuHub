@@ -59,8 +59,11 @@ export class ImageTaskService {
     const plan = context.pricingPlan
     if (!plan || plan.taskType !== 'image_generation' || plan.capabilityId !== context.capabilityId) throw fail('图片模型尚未配置有效任务计费方案', 409, 'IMAGE_TASK_PRICING_REQUIRED')
     const estimateUsage = { image_sizes: [request.size.pixels || request.size.tier], input_images: request.referenceImages.length }
-    const snapshot = pricingSnapshot(plan, context.pricingRates || { CNY: 1 })
-    const estimate = quotePricing(plan, events(estimateUsage), context.pricingRates || { CNY: 1 })
+    // A fresh installation can have no exchange-rate rows. CNY is the base
+    // currency, while foreign currencies still require an explicit rate.
+    const rates = { ...context.pricingRates, CNY: 1 }
+    const snapshot = pricingSnapshot(plan, rates)
+    const estimate = quotePricing(plan, events(estimateUsage), rates)
     assertImagePrice(plan, estimate)
     const fingerprint = createHash('sha256').update(JSON.stringify(request)).digest('hex')
     const reserved = await this.operations.reserve(user, {
