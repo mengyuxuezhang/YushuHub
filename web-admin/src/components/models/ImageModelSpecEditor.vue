@@ -8,7 +8,7 @@ const emit = defineEmits<{ change: [value: any]; loading: [value: boolean] }>()
 const capability = ref<ModelCapability>(), busy = ref(false), message = ref('')
 const form = reactive<any>({})
 function preset(name: string) {
-  Object.assign(form, { version: 1, template: name, adapter: name === 'seedream' ? 'seedream' : 'openai', quality: '', usage: 'none', tokenBudget: { input: 32768, output: 32768 }, maxReferences: name === 'seedream' ? 10 : 0,
+  Object.assign(form, { version: 1, template: name, adapter: name === 'seedream' ? 'seedream' : 'openai', quality: '', usage: 'none', editEndpointPath: '', tokenBudget: { input: 32768, output: 32768 }, maxReferences: name === 'seedream' ? 10 : 0,
     defaultSize: name === 'seedream' ? '2K' : '1024x1024', specs: name === 'seedream'
       ? ['1K', '1.5K', '2K'].map(size => ({ size, resolution: size, aspectRatio: 'auto' }))
       : [{ size: '1024x1024', resolution: '1K', aspectRatio: '1:1' }, { size: '1536x1024', resolution: '1.5K', aspectRatio: '3:2' }, { size: '1024x1536', resolution: '1.5K', aspectRatio: '2:3' }] })
@@ -48,9 +48,10 @@ watch(form, () => { if (!busy.value && (!props.modelId || capability.value)) emi
       <details><summary>高级设置：协议、质量、参考图和 Token</summary>
         <div v-for="(spec,index) in form.specs" :key="index" class="spec-row"><label><span>{{ spec.size }} 返回最少像素（可选）</span><input v-model.number="spec.minPixels" type="number" min="1" max="67108864" /></label><label><span>返回最多像素（可选）</span><input v-model.number="spec.maxPixels" type="number" min="1" max="67108864" /></label></div>
         <small>档位接口可能返回实际像素值，模板会设置对应范围；自定义档位需按供应商文档填写，超出范围保留待核对。</small>
-        <label><span>参数协议</span><select v-model="form.adapter"><option value="openai">OpenAI 兼容文生图</option><option value="seedream">Seedream 图片参数</option></select></label>
+        <label><span>参数协议</span><select v-model="form.adapter"><option value="openai">OpenAI 兼容图片</option><option value="seedream">Seedream 图片参数</option></select></label>
         <label><span>固定默认质量</span><select v-model="form.quality"><option value="">不传，由上游默认</option><option v-for="item in ['auto','low','medium','high','standard','hd']" :key="item" :value="item">{{ item }}</option></select></label>
-        <label><span>最多参考图</span><input v-model.number="form.maxReferences" type="number" min="0" max="10" /><small>0 表示不支持。当前 OpenAI 兼容文生图入口不支持参考图。</small></label>
+        <label><span>最多参考图</span><input v-model.number="form.maxReferences" type="number" min="0" max="10" /><small>0 表示只支持文生图。请按服务商实际支持填写。</small></label>
+        <label v-if="form.adapter === 'openai' && form.maxReferences > 0"><span>图片编辑端点</span><input v-model.trim="form.editEndpointPath" placeholder="/images/edits" maxlength="200" /><small>相对于服务商基址。留空使用 /images/edits。有参考图时才调用此端点。</small></label>
         <label><span>Token 用量</span><select v-model="form.usage"><option value="none">未确认可靠用量，仅按次或分辨率计费</option><option value="openai">已确认返回 OpenAI 图片 usage</option></select></label>
         <template v-if="form.usage==='openai'"><label><span>每类输入 Token 预占上限</span><input v-model.number="form.tokenBudget.input" type="number" min="1" max="1000000" /></label><label><span>输出 Token 预占上限</span><input v-model.number="form.tokenBudget.output" type="number" min="1" max="1000000" /></label><small>按上限预占积分，成功后按实际用量退差额；用量缺失或费用超过预占时保留任务待核对，不自动重复生成。</small></template>
       </details>

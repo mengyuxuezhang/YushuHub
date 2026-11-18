@@ -91,6 +91,40 @@ test('Seedream retains reference and vendor-specific payload, generic model reje
   const h = fixture(); await assert.rejects(h.service.submit(user, { ...input, referenceImages: ['data:image/png;base64,YQ=='] }), /参考图/)
   assert.equal(h.count(), 0); assert.equal(h.balance(), 100)
 })
+test('OpenAI edits use the per-model endpoint and multipart files without changing text generation', async () => {
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jY6sAAAAASUVORK5CYII='
+  for (const refs of [[png], [png, png]]) {
+    const h = fixture()
+    Object.assign(h.imageConfig, { maxReferences: 2, editEndpointPath: '/custom/edits', quality: 'low' })
+    const task = await h.service.submit(user, { ...input, referenceImages: refs })
+    assert.equal(task.status, 'succeeded')
+    assert.equal(h.calls[0].url, 'https://provider.example/v1/custom/edits')
+    assert.equal(h.calls[0].init.headers['content-type'], undefined)
+    const form = h.calls[0].init.body
+    assert.equal(form.get('model'), input.model)
+    assert.equal(form.get('prompt'), input.prompt)
+    assert.equal(form.get('size'), '1024x1024')
+    assert.equal(form.get('quality'), 'low')
+    assert.equal(form.get('n'), '1')
+    const files = form.getAll(refs.length === 1 ? 'image' : 'image[]')
+    assert.equal(files.length, refs.length)
+    for (const file of files) {
+      assert.equal(file.type, 'image/png')
+      assert.equal(Buffer.from(await file.arrayBuffer()).toString('base64'), png.split(',')[1])
+    }
+    assert.equal(JSON.parse(task.result_json).usage.input_images, refs.length)
+    await h.service.submit(user, { ...input, referenceImages: refs })
+    assert.equal(h.count(), 1)
+  }
+  const h = fixture()
+  Object.assign(h.imageConfig, { maxReferences: 1, editEndpointPath: '/custom/edits' })
+  await assert.rejects(h.service.submit(user, { ...input, referenceImages: [png, png] }), /参考图数量/)
+  await assert.rejects(h.service.submit(user, { ...input, referenceImages: ['data:image/png;base64,YQ=='] }), /格式/)
+  assert.equal(h.count(), 0)
+  await h.service.submit(user, input)
+  assert.equal(h.calls[0].url, 'https://provider.example/v1/images/generations')
+  assert.equal(h.calls[0].init.headers['content-type'], 'application/json')
+})
 test('client price, credentials and arbitrary endpoints cannot enter image tasks', () => {
   for (const key of ['apiKey', 'endpoint', 'points', 'estimatedUsage']) assert.throws(() => normalizeImageTask({ ...input, [key]: 'forged' }), /字段/)
 })

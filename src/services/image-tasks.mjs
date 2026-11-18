@@ -1,6 +1,7 @@
 import { selectImageSpec, outputImageSpec } from './image-model-specs.mjs'
 import { assertImagePlan, imageBillingEvents } from './image-task-billing.mjs'
 import { createHash } from 'node:crypto'
+import { buildOpenAiEditForm } from './openai-image-edit.mjs'
 import { normalizeImageGenerationRequest, buildUpstreamImagePayload, normalizeImageGenerationResponse } from './image-generation.mjs'
 import { quotePricing, pricingSnapshot } from './compound-pricing.mjs'
 
@@ -25,7 +26,8 @@ export function imageTaskPayload(request, model, config) {
   const resolved = { ...request, size: { tier: spec.size.includes('x') ? '' : spec.size, pixels: spec.size.includes('x') ? spec.size : '' } }
   if (config.adapter === 'seedream') return buildUpstreamImagePayload(resolved, model)
   if (request.watermark) throw fail('此模型未声明水印参数')
-  return { model, prompt: request.prompt, size: spec.size, n: 1, ...(config.quality ? { quality: config.quality } : {}) }
+  const fields = { model, prompt: request.prompt, size: spec.size, n: 1, ...(config.quality ? { quality: config.quality } : {}) }
+  return request.referenceImages.length ? buildOpenAiEditForm(fields, request.referenceImages) : fields
 }
 
 async function boundedJson(response) {
@@ -54,6 +56,7 @@ export class ImageTaskService {
     const { requestId, request } = normalizeImageTask(input)
     const context = await this.resolveContext(user, request.model)
     const body = imageTaskPayload(request, context.model.modelId, context.imageConfig)
+    const editing = body instanceof FormData;
     const plan = context.pricingPlan
     if (!plan || plan.taskType !== 'image_generation' || plan.capabilityId !== context.capabilityId) throw fail('图片模型尚未配置有效任务计费方案', 409, 'IMAGE_TASK_PRICING_REQUIRED')
     if (!context.imageConfig) throw fail('请先配置模型生成规格', 409, 'IMAGE_SPEC_REQUIRED')
@@ -78,13 +81,13 @@ export class ImageTaskService {
     let generatedResult
     try {
       const base = new URL(context.provider.baseUrl)
-      const target = new URL(`${base.href.replace(/\/$/, '')}${context.endpointPath || '/images/generations'}`)
+      const target = new URL(`${base.href.replace(/\/$/, '')}${editing ? context.imageConfig.editEndpointPath || '/images/edits' : context.endpointPath || '/images/generations'}`)
       if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash || target.origin !== base.origin) throw fail('图片服务连接配置无效', 400, 'IMAGE_TASK_CONFIGURATION')
       submitted = true
       const response = await this.fetch(target, {
         method: 'POST', redirect: 'error', cache: 'no-store',
-        headers: { authorization: `Bearer ${context.key.apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
-        body: JSON.stringify(body), signal: AbortSignal.timeout(Math.min(300000, Math.max(10000, Number(context.provider.timeoutMs) || 300000))),
+        headers: { authorization: `Bearer ${context.key.apiKey}`, ...(editing ? {} : { 'content-type': 'application/json' }), accept: 'application/json' },
+        body: editing ? body : JSON.stringify(body), signal: AbortSignal.timeout(Math.min(300000, Math.max(10000, Number(context.provider.timeoutMs) || 300000))),
       })
       if (!response.ok) {
         await response.body?.cancel().catch(() => {})

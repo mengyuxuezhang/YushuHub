@@ -179,7 +179,7 @@ export function normalizeImageGenerationResponse(payload = {}, context = {}, req
       index,
       url: String(item?.url || '').trim(),
       b64Json: String(item?.b64_json || '').trim(),
-      size: String(item?.size || request.size?.pixels || request.size?.tier || '').trim(),
+      size: String(item?.size || (/^\d+x\d+$/.test(String(payload?.size || '')) ? payload.size : '') || request.size?.pixels || request.size?.tier || '').trim(),
     }))
     .filter((item) => item.url || item.b64Json)
   const rawUsage = payload?.usage && typeof payload.usage === 'object' ? payload.usage : {}
