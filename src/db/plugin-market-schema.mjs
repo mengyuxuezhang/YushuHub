@@ -5,6 +5,10 @@ export async function ensurePluginMarketSchema(pool) {
     created_by VARCHAR(64) NOT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     PRIMARY KEY (plugin_id, version)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+  await pool.query(`CREATE TABLE IF NOT EXISTS ai_plugin_profiles (
+    plugin_id VARCHAR(64) PRIMARY KEY, presentation JSON NOT NULL, updated_by VARCHAR(64) NOT NULL,
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
   await pool.query(`CREATE TABLE IF NOT EXISTS ai_plugin_grants (
     project_id VARCHAR(64) NOT NULL, plugin_id VARCHAR(64) NOT NULL, version VARCHAR(64) NOT NULL, updated_by VARCHAR(64) NOT NULL,
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),

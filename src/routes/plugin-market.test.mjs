@@ -8,6 +8,7 @@ test('plugin publishing, project authorization, package download and report are 
   const app = express()
   const grants = new Map()
   let release
+  let profile
   const reports = []
   setAuthDependencies({
     getUserBySession: (req) => req.get('x-test-admin') === 'yes' ? { id: 'test-admin', role: 'admin' } : null,
@@ -25,7 +26,12 @@ test('plugin publishing, project authorization, package download and report are 
       return true
     },
     revoke: async (project) => { grants.delete(project) },
-    catalog: async (project) => grants.has(project) ? [grants.get(project).plugin] : [],
+    savePresentation: async (id, fields) => {
+      if (id !== release.plugin.id) return false
+      profile = fields
+      return true
+    },
+    catalog: async (project, includePresentation) => grants.has(project) ? [{ ...grants.get(project).plugin, ...(includePresentation ? { presentation: profile } : {}) }] : [],
     download: async (project, id, version) => {
       const item = grants.get(project)
       return item?.plugin.id === id && item?.plugin.version === version ? item.bytes : null
@@ -55,6 +61,16 @@ test('plugin publishing, project authorization, package download and report are 
   assert.equal((await request(grantPath, { method: 'PUT', headers: privileged, body: JSON.stringify({ version }) })).status, 200)
   assert.equal((await request(selector + '/package', { headers: clientHeaders('project-b') })).status, 404)
   assert.equal((await request(selector + '/package', { headers: clientHeaders('project-a', 'project-b') })).status, 403)
+  const profilePath = admin + '/profiles/github'
+  const fields = { title: 'GitHub 协作', description: '仓库查询', iconUrl: '/uploads/admin/github.png', guide: '在聊天里选择技能', tags: ['仓库'], examples: ['列出最近的 PR'] }
+  const profileRequest = (input) => ({ method: 'PUT', headers: privileged, body: JSON.stringify(input) })
+  assert.equal((await request(profilePath, profileRequest({ ...fields, iconUrl: '//other.test/a.png' }))).status, 400)
+  assert.equal((await request(profilePath, profileRequest(fields))).status, 200)
+  const legacy = await (await request(client, { headers: clientHeaders('project-a') })).json()
+  assert.equal(legacy.data[0].presentation, undefined)
+  const modern = await (await request(client + '?presentation=1', { headers: clientHeaders('project-a') })).json()
+  assert.deepEqual(modern.data[0].presentation, fields)
+  assert.deepEqual((await (await request(client + '?presentation=1', { headers: clientHeaders('project-b') })).json()).data, [])
   const zip = await request(selector + '/package', { headers: clientHeaders('project-a') })
   assert.equal(zip.status, 200)
   assert.equal(zip.headers.get('cache-control'), 'no-store')

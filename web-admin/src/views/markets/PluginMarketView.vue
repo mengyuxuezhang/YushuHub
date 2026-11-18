@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import MarketAssetField from '@/components/markets/MarketAssetField.vue'
 import { toUserMessage } from '@/api/client'
-import { getPluginMarket, publishBundledPlugin, revokePluginGrant, savePluginGrant, uploadPlugin, type PluginGrant, type PluginMarket } from '@/api/plugin-market'
+import { getPluginMarket, publishBundledPlugin, revokePluginGrant, savePluginPresentation, savePluginGrant, uploadPlugin, type PluginGrant, type PluginMarket, type PluginVersion } from '@/api/plugin-market'
 
 const bundled = [
   { id: 'github', name: 'GitHub' },
@@ -15,6 +16,9 @@ const selection = ref('')
 const message = ref('')
 const error = ref('')
 const busy = ref(false)
+const profileId = ref('')
+const profile = ref({ title: '', description: '', iconUrl: '', guide: '', tagsText: '', examplesText: '' })
+const plugins = computed(() => [...new Map(market.value.versions.map(item => [item.id, item])).values()])
 const file = ref<File>()
 const fileInput = ref<HTMLInputElement>()
 const versionKey = (id: string, version: string) => id + '@' + version
@@ -45,6 +49,16 @@ function upload() {
     file.value = undefined
     if (fileInput.value) fileInput.value.value = ''
   }, '版本已发布')
+}
+function editProfile(item: PluginVersion) {
+  const { title, description, iconUrl, guide, tags, examples } = item.presentation
+  profileId.value = item.id
+  profile.value = { title, description, iconUrl, guide, tagsText: tags.join('\n'), examplesText: examples.join('\n') }
+}
+function saveProfile() {
+  const { title, description, iconUrl, guide, tagsText, examplesText } = profile.value
+  const lines = (value: string) => value.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  void update(() => savePluginPresentation(profileId.value, { title, description, iconUrl, guide, tags: lines(tagsText), examples: lines(examplesText) }), '插件资料已更新')
 }
 function grant() {
   const item = market.value.versions.find((version) => versionKey(version.id, version.version) === selection.value)
@@ -80,6 +94,24 @@ onMounted(() => void update())
         <tbody><tr v-for="item in market.versions" :key="versionKey(item.id, item.version)"><td>{{ item.title }}</td><td>{{ item.version }}</td><td>{{ item.description }}</td></tr></tbody>
       </table>
     </section>
+    <section v-if="plugins.length" class="panel-card plugin-panel">
+      <h2>插件资料</h2>
+      <div class="plugin-controls">
+        <button v-for="item in plugins" :key="item.id" type="button" class="secondary-button" :disabled="busy" :aria-pressed="profileId === item.id" @click="editProfile(item)">{{ item.presentation.title || item.title }}</button>
+      </div>
+      <form v-if="profileId" class="plugin-profile" @submit.prevent="saveProfile">
+        <fieldset :disabled="busy">
+          <legend>{{ profileId }}</legend>
+          <label>展示名称 <input v-model="profile.title" :placeholder="plugins.find(item => item.id === profileId)?.title" maxlength="64"></label>
+          <label>简介 <textarea v-model="profile.description" :placeholder="plugins.find(item => item.id === profileId)?.description" maxlength="240" rows="3" /></label>
+          <MarketAssetField v-model="profile.iconUrl" label="插件头像" />
+          <label>使用指引 <textarea v-model="profile.guide" maxlength="2000" rows="4" /></label>
+          <label>标签（每行一项，最多 8 项） <textarea v-model="profile.tagsText" rows="3" /></label>
+          <label>使用示例（每行一条，最多 6 条） <textarea v-model="profile.examplesText" rows="4" /></label>
+          <button class="primary-button" :disabled="busy">保存插件资料</button>
+        </fieldset>
+      </form>
+    </section>
     <section class="panel-card plugin-panel">
       <h2>项目授权</h2>
       <form class="plugin-controls" @submit.prevent="grant">
@@ -109,5 +141,9 @@ onMounted(() => void update())
 .plugin-panel { padding: 20px; }
 .plugin-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-block: 12px; }
 .plugin-controls label { display: flex; gap: 8px; align-items: center; }
+.plugin-profile { max-width: 680px; }
+.plugin-profile fieldset { display: grid; gap: 12px; border: 0; padding: 0; }
+.plugin-profile label { display: grid; gap: 5px; }
+.plugin-profile button { justify-self: start; }
 .plugin-controls select { border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
 </style>

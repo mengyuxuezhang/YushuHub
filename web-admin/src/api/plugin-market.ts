@@ -1,10 +1,19 @@
 import { api } from './client'
 
+export interface PluginPresentation {
+  title: string
+  description: string
+  iconUrl: string
+  guide: string
+  tags: string[]
+  examples: string[]
+}
 export interface PluginVersion {
   id: string
   version: string
   title: string
   description: string
+  presentation: PluginPresentation
 }
 export interface PluginGrant {
   project_id: string
@@ -25,6 +34,8 @@ export function uploadPlugin(file: File) {
   body.append('package', file)
   return api<PluginVersion>(root + '/versions', { method: 'POST', body })
 }
+export const savePluginPresentation = (id: string, profile: PluginPresentation) =>
+  api<PluginPresentation>(root + '/profiles/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify(profile) })
 export const savePluginGrant = (projectId: string, pluginId: string, version: string) =>
   api(root + '/grants/' + encodeURIComponent(projectId) + '/' + encodeURIComponent(pluginId), {
     method: 'PUT', body: JSON.stringify({ version }),

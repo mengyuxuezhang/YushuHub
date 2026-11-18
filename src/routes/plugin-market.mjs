@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { requireAuth, requireAdmin, requirePermission, requireClientAuth } from '../middleware/auth.mjs'
 import { buildCuratedPluginPackage, readCuratedPluginZip, maxPluginArchiveBytes, pluginIdPattern, pluginVersionPattern } from '../services/curated-plugin-package.mjs'
 import { pluginMarket } from '../repositories/plugin-market.mjs'
+import { parsePluginPresentation } from '../services/plugin-presentation.mjs'
 import { clientProjectPolicy } from '../services/client-project-policy.mjs'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: maxPluginArchiveBytes, files: 1, fields: 0, parts: 2 } }).single('package')
@@ -61,7 +62,16 @@ export function registerPluginMarketRoutes(app, market = pluginMarket, policy = 
     await market.revoke(project, id)
     return ok(res, { enabled: false })
   }))
-  app.get(client, ...clientGate, endpoint(async (req, res) => ok(res, await market.catalog(req.pluginProjectId))))
+  app.put(admin + '/profiles/:id', ...adminGate, endpoint(async (req, res) => {
+    const { id } = req.params
+    if (!valid(pluginIdPattern, id)) return fail(res, 400, '插件无效')
+    let profile
+    try { profile = parsePluginPresentation(req.body) }
+    catch (error) { return fail(res, 400, error.message) }
+    if (!(await market.savePresentation(id, profile, req.user.id))) return fail(res, 404, '请先发布该插件')
+    return ok(res, profile)
+  }))
+  app.get(client, ...clientGate, endpoint(async (req, res) => ok(res, await market.catalog(req.pluginProjectId, req.query.presentation === '1'))))
   app.get(client + '/:id/:version/package', ...clientGate, endpoint(async (req, res) => {
     const { id, version } = req.params
     if (!valid(pluginIdPattern, id) || !valid(pluginVersionPattern, version)) return fail(res, 404, '插件版本不可用')
