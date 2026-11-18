@@ -1,3 +1,4 @@
+import { ensurePluginMarketSchema } from './plugin-market-schema.mjs'
 import { backfillImageSpecs, retireImageReferencePricing } from '../services/image-specs-migration.mjs'
 import { consolidatePricingPlans } from '../services/pricing-current-plan-migration.mjs'
 import crypto from 'node:crypto'
@@ -1707,6 +1708,8 @@ export async function initDatabase(options = {}) {
   await ensureColumn('ai_redeem_codes', 'used_device_name', 'VARCHAR(160) NOT NULL DEFAULT "" AFTER used_device_id')
   await ensureIndex('ai_redeem_codes', 'idx_ai_redeem_codes_used_source_project', 'ADD KEY idx_ai_redeem_codes_used_source_project (used_source_project_id)')
   await ensureIndex('ai_redeem_codes', 'idx_ai_redeem_codes_used_device', 'ADD KEY idx_ai_redeem_codes_used_device (used_device_id)')
+
+  await ensurePluginMarketSchema(pool)
 
   await pool.query(`CREATE TABLE IF NOT EXISTS ai_curated_skills (
     id VARCHAR(64) PRIMARY KEY, slug VARCHAR(80) NOT NULL UNIQUE, name VARCHAR(160) NOT NULL,

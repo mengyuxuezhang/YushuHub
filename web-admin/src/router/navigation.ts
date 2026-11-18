@@ -75,6 +75,14 @@ export const navigationSections: NavigationSection[] = [
         phase: "P3",
       },
       {
+        path: "/markets/plugins",
+        title: "插件市场",
+        subtitle: "插件发布和项目授权",
+        icon: Boxes,
+        permissions: ["plugin_market.manage"],
+        phase: "P3",
+      },
+      {
         path: "/markets/mcps",
         title: "MCP 市场",
         subtitle: "MCP 配置、版本和分发",

@@ -113,6 +113,7 @@ import { findLatestProjectRelease } from '../../src/repositories/project-downloa
 import { registerBuildRoutes } from '../../src/routes/builds.mjs'
 import { registerMembershipRoutes } from '../../src/routes/memberships.mjs'
 import { registerPaymentRoutes } from '../../src/routes/payments.mjs'
+import { registerPluginMarketRoutes } from '../../src/routes/plugin-market.mjs'
 import { registerCuratedSkillRoutes } from '../../src/routes/curated-skills.mjs'
 import { registerCuratedMcpRoutes } from '../../src/routes/curated-mcps.mjs'
 import { registerCuratedAgentRoutes } from '../../src/routes/curated-agents.mjs'
@@ -6548,6 +6549,7 @@ registerOrganizationRoutes(app, {
 })
 
 registerClientProjectPolicyRoutes(app)
+registerPluginMarketRoutes(app)
 registerClientApiRoutes(app, {
   registerEndUser,
   requestEndUserRegistrationCode,

@@ -3,8 +3,9 @@ import { lstat, readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import AdmZip from 'adm-zip'
 
-const identifier = /^[a-z][a-z0-9-]{1,63}$/
-const formatVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+export const pluginIdPattern = /^[a-z][a-z0-9-]{1,63}$/
+export const pluginVersionPattern = /^(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})$/
+export const maxPluginArchiveBytes = 2 * 1024 * 1024
 const allowedPath = /^(?:\.claude-plugin\/plugin\.json|market\.json|skills\/[a-z][a-z0-9-]{1,63}\/SKILL\.md)$/
 const maxFileBytes = 64 * 1024
 const maxFiles = 22
@@ -36,7 +37,7 @@ function readJson(files, name, keys) {
 }
 
 function publicUrl(value) {
-  const url = new URL(value)
+  const url = new URL(typeof value === 'string' && value.length <= 2048 ? value : '')
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
     throw new Error('插件文档必须使用不含凭据的 HTTPS 地址')
   }
@@ -47,13 +48,34 @@ function publicUrl(value) {
 // declarative metadata and original Markdown skills.
 export async function buildCuratedPluginPackage(root) {
   if (!(await lstat(root)).isDirectory()) throw new Error('插件包根目录无效')
-  const files = await readPackageFiles(root)
+  return pack(await readPackageFiles(root))
+}
+
+export function readCuratedPluginZip(bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length > maxPluginArchiveBytes) throw new Error('无效插件 ZIP')
+  const entries = new AdmZip(bytes).getEntries()
+  if (entries.length > maxFiles * 2) throw new Error('插件包超过资源上限')
+  const files = new Map()
+  for (const entry of entries) {
+    const name = entry.entryName
+    if (entry.isDirectory && /^(?:\.claude-plugin|skills(?:\/[a-z][a-z0-9-]{1,63})?)\/$/.test(name)) continue
+    if (!allowedPath.test(name) || files.has(name) || files.size >= maxFiles
+      || entry.header.size <= 0 || entry.header.size > maxFileBytes
+      || ((entry.attr >>> 16) & 0xf000) === 0xa000) throw new Error('插件文件无效')
+    const data = entry.getData()
+    if (data.length !== entry.header.size) throw new Error('插件文件尺寸无效')
+    files.set(name, data)
+  }
+  return pack(files)
+}
+
+function pack(files) {
   const manifest = readJson(files, '.claude-plugin/plugin.json', ['name', 'version', 'description', 'homepage'])
   const market = readJson(files, 'market.json', ['schemaVersion', 'title', 'cli', 'documentation'])
-  if (typeof manifest.name !== 'string' || !identifier.test(manifest.name) || !formatVersion.test(manifest.version) ||
+  if (typeof manifest.name !== 'string' || !pluginIdPattern.test(manifest.name) || typeof manifest.version !== 'string' || !pluginVersionPattern.test(manifest.version) ||
       typeof manifest.description !== 'string' || !manifest.description.trim() || manifest.description.length > 240 ||
       market.schemaVersion !== 1 || typeof market.title !== 'string' || !market.title.trim() || market.title.length > 64 ||
-      typeof market.cli !== 'string' || !identifier.test(market.cli)) throw new Error('插件元数据无效')
+      typeof market.cli !== 'string' || !pluginIdPattern.test(market.cli)) throw new Error('插件元数据无效')
   const documentation = publicUrl(market.documentation)
   publicUrl(manifest.homepage)
   const skills = []

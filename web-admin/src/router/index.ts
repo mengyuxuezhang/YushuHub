@@ -55,6 +55,8 @@ export const router = createRouter({
           component:
             item.path === "/authorization" ? AuthorizationView : item.path === "/user-usage" ? UserUsageView : item.path === "/markets/agents"
               ? AgentMarketView
+              : item.path === "/markets/plugins"
+                ? () => import("@/views/markets/PluginMarketView.vue")
               : ["/markets/skills", "/markets/mcps"].includes(item.path)
                 ? CatalogMarketView
                 : item.path.startsWith("/models/")

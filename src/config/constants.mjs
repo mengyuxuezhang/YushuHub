@@ -56,6 +56,7 @@ export const LOCAL_PERMISSION_CATALOG = [
   {
     group: '技能市场',
     permissions: [
+      { key: 'plugin_market.manage', name: '管理插件市场', description: '发布插件版本及为客户端项目授权。', role: 'admin' },
       { key: 'curated_skills.view', name: '查看精选技能', description: '查看官方候选技能、分发状态和安装记录。', role: 'admin_or_agent' },
       { key: 'curated_skills.manage', name: '管理自有技能', description: '创建和维护本人创建的精选技能草稿。', role: 'admin_or_agent' },
       { key: 'curated_skills.publish', name: '发布自有技能', description: '上传、签名、发布和撤销本人创建的精选技能版本。', role: 'admin_or_agent' },
