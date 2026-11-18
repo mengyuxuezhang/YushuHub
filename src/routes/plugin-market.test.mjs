@@ -3,6 +3,18 @@ import { test } from 'node:test'
 import express from 'express'
 import { setAuthDependencies } from '../middleware/auth.mjs'
 import { registerPluginMarketRoutes } from './plugin-market.mjs'
+import { parsePluginPresentation, pluginPresentation } from '../services/plugin-presentation.mjs'
+
+test('published integration defaults each include six editable examples', () => {
+  for (const pluginId of ['github', 'feishu', 'wecom', 'dingtalk']) {
+    const profile = parsePluginPresentation(pluginPresentation(pluginId))
+    assert.equal(profile.examples.length, 6)
+    assert.ok(profile.description && profile.guide)
+    assert.equal(profile.tags.length, 6)
+    const custom = { ...profile, description: '运营维护的介绍' }
+    assert.deepEqual(pluginPresentation(pluginId, JSON.stringify(custom)), custom)
+  }
+})
 
 test('plugin publishing, project authorization, package download and report are independently gated', async (t) => {
   const app = express()
