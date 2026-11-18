@@ -1,3 +1,7 @@
+export function permissionCapabilityKey(key) {
+  return key === 'plugin_market.manage' ? 'curated_skills.distribute' : key
+}
+
 // Match route families, never resource IDs: a build named "agent-demo" is still
 // an official-build request, not an official-resources request.
 export function officialServicePolicy(path) {

@@ -34,6 +34,18 @@ if (-not $Version) {
 
 $name = "agent-ai-admin-v$Version"
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-.][a-zA-Z0-9.-]+)?$') { throw 'Invalid package version' }
+$historyPath = Join-Path (Join-Path $root "docs") "UPDATE_HISTORY.json"
+$history = @()
+if (Test-Path -LiteralPath $historyPath) {
+  $history = @((([System.IO.File]::ReadAllText($historyPath, [System.Text.Encoding]::UTF8)) | ConvertFrom-Json))
+}
+if ([string]::IsNullOrWhiteSpace($ReleaseNotes)) {
+  $currentNotes = $history | Where-Object { $_.version -eq $Version } | Select-Object -First 1
+  $ReleaseNotes = [string]$currentNotes.releaseNotes
+}
+if ([string]::IsNullOrWhiteSpace($ReleaseNotes) -or $ReleaseNotes.Trim() -eq 'Update Agent AI Admin.') {
+  throw "Missing release notes for $Version. Add a matching entry to docs/UPDATE_HISTORY.json or pass -ReleaseNotes."
+}
 $stageRoot = Join-Path $root ".pack"
 $stage = Join-Path $stageRoot $name
 if ([System.IO.Path]::IsPathRooted($OutputDir)) {
@@ -181,16 +193,7 @@ try {
   $sha.Dispose()
 }
 $publishedAt = (Get-Date).ToString("yyyy-MM-ddTHH:mm:sszzz")
-if (-not $ReleaseNotes) {
-  $ReleaseNotes = "Update Agent AI Admin."
-}
 $baseUrlClean = $BaseUrl.TrimEnd([char]'/')
-
-$historyPath = Join-Path (Join-Path $root "docs") "UPDATE_HISTORY.json"
-$history = @()
-if (Test-Path -LiteralPath $historyPath) {
-  $history = @((([System.IO.File]::ReadAllText($historyPath, [System.Text.Encoding]::UTF8)) | ConvertFrom-Json))
-}
 $currentEntry = [ordered]@{ version = $Version; publishedAt = $publishedAt; releaseNotes = $ReleaseNotes }
 $boundedHistory = @($currentEntry)
 foreach ($entry in $history) {

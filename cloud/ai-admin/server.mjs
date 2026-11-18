@@ -1617,7 +1617,7 @@ async function seedDefaultRoleTemplates() {
       await db().query('INSERT IGNORE INTO ai_role_template_permissions (template_id, permission_key) VALUES (?, ?)', [id, key])
     }
   }
-  // Grant newly introduced message permissions once to existing built-in roles.
+  // Grant newly introduced permissions once to existing built-in roles.
   // Subsequent administrator edits must not be overwritten on every startup.
   const connection = await db().getConnection()
   try {
@@ -1630,6 +1630,13 @@ async function seedDefaultRoleTemplates() {
             SELECT id,? FROM ai_role_templates WHERE id=? AND system_builtin=1`, [permission, templateId])
         }
       }
+    }
+    const [pluginMigration] = await connection.query("INSERT IGNORE INTO ai_feature_migrations (migration_key) VALUES ('plugin-market-admin-v1')")
+    if (pluginMigration.affectedRows) {
+      await connection.query(`INSERT IGNORE INTO ai_role_template_permissions (template_id,permission_key)
+        SELECT t.id,'plugin_market.manage' FROM ai_role_templates t
+        JOIN ai_role_template_permissions p ON p.template_id=t.id AND p.permission_key='curated_skills.distribute'
+        WHERE t.id='supplier-admin' AND t.system_builtin=1 AND t.base_role='admin'`)
     }
     await connection.commit()
   } catch (error) {

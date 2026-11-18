@@ -159,6 +159,7 @@ export const DEFAULT_ROLE_TEMPLATES = [
       'curated_agents.manage',
       'curated_agents.publish',
       'curated_agents.distribute',
+      'plugin_market.manage',
       'model_providers.manage',
       'model_keys.manage',
       'provider_models.manage',

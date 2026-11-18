@@ -19,7 +19,7 @@ GitHub 提交、GitHub Release 与生产部署是不同动作。公开源码不�
 1. 从最新 master 创建分支，完成修改及领域回归。执行 npm run check、npm run test:distribution、node scripts/smoke-test-frontend.mjs 和 node scripts/smoke-test-imports.mjs；前端变更追加类型、测试、架构检查和生产构建。
 2. 更新 package.json 与锁文件版本，在 docs/UPDATE_HISTORY.json 追加用户可读说明；核对构建产物，检查凭据和内部资料。
 3. 合并到 master，创建不覆盖旧标签的正式版本标签；发布说明写明改动、升级要求和验证边界。
-4. 需要授权交付 ZIP 时运行 npm run pack:zip -- -Version <版本>，审核 ZIP 隔离检查、版本和 SHA-256；打包本身不部署。
+4. 需要授权交付 ZIP 时运行 npm run pack:zip -- -Version <版本>，审核 ZIP 隔离检查、版本和 SHA-256。确认清单头部和当前版本的历史项都使用该版本的具体更新说明。打包从 docs/UPDATE_HISTORY.json 读取对应条目，也支持显式传入 -ReleaseNotes；缺少说明时会停止打包。打包本身不部署。
 5. 生产部署和官方更新源发布需明确授权；已获完整管理端发版授权时，继续按内部发版手册执行，无需重复请求同一授权。内部服务器身份、上传凭据及操作记录放在独立私有运维位置；不得加入公开仓库。
 6. 验证健康、关键 API、静态资源、更新发现与下载摘要；保留回滚包和数据库备份。自建站点应配置自己的更新源并自行验证。
 

@@ -1,4 +1,5 @@
 import { parseSupplierExpiresAt, supplierAuthorizationState } from './supplier-license-contract.mjs'
+import { permissionCapabilityKey } from './authorization/resource-access.mjs'
 
 export function earliestExpiry(...values) {
   const dates = values.map(parseSupplierExpiresAt).filter(Boolean).sort()
@@ -20,7 +21,7 @@ export function scopedOrganizationLicense(license) { return license }
 export function filterOrganizationPermissions(keys, context, now = Date.now()) {
   if (!context) return keys
   const allowed = new Set(context.capabilityKeys || [])
-  let effective = allowed.has('*') ? keys : keys.filter(key => allowed.has(key))
+  let effective = allowed.has('*') ? keys : keys.filter(key => allowed.has(key) || allowed.has(permissionCapabilityKey(key)))
   if (context.organizationStatus !== 'enabled' || context.memberStatus !== 'enabled' || organizationAuthorizationExpired(context, now)) {
     const remediation = new Set(['organizations.view', 'platform_settings.manage', 'authorization.view', 'account_security.manage', 'diagnostics.view'])
     if (context.organizationStatus === 'enabled' && context.memberStatus === 'enabled' && organizationAuthorizationExpired(context, now)) {

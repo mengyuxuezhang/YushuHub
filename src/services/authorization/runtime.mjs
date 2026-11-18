@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createDeploymentClient, emptyDeploymentState } from './deployment-client.mjs'
 import { fileStateStore } from '../../repositories/authorization-file-state.mjs'
-import { clientResourcePermission } from './resource-access.mjs'
+import { clientResourcePermission, permissionCapabilityKey } from './resource-access.mjs'
 import { RETIRED_CAPABILITIES } from './packages.mjs'
 
 export function authorizationMode(env = process.env) {
@@ -29,7 +29,7 @@ export function licenseAllowsPermission(permission, license, official = false) {
   const remediation = new Set(['organizations.view', 'authorization.view', 'account_security.manage', 'diagnostics.view', 'platform_settings.manage', 'self_update.manage'])
   const historical = new Set(['payments.manage', 'credits.manage', 'memberships.manage', 'end_users.manage', 'user_usage.view', 'user_usage.export'])
   if (!license?.verified || license.status !== 'enabled' || license.expired) return remediation.has(permission.key) || historical.has(permission.key)
-  const key = permission.key === 'plugin_market.manage' ? 'curated_skills.distribute' : permission.key
+  const key = permissionCapabilityKey(permission.key)
   return license.capabilities.some(c => c.enabled && c.key === key)
 }
 

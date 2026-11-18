@@ -13,3 +13,13 @@ test('expiry preserves renewal and account-security access; local scope cannot r
   const license={ id:'signed',status:'expired',verified:true }
   assert.equal(scopedOrganizationLicense(license,{ organizationId:'forged',expiresAt:null }),license)
 })
+
+test('plugin management remains scoped to active organizations with resource distribution', () => {
+  const keys = ['plugin_market.manage', 'curated_skills.view']
+  const context = { organizationStatus: 'enabled', memberStatus: 'enabled', capabilityKeys: ['curated_skills.distribute'] }
+  assert.deepEqual(filterOrganizationPermissions(keys, context), ['plugin_market.manage'])
+  assert.deepEqual(filterOrganizationPermissions(keys, { ...context, capabilityKeys: ['plugin_market.manage'] }), ['plugin_market.manage'])
+  assert.deepEqual(filterOrganizationPermissions(['curated_skills.view'], context), [])
+  assert.deepEqual(filterOrganizationPermissions(keys, { ...context, capabilityKeys: ['curated_skills.view'] }), ['curated_skills.view'])
+  assert.deepEqual(filterOrganizationPermissions(keys, { ...context, memberStatus: 'disabled' }), [])
+})
