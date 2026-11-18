@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "title": "钉钉",
+  "cli": "dws",
+  "documentation": "https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli"
+}

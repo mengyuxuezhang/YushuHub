@@ -1,0 +1,6 @@
+{
+  "name": "dingtalk",
+  "version": "1.0.0",
+  "description": "查询所选组织的日程、文档和待办。",
+  "homepage": "https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli"
+}

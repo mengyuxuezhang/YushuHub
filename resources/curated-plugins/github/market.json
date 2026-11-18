@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "title": "GitHub",
+  "cli": "gh",
+  "documentation": "https://cli.github.com/manual/"
+}

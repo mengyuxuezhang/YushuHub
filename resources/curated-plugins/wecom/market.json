@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "title": "企业微信",
+  "cli": "wecom-cli",
+  "documentation": "https://github.com/WecomTeam/wecom-cli"
+}
