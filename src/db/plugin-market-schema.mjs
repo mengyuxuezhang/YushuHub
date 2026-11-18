@@ -16,6 +16,15 @@ export async function ensurePluginMarketSchema(pool) {
     FOREIGN KEY (project_id) REFERENCES ai_projects(id) ON DELETE CASCADE,
     FOREIGN KEY (plugin_id, version) REFERENCES ai_plugin_versions(plugin_id, version)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+  await pool.query(`CREATE TABLE IF NOT EXISTS ai_plugin_official (
+    plugin_id VARCHAR(64) PRIMARY KEY, version VARCHAR(64) NOT NULL, presentation JSON NULL,
+    FOREIGN KEY (plugin_id, version) REFERENCES ai_plugin_versions(plugin_id, version)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+  await pool.query(`CREATE TABLE IF NOT EXISTS ai_plugin_official_exclusions (
+    project_id VARCHAR(64) NOT NULL, plugin_id VARCHAR(64) NOT NULL,
+    PRIMARY KEY (project_id, plugin_id),
+    FOREIGN KEY (project_id) REFERENCES ai_projects(id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
   await pool.query(`CREATE TABLE IF NOT EXISTS ai_plugin_installations (
     project_id VARCHAR(64) NOT NULL, user_id VARCHAR(64) NOT NULL, installation_id CHAR(36) NOT NULL, plugin_id VARCHAR(64) NOT NULL,
     version VARCHAR(64) NOT NULL, state ENUM('installed','removed') NOT NULL,

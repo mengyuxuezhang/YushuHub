@@ -1,6 +1,7 @@
 // Match route families, never resource IDs: a build named "agent-demo" is still
 // an official-build request, not an official-resources request.
 export function officialServicePolicy(path) {
+  if (/^\/api\/center\/curated-plugins(?:\/|$)/.test(path)) return { audience: 'official-resources', permission: 'curated_skills.distribute' }
   if (path === '/api/center/source-version') return { audience: 'official-updates', permission: null }
   const family = /^\/api\/center\/(curated-skills|curated-mcps|curated-agents)(?:\/|$)/.exec(path)?.[1]
   if (family) {
@@ -15,6 +16,7 @@ export function officialServicePolicy(path) {
 }
 
 export function clientResourcePermission(path) {
+  if (/^\/api\/client\/plugin-market(?:\/|$)/.test(path)) return 'curated_skills.distribute'
   const family = /^\/api\/client\/(skill|mcp|agent)-market(?:\/|$)/.exec(path)?.[1]
   return family ? `curated_${{ skill: 'skills', mcp: 'mcps', agent: 'agents' }[family]}.distribute` : null
 }

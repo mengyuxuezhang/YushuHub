@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import MarketAssetField from '@/components/markets/MarketAssetField.vue'
 import { toUserMessage } from '@/api/client'
-import { getPluginMarket, publishBundledPlugin, revokePluginGrant, savePluginPresentation, savePluginGrant, uploadPlugin, type PluginGrant, type PluginMarket, type PluginVersion } from '@/api/plugin-market'
+import { getPluginMarket, publishBundledPlugin, revokePluginGrant, savePluginPresentation, savePluginGrant, setOfficialPluginVersion, syncOfficialPlugins, uploadPlugin, type PluginGrant, type PluginMarket, type PluginVersion } from '@/api/plugin-market'
 
 const bundled = [
   { id: 'github', name: 'GitHub' },
@@ -74,7 +74,10 @@ onMounted(() => void update())
   <section class="management-page">
     <header class="page-heading management-heading">
       <div><h1>插件市场</h1><p>发布插件版本后，选择允许下载安装的桌面项目。</p></div>
-      <button type="button" class="secondary-button" :disabled="busy" @click="update()">刷新</button>
+      <div class="plugin-controls">
+        <button v-if="!market.centerMode" type="button" class="secondary-button" :disabled="busy" @click="update(syncOfficialPlugins, '官方插件目录已同步')">同步官方插件</button>
+        <button type="button" class="secondary-button" :disabled="busy" @click="update()">刷新</button>
+      </div>
     </header>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="message" role="status">{{ message }}</p>
@@ -90,8 +93,8 @@ onMounted(() => void update())
         <button class="primary-button" :disabled="busy || !file">上传并发布 ZIP</button>
       </form>
       <table v-if="market.versions.length" class="data-table">
-        <thead><tr><th>插件</th><th>版本</th><th>说明</th></tr></thead>
-        <tbody><tr v-for="item in market.versions" :key="versionKey(item.id, item.version)"><td>{{ item.title }}</td><td>{{ item.version }}</td><td>{{ item.description }}</td></tr></tbody>
+        <thead><tr><th>插件</th><th>版本</th><th>说明</th><th v-if="market.centerMode">下游分发</th></tr></thead>
+        <tbody><tr v-for="item in market.versions" :key="versionKey(item.id, item.version)"><td>{{ item.title }}</td><td>{{ item.version }}</td><td>{{ item.description }}</td><td v-if="market.centerMode"><button type="button" class="text-button" :disabled="busy" @click="update(() => setOfficialPluginVersion(item.id, market.official?.some(version => version.id === item.id && version.version === item.version) ? null : item.version), '下游分发已更新')">{{ market.official?.some(version => version.id === item.id && version.version === item.version) ? '撤回下游分发' : '推送到下游' }}</button></td></tr></tbody>
       </table>
     </section>
     <section v-if="plugins.length" class="panel-card plugin-panel">

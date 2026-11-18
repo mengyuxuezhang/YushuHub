@@ -6549,7 +6549,12 @@ registerOrganizationRoutes(app, {
 })
 
 registerClientProjectPolicyRoutes(app)
-registerPluginMarketRoutes(app)
+const curatedPluginSync = registerPluginMarketRoutes(app, undefined, undefined, {
+  centerMode: CENTER_SUPPLIER_MANAGEMENT_ENABLED,
+  fetchCatalog: () => buildCenterApi('/api/center/curated-plugins/catalog'),
+  fetchPackage: (id, version) => buildCenterApi(`/api/center/curated-plugins/${id}/${version}/package`),
+  publicBaseUrl: PUBLIC_ADMIN_BASE_URL,
+})
 registerClientApiRoutes(app, {
   registerEndUser,
   requestEndUserRegistrationCode,
@@ -6629,6 +6634,7 @@ startMarketAutoSync({
     { name: 'curated-skills', run: () => curatedSkillSync.syncCenterSkills('admin') },
     { name: 'curated-mcps', run: () => curatedMcpSync.syncCenterMcps() },
     { name: 'curated-agents', run: () => curatedAgentSync.syncCenterAgents() },
+    { name: 'curated-plugins', run: curatedPluginSync },
   ],
   logger: { log: (message) => writeAppLog('market-sync', message), error: (message) => writeAppLog('market-sync', `ERROR ${message}`) },
 })

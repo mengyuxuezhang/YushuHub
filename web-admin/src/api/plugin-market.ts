@@ -22,6 +22,8 @@ export interface PluginGrant {
 }
 export interface PluginMarket {
   versions: PluginVersion[]
+  centerMode?: boolean
+  official?: PluginVersion[]
   grants: PluginGrant[]
   projects: { id: string; name: string }[]
   counts: (PluginGrant & { count: number })[]
@@ -36,6 +38,9 @@ export function uploadPlugin(file: File) {
 }
 export const savePluginPresentation = (id: string, profile: PluginPresentation) =>
   api<PluginPresentation>(root + '/profiles/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify(profile) })
+export const syncOfficialPlugins = () => api<{ enabled: boolean; total: number }>(root + '/sync', { method: 'POST' })
+export const setOfficialPluginVersion = (id: string, version: string | null) =>
+  api(root + '/official/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify({ version }) })
 export const savePluginGrant = (projectId: string, pluginId: string, version: string) =>
   api(root + '/grants/' + encodeURIComponent(projectId) + '/' + encodeURIComponent(pluginId), {
     method: 'PUT', body: JSON.stringify({ version }),

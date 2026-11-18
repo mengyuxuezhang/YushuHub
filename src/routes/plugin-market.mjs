@@ -1,8 +1,9 @@
 import multer from 'multer'
 import { fileURLToPath } from 'node:url'
-import { requireAuth, requireAdmin, requirePermission, requireClientAuth } from '../middleware/auth.mjs'
+import { requireAuth, requireAdmin, requirePermission, requireClientAuth, requireCenterAuth } from '../middleware/auth.mjs'
 import { buildCuratedPluginPackage, readCuratedPluginZip, maxPluginArchiveBytes, pluginIdPattern, pluginVersionPattern } from '../services/curated-plugin-package.mjs'
 import { pluginMarket } from '../repositories/plugin-market.mjs'
+import { createPluginMarketSync } from '../services/plugin-market-sync.mjs'
 import { parsePluginPresentation } from '../services/plugin-presentation.mjs'
 import { clientProjectPolicy } from '../services/client-project-policy.mjs'
 
@@ -15,7 +16,9 @@ const endpoint = (handler) => (req, res, next) => Promise.resolve(handler(req, r
 const ok = (res, data) => res.json({ success: true, data })
 const fail = (res, status, error) => res.status(status).json({ success: false, error })
 
-export function registerPluginMarketRoutes(app, market = pluginMarket, policy = clientProjectPolicy) {
+export function registerPluginMarketRoutes(app, market = pluginMarket, policy = clientProjectPolicy, options = {}) {
+  const { centerMode = false, fetchCatalog, fetchPackage, publicBaseUrl } = options
+  const sync = createPluginMarketSync({ market, fetchCatalog: centerMode ? null : fetchCatalog, fetchPackage })
   const admin = '/api/plugin-market'
   const client = '/api/client/plugin-market'
   app.use([admin, client], (_req, res, next) => {
@@ -41,7 +44,33 @@ export function registerPluginMarketRoutes(app, market = pluginMarket, policy = 
     if (!(await market.publish(data, req.user.id))) return fail(res, 409, '同一版本已发布，请提高版本号后重试')
     return ok(res, { ...data.plugin, sha256: data.sha256, size: data.bytes.length })
   }
-  app.get(admin, ...adminGate, endpoint(async (_req, res) => ok(res, await market.overview())))
+  app.get(admin, ...adminGate, endpoint(async (_req, res) => ok(res, {
+    ...await market.overview(), centerMode,
+    ...(centerMode ? { official: await market.officialCatalog() } : {}),
+  })))
+  app.post(admin + '/sync', ...adminGate, endpoint(async (_req, res) => ok(res, await sync())))
+  if (centerMode) {
+    app.put(admin + '/official/:id', ...adminGate, endpoint(async (req, res) => {
+      const version = req.body?.version
+      if (!valid(pluginIdPattern, req.params.id) || (version !== null && !valid(pluginVersionPattern, version))) {
+        return fail(res, 400, '请选择已发布的插件版本')
+      }
+      if (!await market.setOfficialVersion(req.params.id, version)) return fail(res, 404, '插件版本不可用')
+      return ok(res, { enabled: version !== null })
+    }))
+    app.post('/api/center/curated-plugins/catalog', requireCenterAuth, endpoint(async (_req, res) => {
+      const items = (await market.officialCatalog()).map(item => item.presentation.iconUrl.startsWith('/uploads/') && publicBaseUrl
+        ? { ...item, presentation: { ...item.presentation, iconUrl: new URL(item.presentation.iconUrl, publicBaseUrl).href } } : item)
+      return ok(res, { items })
+    }))
+    app.post('/api/center/curated-plugins/:id/:version/package', requireCenterAuth, endpoint(async (req, res) => {
+      const { id, version } = req.params
+      if (!valid(pluginIdPattern, id) || !valid(pluginVersionPattern, version)) return fail(res, 404, '插件版本不可用')
+      const bytes = await market.officialPackage(id, version)
+      if (!bytes) return fail(res, 404, '插件版本不可用')
+      return ok(res, { archive: bytes.toString('base64') })
+    }))
+  }
   app.post(admin + '/versions', ...adminGate, (req, res, next) => {
     upload(req, res, error => error ? fail(res, 400, '请选择有效的插件 ZIP 文件') : next())
   }, endpoint((req, res) => publish(req, res, () => readCuratedPluginZip(req.file?.buffer))))
@@ -87,4 +116,5 @@ export function registerPluginMarketRoutes(app, market = pluginMarket, policy = 
     if (!(await market.report(req.pluginProjectId, req.clientUser.id, installationId, id, version, state))) return fail(res, 403, '插件版本不可用')
     return ok(res, { accepted: true })
   }))
+  return sync
 }
