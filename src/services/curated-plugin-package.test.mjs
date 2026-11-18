@@ -6,7 +6,7 @@ import test from 'node:test'
 import AdmZip from 'adm-zip'
 import { buildCuratedPluginPackage } from './curated-plugin-package.mjs'
 
-const resources = path.resolve(import.meta.dirname, '../../resources/curated-plugins')
+const resources = path.resolve(import.meta.dirname, '../resources/curated-plugins')
 
 test('the four integration sources produce reproducible native plugin ZIPs', async () => {
   for (const id of ['github', 'feishu', 'wecom', 'dingtalk']) {

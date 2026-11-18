@@ -4,10 +4,11 @@ import { requireAuth, requireAdmin, requirePermission, requireClientAuth, requir
 import { buildCuratedPluginPackage, readCuratedPluginZip, maxPluginArchiveBytes, pluginIdPattern, pluginVersionPattern } from '../services/curated-plugin-package.mjs'
 import { pluginMarket } from '../repositories/plugin-market.mjs'
 import { createPluginMarketSync } from '../services/plugin-market-sync.mjs'
+import { publicMarketCatalogItems } from '../services/market-catalog-sync.mjs'
 import { parsePluginPresentation } from '../services/plugin-presentation.mjs'
 import { clientProjectPolicy } from '../services/client-project-policy.mjs'
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: maxPluginArchiveBytes, files: 1, fields: 0, parts: 2 } }).single('package')
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: maxPluginArchiveBytes, files: 1, fields: 1, fieldSize: 8192, parts: 3 } }).single('package')
 const bundled = new Set(['github', 'feishu', 'wecom', 'dingtalk'])
 const projectPattern = /^[a-z0-9][a-z0-9_-]{1,63}$/
 const installationPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/
@@ -37,11 +38,14 @@ export function registerPluginMarketRoutes(app, market = pluginMarket, policy = 
       fail(res, 403, '该账号未获项目访问授权')
     }
   }]
-  async function publish(req, res, loadPackage) {
+  async function saveVersionDraft(req, res, loadPackage) {
     let data
     try { data = await loadPackage() }
     catch { return fail(res, 400, '插件包格式无效，请校验原生清单、市场信息及技能文件') }
-    if (!(await market.publish(data, req.user.id))) return fail(res, 409, '同一版本已发布，请提高版本号后重试')
+    if (req.params.id && data.plugin.id !== req.params.id) return fail(res, 400, '插件包清单的 ID 与当前插件不一致')
+    const releaseNotes = String(req.body?.releaseNotes || '').trim()
+    if (releaseNotes.length > 2000) return fail(res, 400, '版本说明最多 2000 字')
+    if (!(await market.publish({ ...data, releaseNotes }, req.user.id, 'draft'))) return fail(res, 409, '此版本已有不同的插件包，请使用新版本号')
     return ok(res, { ...data.plugin, sha256: data.sha256, size: data.bytes.length })
   }
   app.get(admin, ...adminGate, endpoint(async (_req, res) => ok(res, {
@@ -58,9 +62,10 @@ export function registerPluginMarketRoutes(app, market = pluginMarket, policy = 
       if (!await market.setOfficialVersion(req.params.id, version)) return fail(res, 404, '插件版本不可用')
       return ok(res, { enabled: version !== null })
     }))
-    app.post('/api/center/curated-plugins/catalog', requireCenterAuth, endpoint(async (_req, res) => {
-      const items = (await market.officialCatalog()).map(item => item.presentation.iconUrl.startsWith('/uploads/') && publicBaseUrl
-        ? { ...item, presentation: { ...item.presentation, iconUrl: new URL(item.presentation.iconUrl, publicBaseUrl).href } } : item)
+    app.post('/api/center/curated-plugins/catalog', requireCenterAuth, endpoint(async (req, res) => {
+      const catalog = await market.officialCatalog()
+      const presentations = publicMarketCatalogItems(catalog.map(item => item.presentation), 'iconUrl', req, publicBaseUrl)
+      const items = catalog.map((item, index) => ({ ...item, presentation: presentations[index] }))
       return ok(res, { items })
     }))
     app.post('/api/center/curated-plugins/:id/:version/package', requireCenterAuth, endpoint(async (req, res) => {
@@ -71,12 +76,23 @@ export function registerPluginMarketRoutes(app, market = pluginMarket, policy = 
       return ok(res, { archive: bytes.toString('base64') })
     }))
   }
-  app.post(admin + '/versions', ...adminGate, (req, res, next) => {
+  const receivePackage = (req, res, next) => {
     upload(req, res, error => error ? fail(res, 400, '请选择有效的插件 ZIP 文件') : next())
-  }, endpoint((req, res) => publish(req, res, () => readCuratedPluginZip(req.file?.buffer))))
+  }
+  app.post(admin + '/:id/versions', ...adminGate, receivePackage, endpoint(async (req, res) => {
+    if (!valid(pluginIdPattern, req.params.id) || !await market.hasPlugin(req.params.id)) return fail(res, 404, '请先创建插件')
+    return saveVersionDraft(req, res, () => readCuratedPluginZip(req.file?.buffer))
+  }))
+  app.post(admin + '/:id/versions/:version/publish', ...adminGate, endpoint(async (req, res) => {
+    const { id, version } = req.params
+    if (!valid(pluginIdPattern, id) || !valid(pluginVersionPattern, version) || !await market.publishVersion(id, version)) {
+      return fail(res, 404, '插件版本不可用')
+    }
+    return ok(res, { status: 'published' })
+  }))
   app.post(admin + '/bundled/:id', ...adminGate, endpoint((req, res) => {
-    if (!bundled.has(req.params.id)) return fail(res, 404, '插件不存在')
-    return publish(req, res, () => buildCuratedPluginPackage(fileURLToPath(new URL('../../resources/curated-plugins/' + req.params.id, import.meta.url))))
+    if (!bundled.has(req.params.id)) return fail(res, 404, '没有对应的内置插件包')
+    return saveVersionDraft(req, res, () => buildCuratedPluginPackage(fileURLToPath(new URL('../resources/curated-plugins/' + req.params.id, import.meta.url))))
   }))
   app.put(admin + '/grants/:project/:id', ...adminGate, endpoint(async (req, res) => {
     const { project, id } = req.params
@@ -91,15 +107,20 @@ export function registerPluginMarketRoutes(app, market = pluginMarket, policy = 
     await market.revoke(project, id)
     return ok(res, { enabled: false })
   }))
-  app.put(admin + '/profiles/:id', ...adminGate, endpoint(async (req, res) => {
+  const saveProfile = (create) => endpoint(async (req, res) => {
     const { id } = req.params
     if (!valid(pluginIdPattern, id)) return fail(res, 400, '插件无效')
     let profile
     try { profile = parsePluginPresentation(req.body) }
     catch (error) { return fail(res, 400, error.message) }
-    if (!(await market.savePresentation(id, profile, req.user.id))) return fail(res, 404, '请先发布该插件')
+    if (!profile.title && create) return fail(res, 400, '请输入插件名称')
+    if (create) {
+      if (!await market.createProfile(id, profile, req.user.id)) return fail(res, 409, '该插件 ID 已存在')
+    } else if (!await market.savePresentation(id, profile, req.user.id)) return fail(res, 404, '插件不存在')
     return ok(res, profile)
-  }))
+  })
+  app.post(admin + '/profiles/:id', ...adminGate, saveProfile(true))
+  app.put(admin + '/profiles/:id', ...adminGate, saveProfile(false))
   app.get(client, ...clientGate, endpoint(async (req, res) => ok(res, await market.catalog(req.pluginProjectId, req.query.presentation === '1'))))
   app.get(client + '/:id/:version/package', ...clientGate, endpoint(async (req, res) => {
     const { id, version } = req.params

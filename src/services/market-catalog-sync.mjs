@@ -45,8 +45,8 @@ export function marketCatalogSignature(changes, remoteItems, imageField = 'iconU
 
 // Resolve uploads on the publishing instance before another Admin stores the URL.
 // External image URLs stay unchanged; no supplier credentials are sent to images.
-export function publicMarketCatalogItems(items, imageField, req) {
-  const { adminBaseUrl } = resolvePublicUrlsForRequest(req, { adminBaseUrl: PUBLIC_ADMIN_BASE_URL })
+export function publicMarketCatalogItems(items, imageField, req, publicBaseUrl = PUBLIC_ADMIN_BASE_URL) {
+  const { adminBaseUrl } = resolvePublicUrlsForRequest(req, { adminBaseUrl: publicBaseUrl })
   return items.map((item) => ({
     ...item,
     [imageField]: canonicalizePublicUploadUrl(item[imageField], adminBaseUrl),

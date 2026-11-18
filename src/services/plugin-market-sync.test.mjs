@@ -6,7 +6,7 @@ import { createPluginMarketSync } from './plugin-market-sync.mjs'
 import { pluginPresentation } from './plugin-presentation.mjs'
 
 test('official plugin sync checks files before switching project visibility and handles withdrawal', async () => {
-  const release = await buildCuratedPluginPackage(path.resolve(import.meta.dirname, '../../resources/curated-plugins/github'))
+  const release = await buildCuratedPluginPackage(path.resolve(import.meta.dirname, '../resources/curated-plugins/github'))
   const item = { ...release.plugin, sha256: release.sha256, size: release.bytes.length, presentation: pluginPresentation('github') }
   let items = [item]
   let archive = release.bytes.toString('base64')

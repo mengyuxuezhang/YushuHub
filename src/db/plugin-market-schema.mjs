@@ -2,6 +2,7 @@ export async function ensurePluginMarketSchema(pool) {
   await pool.query(`CREATE TABLE IF NOT EXISTS ai_plugin_versions (
     plugin_id VARCHAR(64) NOT NULL, version VARCHAR(64) NOT NULL,
     metadata JSON NOT NULL, sha256 CHAR(64) NOT NULL, size INT UNSIGNED NOT NULL, package_bytes MEDIUMBLOB NOT NULL,
+    status ENUM('draft','published') NOT NULL DEFAULT 'published',
     created_by VARCHAR(64) NOT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     PRIMARY KEY (plugin_id, version)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)

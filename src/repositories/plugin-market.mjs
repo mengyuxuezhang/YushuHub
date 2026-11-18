@@ -11,33 +11,53 @@ const effectiveGrants = `(
     AND NOT EXISTS (SELECT 1 FROM ai_plugin_grants g WHERE g.project_id=p.id AND g.plugin_id=o.plugin_id)
     AND NOT EXISTS (SELECT 1 FROM ai_plugin_official_exclusions e WHERE e.project_id=p.id AND e.plugin_id=o.plugin_id)
 )`
-const publicVersion = (row, includePresentation) => ({
-  ...(typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata),
-  sha256: row.sha256,
-  size: row.size,
-  ...(includePresentation ? { presentation: pluginPresentation(row.plugin_id, row.presentation) } : {}),
-})
+function publicVersion(row, includePresentation, admin = false) {
+  const { releaseNotes, ...plugin } = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata
+  return {
+    ...plugin,
+    sha256: row.sha256,
+    size: row.size,
+    ...(includePresentation ? { presentation: pluginPresentation(row.plugin_id, row.presentation) } : {}),
+    ...(admin ? { status: row.status, releaseNotes: releaseNotes || '', officialSync: Boolean(row.official_sync) } : {}),
+  }
+}
 
 export const pluginMarket = {
   async overview() {
-    const [[versions], [grants], [projects], [counts]] = await Promise.all([
-      query('SELECT v.plugin_id,v.version,v.metadata,v.sha256,v.size,COALESCE(p.presentation,o.presentation) AS presentation FROM ai_plugin_versions v LEFT JOIN ai_plugin_profiles p ON p.plugin_id=v.plugin_id LEFT JOIN ai_plugin_official o ON o.plugin_id=v.plugin_id ORDER BY v.created_at DESC'),
+    const [[versions], [grants], [projects], [counts], [profiles]] = await Promise.all([
+      query('SELECT v.plugin_id,v.version,v.status,v.metadata,v.sha256,v.size,COALESCE(o.presentation,p.presentation) AS presentation,o.presentation IS NOT NULL AS official_sync FROM ai_plugin_versions v LEFT JOIN ai_plugin_profiles p ON p.plugin_id=v.plugin_id LEFT JOIN ai_plugin_official o ON o.plugin_id=v.plugin_id ORDER BY v.created_at DESC'),
       query(`SELECT project_id,plugin_id,version FROM ${effectiveGrants} g ORDER BY project_id,plugin_id`),
       query("SELECT id, app_name AS name FROM ai_projects WHERE status='enabled' ORDER BY app_name, id"),
       query("SELECT plugin_id, version, project_id, COUNT(*) AS count FROM ai_plugin_installations WHERE state='installed' GROUP BY plugin_id, version, project_id"),
+      query('SELECT plugin_id,presentation FROM ai_plugin_profiles ORDER BY plugin_id'),
     ])
-    return { versions: versions.map(row => publicVersion(row, true)), grants, projects, counts }
+    return { versions: versions.map(row => publicVersion(row, true, true)), grants, projects, counts,
+      profiles: profiles.map(row => ({ id: row.plugin_id, presentation: pluginPresentation(row.plugin_id, row.presentation) })) }
   },
-  async publish({ bytes, plugin, sha256 }, actor) {
-    await query(`INSERT INTO ai_plugin_versions (plugin_id,version,metadata,sha256,size,package_bytes,created_by)
-      VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE sha256=ai_plugin_versions.sha256`,
-    [plugin.id, plugin.version, JSON.stringify(plugin), sha256, bytes.length, bytes, actor])
+  async publish({ bytes, plugin, sha256, releaseNotes }, actor, status = 'published') {
+    await query(`INSERT INTO ai_plugin_versions (plugin_id,version,metadata,sha256,size,package_bytes,created_by,status)
+      VALUES (?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE status=IF(ai_plugin_versions.sha256=VALUES(sha256) AND VALUES(status)='published','published',ai_plugin_versions.status)`,
+    [plugin.id, plugin.version, JSON.stringify({ ...plugin, releaseNotes }), sha256, bytes.length, bytes, actor, status])
     const [[row]] = await query('SELECT sha256 FROM ai_plugin_versions WHERE plugin_id=? AND version=?', [plugin.id, plugin.version])
     return row.sha256 === sha256
   },
+  async publishVersion(id, version) {
+    await query("UPDATE ai_plugin_versions SET status='published' WHERE plugin_id=? AND version=? AND status='draft'", [id, version])
+    const [[row]] = await query("SELECT 1 FROM ai_plugin_versions WHERE plugin_id=? AND version=? AND status='published'", [id, version])
+    return Boolean(row)
+  },
+  async createProfile(id, presentation, actor) {
+    const [result] = await query(`INSERT IGNORE INTO ai_plugin_profiles (plugin_id,presentation,updated_by)
+      SELECT ?,?,? WHERE NOT EXISTS (SELECT 1 FROM ai_plugin_versions WHERE plugin_id=?)`, [id, JSON.stringify(presentation), actor, id])
+    return result.affectedRows === 1
+  },
+  async hasPlugin(id) {
+    const [[row]] = await query('SELECT plugin_id FROM ai_plugin_profiles WHERE plugin_id=? UNION SELECT plugin_id FROM ai_plugin_versions WHERE plugin_id=? LIMIT 1', [id, id])
+    return Boolean(row)
+  },
   async grant(projectId, pluginId, version, actor) {
     const [result] = await query(`INSERT INTO ai_plugin_grants (project_id,plugin_id,version,updated_by)
-      SELECT p.id,v.plugin_id,v.version,? FROM ai_projects p JOIN ai_plugin_versions v ON v.plugin_id=? AND v.version=?
+      SELECT p.id,v.plugin_id,v.version,? FROM ai_projects p JOIN ai_plugin_versions v ON v.plugin_id=? AND v.version=? AND v.status='published'
       WHERE p.id=? AND p.status='enabled'
       ON DUPLICATE KEY UPDATE version=VALUES(version),updated_by=VALUES(updated_by)`, [actor, pluginId, version, projectId])
     // A repeat save may not change the row.
@@ -77,7 +97,7 @@ export const pluginMarket = {
       return true
     }
     await query(`INSERT INTO ai_plugin_official (plugin_id,version)
-      SELECT plugin_id,version FROM ai_plugin_versions WHERE plugin_id=? AND version=?
+      SELECT plugin_id,version FROM ai_plugin_versions WHERE plugin_id=? AND version=? AND status='published'
       ON DUPLICATE KEY UPDATE version=VALUES(version)`, [id, version])
     const [[selected]] = await query('SELECT version FROM ai_plugin_official WHERE plugin_id=?', [id])
     return selected?.version === version
@@ -98,7 +118,7 @@ export const pluginMarket = {
     } finally { connection.release() }
   },
   async catalog(projectId, includePresentation = false) {
-    const [rows] = await query(`SELECT v.plugin_id,v.metadata,v.sha256,v.size,COALESCE(p.presentation,o.presentation) AS presentation FROM ${effectiveGrants} g
+    const [rows] = await query(`SELECT v.plugin_id,v.metadata,v.sha256,v.size,COALESCE(o.presentation,p.presentation) AS presentation FROM ${effectiveGrants} g
       JOIN ai_plugin_versions v ON v.plugin_id=g.plugin_id AND v.version=g.version
       LEFT JOIN ai_plugin_profiles p ON p.plugin_id=g.plugin_id
       LEFT JOIN ai_plugin_official o ON o.plugin_id=g.plugin_id
@@ -107,9 +127,9 @@ export const pluginMarket = {
   },
   async savePresentation(pluginId, presentation, actor) {
     const [result] = await query(`INSERT INTO ai_plugin_profiles (plugin_id,presentation,updated_by)
-      SELECT ?,?,? WHERE EXISTS (SELECT 1 FROM ai_plugin_versions WHERE plugin_id=?)
+      SELECT ?,?,? WHERE EXISTS (SELECT 1 FROM ai_plugin_versions WHERE plugin_id=?) OR EXISTS (SELECT 1 FROM ai_plugin_profiles WHERE plugin_id=?)
       ON DUPLICATE KEY UPDATE presentation=VALUES(presentation),updated_by=VALUES(updated_by)`,
-    [pluginId, JSON.stringify(presentation), actor, pluginId])
+    [pluginId, JSON.stringify(presentation), actor, pluginId, pluginId])
     if (result.affectedRows) return true
     const [[existing]] = await query('SELECT plugin_id FROM ai_plugin_profiles WHERE plugin_id=?', [pluginId])
     return Boolean(existing)

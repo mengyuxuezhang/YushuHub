@@ -21,3 +21,13 @@ test('rejects symlinks before unzip can traverse them', () => {
   zip.getEntry('src/link').attr = (0xa1ff << 16) >>> 0
   assert.throws(() => validateAdminUpdateArchive(zip.toBuffer()), /link or special file/)
 })
+
+test('ships bundled plugin sources under an application directory accepted by existing updaters', () => {
+  const zip = archive()
+  zip.addFile('src/resources/curated-plugins/github/.claude-plugin/plugin.json', Buffer.from('{}'))
+  zip.addFile('src/resources/curated-plugins/README.md', Buffer.from('bundled plugins'))
+  assert.equal(validateAdminUpdateArchive(zip.toBuffer()).version, '1.9.62')
+
+  zip.addFile('resources/curated-plugins/README.md', Buffer.from('old package layout'))
+  assert.throws(() => validateAdminUpdateArchive(zip.toBuffer()), /Unsupported application archive path: resources\/curated-plugins\/README\.md/)
+})

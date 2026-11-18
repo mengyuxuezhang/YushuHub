@@ -1710,6 +1710,7 @@ export async function initDatabase(options = {}) {
   await ensureIndex('ai_redeem_codes', 'idx_ai_redeem_codes_used_device', 'ADD KEY idx_ai_redeem_codes_used_device (used_device_id)')
 
   await ensurePluginMarketSchema(pool)
+  await ensureColumn('ai_plugin_versions', 'status', "ENUM('draft','published') NOT NULL DEFAULT 'published'")
 
   await pool.query(`CREATE TABLE IF NOT EXISTS ai_curated_skills (
     id VARCHAR(64) PRIMARY KEY, slug VARCHAR(80) NOT NULL UNIQUE, name VARCHAR(160) NOT NULL,

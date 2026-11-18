@@ -32,6 +32,8 @@ export function createPluginMarketSync({ market, fetchCatalog, fetchPackage }) {
         const prepared = readCuratedPluginZip(bytes)
         if (prepared.plugin.id !== item.id || prepared.plugin.version !== item.version) throw new Error('官方插件清单不匹配')
         if (!await market.publish({ ...prepared, bytes, sha256: item.sha256 }, 'official-center')) throw new Error('官方插件版本冲突')
+      } else if (existing.status === 'draft' && !await market.publishVersion(item.id, item.version)) {
+        throw new Error('官方插件版本不可用')
       }
       snapshot.push({ id: item.id, version: item.version, presentation })
     }

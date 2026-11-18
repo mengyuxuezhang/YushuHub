@@ -73,5 +73,8 @@ const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : ''
 if (invokedPath === fileURLToPath(import.meta.url)) {
   const zipPath = process.argv[2]
   if (!zipPath) throw new Error('Usage: node scripts/audit-distribution.mjs <admin.zip>')
-  console.log(JSON.stringify(auditAdminDistribution(zipPath)))
+  const result = auditAdminDistribution(zipPath)
+  const { validateAdminUpdateArchive } = await import('../src/services/admin-update-archive.mjs')
+  const application = validateAdminUpdateArchive(fs.readFileSync(zipPath))
+  console.log(JSON.stringify({ ...result, version: application.version }))
 }
