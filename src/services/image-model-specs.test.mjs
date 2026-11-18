@@ -15,10 +15,15 @@ test('specs are model-owned: defaults, 4K, small images and arbitrary named bill
   assert.throws(()=>selectImageSpec(c,'2K'), /不支持/)
   assert.equal(selectImageSpec(c,'512x512').resolution, 'preview')
 })
-for (const patch of [{defaultSize:'4K'},{specs:[]},{maxReferences:1},{usage:'guess'},{tokenBudget:{input:0,output:1}},{quality:'invented'},{specs:[{size:'16384x16384',resolution:'4K'}]},{specs:[{size:'1024x1024',resolution:'1K'},{size:'1024x1024',resolution:'2K'}]}]) test(`invalid config is rejected: ${JSON.stringify(patch)}`,()=>assert.throws(()=>normalizeImageSpecs({...config(),...patch})))
+for (const patch of [{defaultSize:'4K'},{specs:[]},{maxReferences:11},{usage:'guess'},{tokenBudget:{input:0,output:1}},{quality:'invented'},{specs:[{size:'16384x16384',resolution:'4K'}]},{specs:[{size:'1024x1024',resolution:'1K'},{size:'1024x1024',resolution:'2K'}]}]) test(`invalid config is rejected: ${JSON.stringify(patch)}`,()=>assert.throws(()=>normalizeImageSpecs({...config(),...patch})))
 test('reference protocol is explicit and not guessed from a model name',()=> {
   assert.equal(normalizeImageSpecs(imageSpecTemplate('seedream')).maxReferences,10)
-  assert.throws(()=>normalizeImageSpecs({...config(),maxReferences:2}),/参考图/)
+  assert.equal(normalizeImageSpecs({...config(),maxReferences:2}).editEndpointPath,'/images/edits')
+  assert.equal(normalizeImageSpecs({...config(),maxReferences:2,editEndpointPath:'/custom/image-edit'}).editEndpointPath,'/custom/image-edit')
+  for (const editEndpointPath of ['//other.test/edit','https://other.test/edit','/api/../edits','/edits?mode=1','/edits%2fother']) {
+    assert.throws(()=>normalizeImageSpecs({...config(),maxReferences:2,editEndpointPath}),/编辑端点/)
+  }
+  assert.equal(normalizeImageSpecs({...config(),maxReferences:0,editEndpointPath:'/images/edits'}).editEndpointPath,undefined)
 })
 test('migration only materializes missing defaults, preserving endpoints and parameters',async()=> {
   const calls=[]

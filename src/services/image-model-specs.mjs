@@ -40,7 +40,12 @@ export function normalizeImageSpecs(input) {
   const defaultSize = String(input.defaultSize || '')
   if (!seen.has(defaultSize)) throw invalid('默认规格必须属于已配置规格')
   const maxReferences = Number(input.maxReferences ?? 0)
-  if (!Number.isSafeInteger(maxReferences) || maxReferences < 0 || maxReferences > 10 || (input.adapter === 'openai' && maxReferences)) throw invalid('当前协议的参考图数量无效')
+  if (!Number.isSafeInteger(maxReferences) || maxReferences < 0 || maxReferences > 10) throw invalid('参考图数量应为 0 到 10')
+  const editEndpointPath = input.adapter === 'openai' && maxReferences > 0
+    ? String(input.editEndpointPath || '/images/edits').trim()
+    : ''
+  if (input.adapter === 'openai' && maxReferences > 0 &&
+      (editEndpointPath.length > 200 || !/^(?:\/[A-Za-z0-9][A-Za-z0-9_.-]*)+$/.test(editEndpointPath))) throw invalid('请填写服务商基址下的图片编辑端点路径，例如 /images/edits')
   const quality = String(input.quality || '')
   if (!['', 'auto', 'low', 'medium', 'high', 'standard', 'hd'].includes(quality)) throw invalid('默认质量无效')
   if (input.adapter === 'seedream' && quality) throw invalid('Seedream模板不发送quality参数，请保持上游默认质量')
@@ -48,7 +53,7 @@ export function normalizeImageSpecs(input) {
   if (!['none', 'openai'].includes(usage)) throw invalid('Token用量协议无效')
   const tokenBudget = { input: Number(input.tokenBudget?.input ?? 32768), output: Number(input.tokenBudget?.output ?? 32768) }
   if (Object.values(tokenBudget).some(n => !Number.isSafeInteger(n) || n < 1 || n > 1000000)) throw invalid('单次Token预占上限无效')
-  return { version: 1, template: String(input.template || 'custom').slice(0, 32), adapter: input.adapter, defaultSize, specs, maxReferences, quality, usage, tokenBudget }
+  return { version: 1, template: String(input.template || 'custom').slice(0, 32), adapter: input.adapter, defaultSize, specs, maxReferences, ...(editEndpointPath ? { editEndpointPath } : {}), quality, usage, tokenBudget }
 }
 export function configuredImageSpecs(config) {
   const data = typeof config === 'string' ? JSON.parse(config || '{}') : config || {}
