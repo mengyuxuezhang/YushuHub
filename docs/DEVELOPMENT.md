@@ -24,3 +24,11 @@
 项目固定下载链接的配置、兼容迁移与反向代理说明见 [PROJECT_DOWNLOADS.md](PROJECT_DOWNLOADS.md)。
 
 统一授权的复制/粘贴接入及双仓隔离验证见 [AUTHORIZATION_ONBOARDING.md](AUTHORIZATION_ONBOARDING.md)。
+
+## 手机连接桌面的中继
+
+本地或隔离环境设置 `CLIENT_REMOTE_RELAY_ENABLED=1` 后，管理端挂载 `/api/client/remote-desktop/v1`。桌面端和 Android 端使用既有客户端认证，要求登录会话来自同一品牌项目且对应同一账号。客户端连接的管理端需提供 HTTPS。
+
+试运行使用单进程。设备绑定与有界请求队列保存在当前进程中，重启后需要重新配对，多进程部署前需要共享状态。配对码五分钟有效，已配对会话最长八小时。待分发请求超过十二秒即失效，收到过的请求 ID 在配对期间拒绝重新分发。两端仅向管理端发起连接。
+
+中继只处理配对码摘要、设备和请求标识、连接状态以及加密后的数据。不要在 HTTP 代理记录授权头、设备密钥或请求体。

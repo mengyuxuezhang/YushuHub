@@ -84,6 +84,7 @@ import { registerRedeemCodeRoutes } from '../../src/routes/redeem-codes.mjs'
 import { registerAuthRoutes } from '../../src/routes/auth.mjs'
 import { registerSystemRoutes } from '../../src/routes/platform-settings.mjs'
 import { registerClientApiRoutes } from '../../src/routes/client-api.mjs'
+import { registerClientRemoteRelayRoutes } from '../../src/routes/client-remote-relay.mjs'
 import { normalizeClientPolicy, clientProjectPolicy } from '../../src/services/client-project-policy.mjs'
 import { registerClientProjectPolicyRoutes } from '../../src/routes/client-project-policy.mjs'
 import { registerClientNoticeRoutes } from '../../src/routes/client-notices.mjs'
@@ -6555,6 +6556,7 @@ registerOrganizationRoutes(app, {
   },
 })
 
+if (process.env.CLIENT_REMOTE_RELAY_ENABLED === '1') registerClientRemoteRelayRoutes(app, clientProjectPolicy)
 registerClientProjectPolicyRoutes(app)
 const curatedPluginSync = registerPluginMarketRoutes(app, undefined, undefined, {
   centerMode: CENTER_SUPPLIER_MANAGEMENT_ENABLED,
