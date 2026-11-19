@@ -17,7 +17,7 @@ test('remote relay isolates accounts, dispatches each request once and revokes q
   setAuthDependencies({ getEndUserByToken: async (token) => users.get(token) })
   const app = express()
   app.use(express.json())
-  registerClientRemoteRelayRoutes(app, { assertAccess: async () => {} }, createClientRemoteRelay({ now: () => now }))
+  registerClientRemoteRelayRoutes(app, { assertAccess: async () => {} }, createClientRemoteRelay({ now: () => now }), 'brand-a')
   const server = app.listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
   const base = `http://127.0.0.1:${server.address().port}/api/client/remote-desktop/v1`
@@ -40,7 +40,7 @@ test('remote relay isolates accounts, dispatches each request once and revokes q
     const pair = `/pairs/${pairId}`
     assert.equal((await request('/claims', 'bad-token', { fingerprint })).status, 401)
     assert.equal((await request('/claims', 'other-brand', { fingerprint })).status, 403)
-    assert.equal((await request('/claims', 'other-brand', { fingerprint }, { project: 'brand-b' })).status, 404)
+    assert.equal((await request('/claims', 'other-brand', { fingerprint }, { project: 'brand-b' })).status, 403)
     assert.equal((await request('/claims', 'other', { fingerprint })).status, 404)
     assert.equal((await request('/claims', 'phone', { fingerprint })).data.pairId, pairId)
     assert.equal((await request('/claims', 'phone', { fingerprint })).status, 404)

@@ -1,13 +1,14 @@
 import { requireClientAuth } from '../middleware/auth.mjs'
 import { createClientRemoteRelay, RemoteRelayError } from '../services/client-remote-relay.mjs'
 
-export function registerClientRemoteRelayRoutes(app, projectPolicy, relay = createClientRemoteRelay()) {
+export function registerClientRemoteRelayRoutes(app, projectPolicy, relay = createClientRemoteRelay(), allowedProjectId = '') {
   const root = '/api/client/remote-desktop/v1'
   function guarded(action) {
     return async (req, res) => {
       res.setHeader('Cache-Control', 'no-store')
       const projectId = req.headers['x-agent-project-id']
-      if (typeof projectId !== 'string' || !projectId || projectId !== req.clientUser.clientProjectId) {
+      if (typeof projectId !== 'string' || !projectId || projectId !== req.clientUser.clientProjectId ||
+          (allowedProjectId && projectId !== allowedProjectId)) {
         return res.status(403).json({ success: false, code: 'PROJECT_FORBIDDEN' })
       }
       try {

@@ -6556,7 +6556,9 @@ registerOrganizationRoutes(app, {
   },
 })
 
-if (process.env.CLIENT_REMOTE_RELAY_ENABLED === '1') registerClientRemoteRelayRoutes(app, clientProjectPolicy)
+if (process.env.CLIENT_REMOTE_RELAY_ENABLED === '1') {
+  registerClientRemoteRelayRoutes(app, clientProjectPolicy, undefined, process.env.CLIENT_REMOTE_RELAY_PROJECT_ID?.trim())
+}
 registerClientProjectPolicyRoutes(app)
 const curatedPluginSync = registerPluginMarketRoutes(app, undefined, undefined, {
   centerMode: CENTER_SUPPLIER_MANAGEMENT_ENABLED,
