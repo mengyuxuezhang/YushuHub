@@ -1,23 +1,27 @@
 <script setup lang="ts">
 import { Download, ExternalLink, PackageCheck } from '@lucide/vue'
 import { computed } from 'vue'
-import { buildArtifactLinks, buildPublicUrl, primaryBuildArtifact } from '@/utils/build-artifacts'
+import { androidTestArtifacts, buildArtifactLinks, buildFileUrl, buildPublicUrl, isAndroidTestArtifact, primaryBuildArtifact } from '@/utils/build-artifacts'
 
 const props = withDefaults(defineProps<{ build: any; compact?: boolean }>(), { compact: false })
 const testUrl = computed(() => buildPublicUrl(props.build?.publicUrl))
 const releaseUrl = computed(() => buildPublicUrl(props.build?.releaseUrl))
-const testLinks = computed(() => buildArtifactLinks(props.build, testUrl.value))
-const releaseLinks = computed(() => buildArtifactLinks(props.build, releaseUrl.value))
-const testPrimary = computed(() => primaryBuildArtifact(props.build, testUrl.value))
-const releasePrimary = computed(() => primaryBuildArtifact(props.build, releaseUrl.value))
+const desktop = computed(() => ({ ...props.build, files: Array.isArray(props.build?.files) ? props.build.files.filter((name: unknown) => typeof name === 'string' && !isAndroidTestArtifact(name)) : [] }))
+const testLinks = computed(() => buildArtifactLinks(desktop.value, testUrl.value))
+const releaseLinks = computed(() => buildArtifactLinks(desktop.value, releaseUrl.value))
+const testPrimary = computed(() => primaryBuildArtifact(desktop.value, testUrl.value))
+const releasePrimary = computed(() => primaryBuildArtifact(desktop.value, releaseUrl.value))
+const android = computed(() => androidTestArtifacts(props.build))
+const androidRelease = computed(() => buildFileUrl(props.build?.androidRelease?.url, 'android-arm64.apk'))
+const androidSource = computed(() => buildFileUrl(props.build?.androidRelease?.url, 'android-source.zip'))
 </script>
 
 <template>
   <div v-if="compact" class="artifact-links-compact">
-    <a v-if="testPrimary" class="artifact-download-primary" :href="testPrimary.url" target="_blank" rel="noopener"><Download :size="14" />下载测试包</a>
+    <a v-if="testPrimary" class="artifact-download-primary" :href="testPrimary.url" target="_blank" rel="noopener"><Download :size="14" />桌面测试包</a>
     <a v-else-if="testUrl" class="artifact-download-primary" :href="testUrl" target="_blank" rel="noopener"><ExternalLink :size="14" />打开测试产物</a>
     <span v-else class="artifact-unavailable">地址待同步</span>
-    <a v-if="releasePrimary" class="artifact-download-primary is-release" :href="releasePrimary.url" target="_blank" rel="noopener"><PackageCheck :size="14" />下载正式包</a>
+    <a v-if="releasePrimary" class="artifact-download-primary is-release" :href="releasePrimary.url" target="_blank" rel="noopener"><PackageCheck :size="14" />桌面正式包</a>
     <span v-else-if="build.releaseStatus === 'publishing'" class="artifact-release-state">正式包推送中</span>
     <span v-else-if="build.releaseStatus === 'failed'" class="artifact-release-state is-failed">正式包推送失败</span>
     <small v-if="testLinks.length">测试通道共 {{ testLinks.length }} 个文件</small>
@@ -38,4 +42,13 @@ const releasePrimary = computed(() => primaryBuildArtifact(props.build, releaseU
     <section v-else-if="build.releaseStatus === 'publishing'" class="build-artifacts-panel release-pending"><strong>正式包正在推送</strong><span>完成后这里会显示正式更新地址，请稍后刷新。</span></section>
     <section v-else-if="build.releaseStatus === 'failed'" class="build-artifacts-panel artifact-missing"><strong>正式包推送失败</strong><span>{{ build.releaseError || '请查看日志并重新推送。' }}</span></section>
   </template>
+  <div v-if="android || build.androidBuildError || build.androidRelease" class="artifact-links-compact">
+    <a v-if="android?.apk" class="artifact-download-primary" :href="android.apk" target="_blank" rel="noopener"><Download :size="14" />Android 测试包</a>
+    <a v-if="!compact && android?.source" :href="android.source" target="_blank" rel="noopener">Android 测试包对应源码</a>
+    <a v-if="androidRelease" class="artifact-download-primary is-release" :href="androidRelease" target="_blank" rel="noopener"><PackageCheck :size="14" />Android 正式包</a>
+    <a v-if="!compact && androidSource" :href="androidSource" target="_blank" rel="noopener">Android 正式包对应源码</a>
+    <span v-if="build.androidRelease?.status === 'publishing'" class="artifact-release-state">Android 推送中</span>
+    <span v-if="build.androidRelease?.status === 'failed'" class="artifact-release-state is-failed">{{ build.androidRelease.error }}</span>
+    <span v-if="build.androidBuildError" class="artifact-release-state is-failed" :title="build.androidBuildError">Android 构建失败</span>
+  </div>
 </template>

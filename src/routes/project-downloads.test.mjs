@@ -7,12 +7,14 @@ import { createProjectDownloadService } from '../services/project-downloads.mjs'
 test('public GET/HEAD alias redirects to the current formal release without auth or cache; normal files still reach static serving', async t => {
   let file = 'brand-3.0.83-x64.exe'
   let android = 'https://cdn.example.test/brand/android'
+  let signed = null
   const downloads = createProjectDownloadService({
     findProject: async id => id === 'brand' ? {
       status: 'enabled', latestDownloadFileName: 'brand-latest-x64.exe',
       menus: [{ key: 'android-download', type: 'external', url: android, visible: true }],
     } : null,
     findLatestRelease: async () => ({ status: 'succeeded', releaseStatus: '', releasedAt: '2026-01-01', releaseUrl: 'https://cdn.example.test/brand/', files: [file] }),
+    findLatestAndroidRelease: async () => signed,
   })
   const app = express()
   registerProjectDownloadRoutes(app, { downloads })
@@ -44,6 +46,7 @@ test('public GET/HEAD alias redirects to the current formal release without auth
   assert.equal((await request('/updates/ai/brand/brand-latest-x64.exe')).status, 404)
   assert.deepEqual(await (await request('/api/client/android-download/brand')).json(), { available: true })
   const download = await request('/api/client/android-download/brand/file')
+  assert.equal((await request('/api/client/android-download/brand/update.json')).status, 404)
   assert.equal(download.status, 302)
   assert.equal(download.headers.get('location'), android)
   assert.match(download.headers.get('cache-control'), /no-store/)
@@ -53,4 +56,17 @@ test('public GET/HEAD alias redirects to the current formal release without auth
   assert.deepEqual(await (await request('/api/client/android-download/brand')).json(), { available: false })
   assert.equal((await request('/api/client/android-download/brand/file')).status, 404)
   assert.equal((await request('/api/client/android-download/other/file')).status, 404)
+  signed = { status: 'publishing', url: 'https://cdn.example.test/brand/build' }
+  assert.deepEqual(await (await request('/api/client/android-download/brand')).json(), { available: false })
+  signed = { status: 'published', url: 'https://cdn.example.test/brand/build', version: '0.1.3',
+    versionCode: 11191420, publishedAt: '2026-11-19T06:20:00.000Z', size: 8192, sha256: 'a'.repeat(64) }
+  assert.deepEqual(await (await request('/api/client/android-download/brand')).json(), { available: true })
+  assert.match(await (await request('/api/client/android-download/brand/file')).text(), /下载对应源码/)
+  assert.equal((await request('/api/client/android-download/brand/apk')).headers.get('location'), 'https://cdn.example.test/brand/build/android-arm64.apk')
+  assert.equal((await request('/api/client/android-download/brand/source')).headers.get('location'), 'https://cdn.example.test/brand/build/android-source.zip')
+  const manifest = await request('/api/client/android-download/brand/update.json')
+  assert.match(manifest.headers.get('cache-control'), /no-store/)
+  assert.deepEqual(await manifest.json(), { schema: 1, version: '0.1.3+11191420', tag: 'v0.1.3', publishedAt: signed.publishedAt,
+    assets: { arm64: { name: 'android-arm64.apk', url: 'https://cdn.example.test/brand/build/android-arm64.apk', size: 8192, sha256: signed.sha256 } } })
+  assert.equal((await request('/api/client/android-download/other/update.json')).status, 404)
 })

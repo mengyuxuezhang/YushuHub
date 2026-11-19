@@ -1,4 +1,5 @@
 import { projectAndroidBuild } from './android-project-build.mjs'
+import { androidPublishedFile, androidUpdateManifest } from './android-build-artifacts.mjs'
 
 const aliasPattern = /^(?:[a-z0-9][a-z0-9_-]*-)?latest-x64\.exe$/
 
@@ -44,12 +45,20 @@ export function releasedInstallerUrl(release) {
   } catch { return null }
 }
 
-export function createProjectDownloadService({ findProject, findLatestRelease }) {
+export function createProjectDownloadService({ findProject, findLatestRelease, findLatestAndroidRelease = async () => null }) {
   return {
-    async resolveAndroid(projectId) {
+    async resolveAndroid(projectId, kind = 'page') {
       if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(projectId)) return null
       const project = await findProject(projectId)
-      if (project?.status !== 'enabled' || !Array.isArray(project.menus)) return null
+      if (project?.status !== 'enabled') return null
+      const release = await findLatestAndroidRelease(projectId)
+      if (kind === 'update') return androidUpdateManifest(release)
+      if (androidPublishedFile(release)) {
+        if (kind === 'page') return { signedRelease: true }
+        return androidPublishedFile(release, kind === 'source')
+      }
+      if (kind !== 'page') return null
+      if (!Array.isArray(project.menus)) return null
       const link = project.menus.find((item) => item?.key === 'android-download' && item.type === 'external' && item.visible !== false)
       if (!link?.url || typeof link.url !== 'string' || !/^https:\/\//i.test(link.url)) return null
       try {

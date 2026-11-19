@@ -53,8 +53,8 @@ export const finishBuild = (id: string) =>
     `/api/builds/${encodeURIComponent(id)}/finish`,
     json({ reason: "管理员手动结束构建任务" }),
   );
-export const publishBuild = (id: string) =>
-  api<any>(`/api/builds/${encodeURIComponent(id)}/publish`, json({}));
+export const publishBuild = (id: string, platform: 'desktop' | 'android' = 'desktop') =>
+  api<any>(`/api/builds/${encodeURIComponent(id)}/publish`, json({ platform }));
 export const getSettings = () => api<any>("/api/platform-settings");
 export const saveSettings = (input: Record<string, unknown>) =>
   api<any>("/api/platform-settings", json(input));

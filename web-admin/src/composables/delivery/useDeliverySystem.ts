@@ -135,7 +135,6 @@ export function useDeliverySystem(section: DeliverySection) {
       clientPolicy: { registrationEnabled: x?.clientPolicy?.registrationEnabled ?? true, customModelsEnabled: x?.clientPolicy?.customModelsEnabled ?? false, projectAccountsOnly: x?.clientPolicy?.projectAccountsOnly ?? false },
       latestDownloadFileName: x?.latestDownloadFileName || "",
       latestDownloadUrl: x?.latestDownloadUrl || "",
-      androidBuild: x?.androidBuild || null,
       appName: x?.appName || "",
       brandName: x?.brandName || "",
       shortName: x?.shortName || "",
@@ -153,7 +152,6 @@ export function useDeliverySystem(section: DeliverySection) {
       docsUrl: x?.docsUrl || "",
       modelTutorialUrl: x?.modelTutorialUrl || "",
       menus: projectMenuRows(x?.menus).filter((item) => item.key !== 'android-download'),
-      androidDownloadUrl: projectMenuRows(x?.menus).find((item) => item.key === 'android-download' && item.visible)?.url ?? '',
       themeColor: x?.themeColor || "#4f46e5",
       aboutText: x?.aboutText || "",
       status: x?.status || "enabled",
@@ -169,11 +167,10 @@ export function useDeliverySystem(section: DeliverySection) {
     }
     saving.value = true;
     try {
-      const { androidBuild: _androidBuild, androidDownloadUrl, ...editableProject } = form;
       const menus = [...(form.menus || [])];
-      const url = String(androidDownloadUrl || '').trim();
-      if (url) menus.push({ key: 'android-download', label: '下载手机端', type: 'external', url, order: 1000, visible: true, openMode: 'system' });
-      const saved = await api.saveProject({ ...editableProject, menus: serializeProjectMenus(menus, originalProjectMenus) });
+      const previous = projectMenuRows(originalProjectMenus).find((item) => item.key === 'android-download');
+      if (previous) menus.push(previous);
+      const saved = await api.saveProject({ ...form, menus: serializeProjectMenus(menus, originalProjectMenus) });
       if (startAfterSave) {
         const build = await api.createBuild(saved.id);
         projectBuilds.value = { ...projectBuilds.value, [saved.id]: build };
@@ -242,11 +239,12 @@ export function useDeliverySystem(section: DeliverySection) {
   async function setPageSize(value: number) { pageSize.value = value; page.value = 1; await load(); }
   async function submitSearch() { appliedSearch.value = search.value.trim(); appliedSearchField.value = searchField.value; page.value = 1; if (section === "builds") await load(); }
   async function resetSearch() { search.value = ""; searchField.value = "all"; appliedSearch.value = ""; appliedSearchField.value = "all"; statusFilter.value = "all"; page.value = 1; if (section === "builds") await load(); }
-  async function buildAction(x: any, action: "retry" | "finish" | "publish") {
-    if (action === "publish") {
+  async function buildAction(x: any, action: "retry" | "finish" | "publish" | "publishAndroid") {
+    if (action === "publish" || action === "publishAndroid") {
+      const platform = action === 'publishAndroid' ? '安卓版' : '桌面端';
       const ok = await feedback.confirm({
-        title: `推送版本 ${x.version || ""} 给用户？`,
-        message: "这是正式用户更新动作，必须先安装测试包确认功能和品牌。",
+        title: `推送${platform}给用户？`,
+        message: `请先安装并验证${platform}测试包。确认后更新此平台的正式下载。`,
         confirmText: "确认推送",
         tone: "danger",
       });
@@ -255,7 +253,7 @@ export function useDeliverySystem(section: DeliverySection) {
     try {
       if (action === "retry") await api.retryBuild(x.id);
       if (action === "finish") await api.finishBuild(x.id);
-      if (action === "publish") await api.publishBuild(x.id);
+      if (action === "publish" || action === "publishAndroid") await api.publishBuild(x.id, action === 'publishAndroid' ? 'android' : 'desktop');
       await load();
       feedback.notify("构建任务已更新", "success");
     } catch (e) {

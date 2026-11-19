@@ -10,3 +10,33 @@ export async function findLatestProjectRelease(projectId, connection = db()) {
   const row = rows[0]
   return row ? { status: row.status, releasedAt: row.released_at, releaseStatus: row.release_status, releaseUrl: row.release_url, files: row.files } : null
 }
+
+export async function findLatestAndroidRelease(projectId, connection = db()) {
+  const [rows] = await connection.query(
+    `SELECT android_release FROM ai_builds WHERE project_id = ? AND status = 'succeeded'
+       AND JSON_UNQUOTE(JSON_EXTRACT(android_release, '$.status')) = 'published'
+     ORDER BY CAST(JSON_UNQUOTE(JSON_EXTRACT(android_release, '$.versionCode')) AS UNSIGNED) DESC,
+       created_at DESC, id DESC LIMIT 1`, [projectId],
+  )
+  const value = rows[0]?.android_release
+  return typeof value === 'string' ? JSON.parse(value) : value ?? null
+}
+
+export async function beginAndroidRelease(buildId, release, connection = db()) {
+  const [result] = await connection.query(
+    `UPDATE ai_builds SET android_release = ? WHERE id = ? AND status = 'succeeded'
+      AND (android_release IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(android_release, '$.status')) = 'failed'
+        OR (JSON_UNQUOTE(JSON_EXTRACT(android_release, '$.status')) = 'publishing'
+          AND CAST(JSON_UNQUOTE(JSON_EXTRACT(android_release, '$.started')) AS UNSIGNED) < ?))`,
+    [JSON.stringify(release), buildId, release.started - 60 * 60 * 1000],
+  )
+  return result.affectedRows === 1
+}
+
+export async function finishAndroidRelease(buildId, attempt, release, connection = db()) {
+  await connection.query(
+    `UPDATE ai_builds SET android_release = ? WHERE id = ?
+      AND JSON_UNQUOTE(JSON_EXTRACT(android_release, '$.attempt')) = ?`,
+    [JSON.stringify(release), buildId, attempt],
+  )
+}

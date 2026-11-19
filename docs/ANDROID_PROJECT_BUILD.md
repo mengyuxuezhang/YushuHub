@@ -1,9 +1,30 @@
-# Android 贴牌构建
+# Android 贴牌构建与发布
 
-在羽枢的 AI 项目编辑页保存并启用项目，然后重新打开项目，在「Android 手机端 → 构建机工具」选择「导出 Android 构建配置」。配置使用当前项目的 ID、应用名称、品牌强调色和已配置的 HTTPS 客户端 API 基址。只有能够管理该项目的账号能从项目接口取得配置。项目停用或未配置 HTTPS 时无法导出。
+## 管理后台
 
-在配有 Flutter、Android SDK 和对应 ABI 运行时的 Agent Mobile 构建机执行 `python tooling/build-managed-android.py <配置文件> --abi arm64 --release`。正式包使用独立 Android 签名，签名信息由构建机配置。测试模拟器可使用 `--abi x64` 生成调试包。
+在「AI 项目」配置并保存品牌信息。提交一次构建后，由官方构建机生成 Windows x64 测试安装包、正式证书签名的 Android arm64 测试 APK 及对应源码。应用名称、品牌图标和强调色沿用 AI 项目配置，安卓客户端使用该项目的账号服务。管理员可以在「构建发布」下载两端的测试包。
 
-将 APK 与同版本对应源码、许可证和构建说明放到同一个 HTTPS 下载页，然后填写「Android 手机端」里的下载页地址。支持此入口的桌面客户端通过侧栏「手机端」展示固定项目地址的二维码。更换下载页后，固定地址会转到新页面，无需重新构建桌面客户端。留空会暂停下载。
+确认后可以分别点击「推送桌面端」或「推送安卓版」。两端各自记录推送状态。推送 Android 后，桌面端「手机端」的下载二维码指向本项目的 Android 正式下载页，页面提供 APK 和对应源码。新版 Android 客户端也从项目接口查询正式更新。历史测试包或单独推送桌面端都不会切换 Android 下载地址。
 
-此流程由 Android 构建机执行导出的配置。现有 Windows 构建队列仍按原有流程处理桌面安装包。
+## 构建机
+
+将 Agent Mobile 检出到独立目录，准备 Flutter、Android SDK、JDK、Python 和与源码版本匹配的 arm64 运行时。Windows 构建进程使用以下环境变量：
+
+| 变量 | 用途 |
+| --- | --- |
+| AI_WORKER_ANDROID_ENABLED | 设为 1 时构建 Android |
+| AI_WORKER_ANDROID_ROOT | Agent Mobile 源码的绝对路径 |
+| AI_WORKER_ANDROID_REVISION | 锁定的完整 Git 提交哈希 |
+| AI_WORKER_ANDROID_VERSION | Android 应用的三段版本号 |
+| AI_WORKER_ANDROID_FLUTTER | Flutter 命令的绝对路径 |
+| AI_WORKER_ANDROID_APKSIGNER_JAR | Android SDK 签名校验工具的绝对路径 |
+| AI_WORKER_ANDROID_SIGNING_ROOT | 仅构建账号可读的签名配置根路径 |
+| AI_WORKER_ANDROID_PYTHON | Python 命令，可省略并使用 PATH 中的 python |
+
+签名根目录按构建中心实际领取的项目 ID 组织。各下游的镜像项目因此可以独立使用签名，即使它们的原始项目 ID 相同。每个项目放置 Gradle 的 key.properties、已有正式 APK 签名证书的 SHA-256 文件 certificate.sha256，以及 identity.json。身份文件包含下游原始 projectId、规范化的下游 HTTPS clientApiUrl（以 /api/ 结尾）和 centerSupplierId（直管项目为空字符串）。构建机同时核对账号服务和构建来源。将签名文件与工作区、产物目录分开保存。
+
+构建机根据任务生成临时品牌配置，调用 Agent Mobile 的 tooling/build-managed-android.py，并将签名 APK、源码和校验元数据随 Windows 测试产物一起上传。构建机缺少签名或 Android 工具链时，Android 列会显示失败原因。Windows 测试包仍可独立使用。
+
+## 上线顺序
+
+先更新官方构建中心及使用该能力的下游管理端，再更新获准领取任务的 Windows 构建机并启用 Android。使用一个测试构建确认两端产物及签名，再分别验证 Windows 推送和 Android 推送。Android 的固定下载入口为 /api/client/android-download/<项目ID>/file，更新清单为同路径下的 update.json。

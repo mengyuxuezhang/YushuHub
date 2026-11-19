@@ -41,6 +41,24 @@ function responseRecorder() {
   }
 }
 
+test('desktop and Android push use separate release actions; old desktop callers remain compatible', async () => {
+  const calls = []
+  const handler = publishHandler({
+    findBuildById: async id => ({ id }),
+    startReleaseBuild: async build => { calls.push('desktop'); return build },
+    startAndroidReleaseBuild: async build => { calls.push('android'); return build },
+  })
+  for (const body of [undefined, { platform: 'android' }, { platform: 'desktop' }]) {
+    const res = responseRecorder()
+    await handler({ body, params: { id: 'demo' }, user: { id: 'operator' } }, res)
+    assert.equal(res.body.success, true)
+  }
+  const res = responseRecorder()
+  await handler({ body: { platform: 'invalid' }, params: { id: 'demo' } }, res)
+  assert.equal(res.statusCode, 400)
+  assert.deepEqual(calls, ['desktop', 'android', 'desktop'])
+})
+
 test('status lookup accepts bounded local IDs and scopes both ID forms to the authenticated supplier', async () => {
   const handler = postHandler('/api/center/builds/status', { normalizeBuild: row => row })
   const queries = []

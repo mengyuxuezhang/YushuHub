@@ -37,6 +37,7 @@ export function registerBuildRoutes(app, deps) {
     buildCenterApi,
     updateBuild,
     startReleaseBuild,
+    startAndroidReleaseBuild,
     createCenterBuild,
     normalizeBuild,
     releaseBuild,
@@ -209,7 +210,14 @@ export function registerBuildRoutes(app, deps) {
         res.status(403).json({ success: false, error: '供应商代构建任务应由发起方后台推送给其用户' })
         return
       }
-      const build = await startReleaseBuild(current, req.user)
+      const platform = req.body?.platform ?? 'desktop'
+      if (platform !== 'desktop' && platform !== 'android') {
+        res.status(400).json({ success: false, error: '不支持的发布平台' })
+        return
+      }
+      const build = platform === 'android'
+        ? await startAndroidReleaseBuild(current, req.user)
+        : await startReleaseBuild(current, req.user)
       res.json({ success: true, data: build })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
@@ -485,6 +493,7 @@ export function registerBuildRoutes(app, deps) {
         artifactDir: String(req.body?.artifactDir || ''),
         publicUrl: String(req.body?.publicUrl || ''),
         files: Array.isArray(req.body?.files) ? req.body.files.map(String) : [],
+        androidBuildError: String(req.body?.androidBuildError || '').slice(0, 1500),
         finishedAt: nowIso(),
       })
       if (req.body?.log) await appendBuildLog(req.params.id, String(req.body.log))

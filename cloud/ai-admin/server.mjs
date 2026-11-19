@@ -110,7 +110,9 @@ import { registerUserUsageReportRoutes } from '../../src/routes/user-usage-repor
 import { registerAdminBusinessRoutes } from '../../src/routes/admin-business.mjs'
 import { registerProjectDownloadRoutes } from '../../src/routes/project-downloads.mjs'
 import { createProjectDownloadService, normalizeLatestDownloadFileName } from '../../src/services/project-downloads.mjs'
-import { findLatestProjectRelease } from '../../src/repositories/project-downloads.mjs'
+import { findLatestProjectRelease, findLatestAndroidRelease, beginAndroidRelease, finishAndroidRelease } from '../../src/repositories/project-downloads.mjs'
+import { isAndroidBuildArtifact } from '../../src/services/android-build-artifacts.mjs'
+import { createAndroidArtifactPublisher, createAndroidReleaseStarter } from '../../src/services/android-release.mjs'
 import { registerBuildRoutes } from '../../src/routes/builds.mjs'
 import { registerMembershipRoutes } from '../../src/routes/memberships.mjs'
 import { registerPaymentRoutes } from '../../src/routes/payments.mjs'
@@ -210,7 +212,7 @@ app.use((req, res, next) => {
   next()
 })
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true }))
-registerProjectDownloadRoutes(app, { downloads: createProjectDownloadService({ findProject: findProjectById, findLatestRelease: findLatestProjectRelease }) })
+registerProjectDownloadRoutes(app, { downloads: createProjectDownloadService({ findProject: findProjectById, findLatestRelease: findLatestProjectRelease, findLatestAndroidRelease }) })
 app.use('/updates/ai', express.static(PUBLIC_UPDATE_ROOT, { maxAge: '5m' }))
 app.use('/updates/ai-staging', express.static(PUBLIC_PREVIEW_ROOT, { maxAge: '5m' }))
 app.use('/agent/ai', express.static(PUBLIC_UPDATE_ROOT, { maxAge: '5m' }))
@@ -1036,6 +1038,8 @@ function normalizeBuild(row) {
     releaseUrl: row.release_url || '',
     releaseStatus: row.release_status || '',
     releaseError: redactPublicBuildLog(row.release_error),
+    androidRelease: parseJson(row.android_release, null),
+    androidBuildError: redactPublicBuildLog(row.android_build_error),
     files: parseJson(row.files, []),
     transferProgress: parseJson(row.transfer_progress, null),
     brand: storedBrand && typeof storedBrand === 'object' ? { ...storedBrand, clientMode: 'personal' } : storedBrand,
@@ -4320,6 +4324,7 @@ async function resetBuildForRetry(buildId, extraPatch = {}) {
     releaseUrl: '',
     releaseStatus: '',
     releaseError: '',
+    androidBuildError: '',
     files: [],
     transferProgress: null,
     claimedBy: '',
@@ -4385,6 +4390,7 @@ function localizeCenterBuildInBackground(local, remote, config) {
         publicUrl: localized.publicUrl || '',
         releaseUrl: '',
         files: localized.files || [],
+        androidBuildError: remote.androidBuildError || '',
         claimedBy: remote.claimedBy || '',
         startedAt: remote.startedAt || null,
         finishedAt: remote.finishedAt || null,
@@ -4542,6 +4548,7 @@ async function updateBuild(buildId, patch) {
     releaseUrl: 'release_url',
     releaseStatus: 'release_status',
     releaseError: 'release_error',
+    androidBuildError: 'android_build_error',
     files: 'files',
     transferProgress: 'transfer_progress',
     brand: 'brand_json',
@@ -6072,7 +6079,7 @@ async function stageRemoteBuildArtifacts(localBuild, remoteBuild) {
   const remoteFiles = Array.isArray(remoteBuild.files) ? remoteBuild.files : []
   const candidateFiles = remoteFiles
     .map((file) => path.basename(String(file)))
-    .filter(isBuildReleaseArtifact)
+    .filter((name) => isBuildReleaseArtifact(name) || isAndroidBuildArtifact(name))
   const source = {
     artifactDir: '',
     publicUrl: remoteBuild.publicUrl || '',
@@ -6503,6 +6510,29 @@ async function startReleaseBuild(build, user) {
   return started
 }
 
+const startAndroidReleaseBuild = createAndroidReleaseStarter({
+  authorize: async (build, user) => {
+    const project = build ? await findProjectById(build.projectId) : null
+    if (!project || project.status !== 'enabled' || !canAccessProject(user, project) || !canOperateProject(user, project) || build.centerSupplierId) {
+      throw new Error('构建任务不存在或无权推送 Android')
+    }
+  },
+  begin: beginAndroidRelease,
+  finish: finishAndroidRelease,
+  readBuild: findBuildById,
+  log: appendBuildLog,
+  publish: createAndroidArtifactPublisher({
+    readSettings: () => getPlatformSettings('platform'),
+    readOssConfig: getOssArtifactConfig,
+    publicRoot: PUBLIC_UPDATE_ROOT,
+    publicBaseUrl: PUBLIC_UPDATE_BASE_URL,
+    temporary: path.join(repoRoot, 'data', 'android-release-staging'),
+    copyBuildFile: copyOrDownloadBuildFile,
+    uploadFile: uploadFileToAliyunOss,
+    canAccessFile: canAccessBuildFile,
+  }),
+})
+
 const ADMIN_ASSET_VERSION = [
   PACKAGE_VERSION,
   crypto.createHash('sha256')
@@ -6807,6 +6837,7 @@ registerBuildRoutes(app, {
   buildCenterApi,
   updateBuild,
   startReleaseBuild,
+  startAndroidReleaseBuild,
   createCenterBuild,
   normalizeBuild,
   releaseBuild,

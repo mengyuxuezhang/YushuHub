@@ -34,3 +34,17 @@ export function buildArtifactLinks(build: BuildArtifactSource | null | undefined
 export function primaryBuildArtifact(build: BuildArtifactSource | null | undefined, baseUrl: unknown = build?.publicUrl) {
   return buildArtifactLinks(build, baseUrl).find(item => item.primary) || null
 }
+
+export function androidTestArtifacts(build: BuildArtifactSource | null | undefined) {
+  const files = Array.isArray(build?.files) ? build.files : []
+  const apk = files.find(name => typeof name === 'string' && /^android-[A-Za-z0-9_-]{1,64}-arm64\.apk$/.test(name))
+  if (!apk) return null
+  const source = apk.replace(/-arm64\.apk$/, '-source.zip')
+  const metadata = apk.replace(/-arm64\.apk$/, '-update.json')
+  if (!files.includes(source) || !files.includes(metadata)) return null
+  return { apk: buildFileUrl(build?.publicUrl, apk), source: buildFileUrl(build?.publicUrl, source) }
+}
+
+export function isAndroidTestArtifact(name: string) {
+  return /^android-[A-Za-z0-9_-]{1,64}-(?:arm64\.apk|source\.zip|update\.json)$/.test(name)
+}
