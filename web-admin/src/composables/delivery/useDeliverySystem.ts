@@ -135,6 +135,7 @@ export function useDeliverySystem(section: DeliverySection) {
       clientPolicy: { registrationEnabled: x?.clientPolicy?.registrationEnabled ?? true, customModelsEnabled: x?.clientPolicy?.customModelsEnabled ?? false, projectAccountsOnly: x?.clientPolicy?.projectAccountsOnly ?? false },
       latestDownloadFileName: x?.latestDownloadFileName || "",
       latestDownloadUrl: x?.latestDownloadUrl || "",
+      androidBuild: x?.androidBuild || null,
       appName: x?.appName || "",
       brandName: x?.brandName || "",
       shortName: x?.shortName || "",
@@ -151,7 +152,8 @@ export function useDeliverySystem(section: DeliverySection) {
       officialSiteUrl: x?.officialSiteUrl || "",
       docsUrl: x?.docsUrl || "",
       modelTutorialUrl: x?.modelTutorialUrl || "",
-      menus: projectMenuRows(x?.menus),
+      menus: projectMenuRows(x?.menus).filter((item) => item.key !== 'android-download'),
+      androidDownloadUrl: projectMenuRows(x?.menus).find((item) => item.key === 'android-download' && item.visible)?.url ?? '',
       themeColor: x?.themeColor || "#4f46e5",
       aboutText: x?.aboutText || "",
       status: x?.status || "enabled",
@@ -167,7 +169,11 @@ export function useDeliverySystem(section: DeliverySection) {
     }
     saving.value = true;
     try {
-      const saved = await api.saveProject({ ...form, menus: serializeProjectMenus(form.menus || [], originalProjectMenus) });
+      const { androidBuild: _androidBuild, androidDownloadUrl, ...editableProject } = form;
+      const menus = [...(form.menus || [])];
+      const url = String(androidDownloadUrl || '').trim();
+      if (url) menus.push({ key: 'android-download', label: '下载手机端', type: 'external', url, order: 1000, visible: true, openMode: 'system' });
+      const saved = await api.saveProject({ ...editableProject, menus: serializeProjectMenus(menus, originalProjectMenus) });
       if (startAfterSave) {
         const build = await api.createBuild(saved.id);
         projectBuilds.value = { ...projectBuilds.value, [saved.id]: build };

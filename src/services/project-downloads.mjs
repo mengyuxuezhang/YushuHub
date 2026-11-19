@@ -1,3 +1,5 @@
+import { projectAndroidBuild } from './android-project-build.mjs'
+
 const aliasPattern = /^(?:[a-z0-9][a-z0-9_-]*-)?latest-x64\.exe$/
 
 export function normalizeLatestDownloadFileName(value) {
@@ -19,6 +21,7 @@ export function projectDownloadInfo(project, adminBaseUrl) {
   const name = project.latestDownloadFileName || ''
   return {
     ...project,
+    androidBuild: projectAndroidBuild(project, adminBaseUrl),
     latestDownloadUrl: name ? `${adminBaseUrl.replace(/\/$/, '')}/updates/ai/${encodeURIComponent(project.id)}/${encodeURIComponent(name)}` : '',
   }
 }
@@ -43,6 +46,17 @@ export function releasedInstallerUrl(release) {
 
 export function createProjectDownloadService({ findProject, findLatestRelease }) {
   return {
+    async resolveAndroid(projectId) {
+      if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(projectId)) return null
+      const project = await findProject(projectId)
+      if (project?.status !== 'enabled' || !Array.isArray(project.menus)) return null
+      const link = project.menus.find((item) => item?.key === 'android-download' && item.type === 'external' && item.visible !== false)
+      if (!link?.url || typeof link.url !== 'string' || !/^https:\/\//i.test(link.url)) return null
+      try {
+        const url = new URL(link.url)
+        return url.protocol === 'https:' && !url.username && !url.password ? url.href : null
+      } catch { return null }
+    },
     async resolve(projectId, fileName) {
       if (!/^[a-z0-9][a-z0-9_-]{1,62}$/.test(projectId) || !isLatestDownloadFileName(fileName)) return null
       const project = await findProject(projectId)

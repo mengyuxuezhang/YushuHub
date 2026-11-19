@@ -6,8 +6,12 @@ import { createProjectDownloadService } from '../services/project-downloads.mjs'
 
 test('public GET/HEAD alias redirects to the current formal release without auth or cache; normal files still reach static serving', async t => {
   let file = 'brand-3.0.83-x64.exe'
+  let android = 'https://cdn.example.test/brand/android'
   const downloads = createProjectDownloadService({
-    findProject: async id => id === 'brand' ? { status: 'enabled', latestDownloadFileName: 'brand-latest-x64.exe' } : null,
+    findProject: async id => id === 'brand' ? {
+      status: 'enabled', latestDownloadFileName: 'brand-latest-x64.exe',
+      menus: [{ key: 'android-download', type: 'external', url: android, visible: true }],
+    } : null,
     findLatestRelease: async () => ({ status: 'succeeded', releaseStatus: '', releasedAt: '2026-01-01', releaseUrl: 'https://cdn.example.test/brand/', files: [file] }),
   })
   const app = express()
@@ -38,4 +42,15 @@ test('public GET/HEAD alias redirects to the current formal release without auth
   }
   file = ''
   assert.equal((await request('/updates/ai/brand/brand-latest-x64.exe')).status, 404)
+  assert.deepEqual(await (await request('/api/client/android-download/brand')).json(), { available: true })
+  const download = await request('/api/client/android-download/brand/file')
+  assert.equal(download.status, 302)
+  assert.equal(download.headers.get('location'), android)
+  assert.match(download.headers.get('cache-control'), /no-store/)
+  android = 'https://cdn.example.test/brand/android/v2'
+  assert.equal((await request('/api/client/android-download/brand/file')).headers.get('location'), android)
+  android = 'http://cdn.example.test/brand/android'
+  assert.deepEqual(await (await request('/api/client/android-download/brand')).json(), { available: false })
+  assert.equal((await request('/api/client/android-download/brand/file')).status, 404)
+  assert.equal((await request('/api/client/android-download/other/file')).status, 404)
 })
