@@ -88,10 +88,19 @@ export function annotateWorkerSourceStatus(workers, sourceInfo = {}) {
   return (Array.isArray(workers) ? workers : []).map((worker) => {
     const expectedPackageVersion = normalizePackageVersion(worker?.expectedPackageVersion) || fallbackExpectedVersion
     const packageVersion = normalizePackageVersion(worker?.metadata?.packageVersion)
+    const targets = worker?.metadata?.buildTargets
+    const supportsDesktop = !Array.isArray(targets) || targets.includes('desktop')
+    const supportsAndroid = Array.isArray(targets) && targets.includes('android')
+    const expectedAndroidVersion = normalizePackageVersion(worker?.expectedAndroidVersion || sourceInfo?.android?.version)
+    const androidVersionMatchesSource = worker?.androidVersionMatchesSource ?? (supportsAndroid && expectedAndroidVersion
+      ? normalizePackageVersion(worker.metadata.androidVersion) === expectedAndroidVersion &&
+        (!sourceInfo?.android?.commit || worker.metadata.androidRevision === sourceInfo.android.commit)
+      : null)
     return {
       ...worker,
       expectedPackageVersion,
-      versionMatchesSource: Boolean(packageVersion && expectedPackageVersion && packageVersion === expectedPackageVersion),
+      ...(expectedAndroidVersion || supportsAndroid ? { expectedAndroidVersion, androidVersionMatchesSource } : {}),
+      versionMatchesSource: supportsDesktop ? Boolean(packageVersion && expectedPackageVersion && packageVersion === expectedPackageVersion) : null,
     }
   })
 }

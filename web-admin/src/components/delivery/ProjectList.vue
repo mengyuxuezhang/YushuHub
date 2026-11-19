@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { BuildTarget } from '@/api/delivery-system'
 import { CheckCircle2, LoaderCircle, Pencil, Play, Trash2 } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
 import BuildArtifactLinks from '@/components/delivery/BuildArtifactLinks.vue'
@@ -9,8 +10,14 @@ import { buildExecutionLabel } from '@/utils/build-records'
 
 const props = defineProps<{ d: ReturnType<typeof useDeliverySystem> }>()
 
-function versionState(projectId: string) {
-  return projectVersionState(props.d.latestBuildFor(projectId), props.d.sourceVersionInfo.value.version)
+const platforms = [{ target: 'desktop', label: '桌面端' }, { target: 'android', label: 'Android' }] as const
+function versionState(projectId: string, target: BuildTarget) {
+  const source = props.d.sourceVersionInfo.value
+  const build = props.d.latestBuildFor(projectId, target)
+  if (target === 'android' && build?.target !== 'android') {
+    return projectVersionState(build ? { ...build, version: build.androidRelease?.version || '' } : null, source.android?.version)
+  }
+  return projectVersionState(build, target === 'android' ? source.android?.version : source.version)
 }
 </script>
 
@@ -41,34 +48,36 @@ function versionState(projectId: string) {
               </div>
             </td>
             <td>
-              <div class="project-version-cell" :class="versionState(project.id).stateClass">
-                <span>上次构建 <b v-if="versionState(project.id).buildVersion">v{{ versionState(project.id).buildVersion }}</b><b v-else>—</b></span>
-                <small>Agent 最新 v{{ versionState(project.id).latestVersion || '未获取' }} · {{ formatBuildTime(versionState(project.id).build?.updatedAt || versionState(project.id).build?.createdAt) }}</small>
+              <div v-for="platform in platforms" :key="platform.target" class="project-version-cell" :class="versionState(project.id, platform.target).stateClass">
+                <span>{{ platform.label }}上次构建 <b v-if="versionState(project.id, platform.target).buildVersion">v{{ versionState(project.id, platform.target).buildVersion }}</b><b v-else>—</b></span>
+                <small>最新 v{{ versionState(project.id, platform.target).latestVersion || '未获取' }} · {{ formatBuildTime(versionState(project.id, platform.target).build?.updatedAt || versionState(project.id, platform.target).build?.createdAt) }}</small>
               </div>
             </td>
             <td>
-              <div v-if="d.activeBuildFor(project.id)" class="project-build-cell is-running">
+              <template v-for="platform in platforms" :key="platform.target">
+              <div v-if="d.activeBuildFor(project.id, platform.target)" class="project-build-cell is-running">
                 <LoaderCircle class="spin" :size="15" />
-                <div><strong>{{ buildExecutionLabel(d.activeBuildFor(project.id)) }}</strong><small>{{ d.buildStage(d.activeBuildFor(project.id)) }}</small></div>
+                <div><strong>{{ platform.label }} · {{ buildExecutionLabel(d.activeBuildFor(project.id, platform.target)) }}</strong><small>{{ d.buildStage(d.activeBuildFor(project.id, platform.target)) }}</small></div>
                 <RouterLink to="/builds">查看进度</RouterLink>
               </div>
-              <div v-else-if="d.latestBuildFor(project.id)?.status === 'succeeded'" class="project-build-cell is-done">
+              <div v-else-if="d.latestBuildFor(project.id, platform.target)?.status === 'succeeded'" class="project-build-cell is-done">
                 <CheckCircle2 :size="15" />
-                <div><strong>最近构建完成</strong><BuildArtifactLinks :build="d.latestBuildFor(project.id)" compact /></div>
+                <div><strong>{{ platform.label }} · 最近构建完成</strong><BuildArtifactLinks :build="d.latestBuildFor(project.id, platform.target)" :target="platform.target" compact /></div>
                 <RouterLink to="/builds">查看详情</RouterLink>
               </div>
-              <div v-else-if="d.latestBuildFor(project.id)" class="project-build-cell is-idle">
-                <div><strong>尚未构建</strong><small>{{ versionState(project.id).stateLabel }}</small></div>
+              <div v-else-if="d.latestBuildFor(project.id, platform.target)" class="project-build-cell is-idle">
+                <div><strong>{{ platform.label }} · {{ buildExecutionLabel(d.latestBuildFor(project.id, platform.target)) }}</strong><small>{{ versionState(project.id, platform.target).stateLabel }}</small></div>
               </div>
-              <span v-else class="cell-note">尚未构建</span>
+              <div v-else class="cell-note">{{ platform.label }} · 尚未构建</div>
+              </template>
             </td>
             <td><StatusBadge :status="project.status" /></td>
             <td class="action-column">
               <div class="row-actions">
                 <button class="text-button" @click="d.openProject(project)"><Pencil :size="14" />编辑</button>
-                <button class="primary-button" :disabled="Boolean(d.activeBuildFor(project.id)) || d.isBuildSubmitting(project.id)" @click="d.startBuild(project)">
-                  <LoaderCircle v-if="d.isBuildSubmitting(project.id)" class="spin" :size="14" />
-                  <Play v-else :size="14" />{{ d.isBuildSubmitting(project.id) ? '提交中' : d.activeBuildFor(project.id) ? buildExecutionLabel(d.activeBuildFor(project.id)) : '测试构建' }}
+                <button v-for="platform in platforms" :key="platform.target" class="primary-button" :disabled="!d.canBuild(platform.target) || Boolean(d.activeBuildFor(project.id, platform.target)) || d.isBuildSubmitting(project.id, platform.target)" @click="d.startBuild(project, platform.target)">
+                  <LoaderCircle v-if="d.isBuildSubmitting(project.id, platform.target)" class="spin" :size="14" />
+                  <Play v-else :size="14" />{{ d.isBuildSubmitting(project.id, platform.target) ? '提交中' : d.activeBuildFor(project.id, platform.target) ? buildExecutionLabel(d.activeBuildFor(project.id, platform.target)) : (platform.target === 'desktop' ? '测试构建桌面端' : '测试构建 Android') }}
                 </button>
                 <button class="icon-danger" title="删除项目" @click="d.removeProject(project)"><Trash2 :size="16" /></button>
               </div>

@@ -1,3 +1,5 @@
+import { androidBuildArtifacts, isAndroidBuildArtifact } from '../services/android-build-artifacts.mjs'
+import { parseBuildTarget } from '../services/build-target.mjs'
 import {
   requireAuth,
   requirePermission,
@@ -68,17 +70,26 @@ export function registerBuildRoutes(app, deps) {
         res.status(403).json({ success: false, error: '只能操作自己名下的 AI 项目' })
         return
       }
-      const activeBuild = await findActiveBuildForProject(project.id, req.user)
+      const target = parseBuildTarget(req.body?.target)
+      const activeBuild = await findActiveBuildForProject(project.id, req.user, target)
       if (activeBuild) {
         res.json({ success: true, data: { ...activeBuild, alreadyActive: true } })
         return
       }
       await assertBuildQuota(project.ownerUserId)
-      let build = await createBuild(project, req.user.id, req.body?.version || '', { idempotencyKey: req.headers['idempotency-key'] || req.body?.requestId })
+      let build = await createBuild(project, req.user.id, req.body?.version || '', { target, idempotencyKey: req.headers['idempotency-key'] || req.body?.requestId })
+      if (build.alreadyActive) {
+        res.json({ success: true, data: build })
+        return
+      }
       build = await submitBuildToCenter(build, project, req.user, resolvePublicUrlsForRequest(req, {
         adminBaseUrl: PUBLIC_ADMIN_BASE_URL,
         updateBaseUrl: PUBLIC_UPDATE_BASE_URL,
       }))
+      if (build.status === 'failed') {
+        res.status(400).json({ success: false, error: build.error || '提交构建失败', data: build })
+        return
+      }
       res.json({ success: true, data: build })
     } catch (err) {
       next(err)
@@ -215,6 +226,10 @@ export function registerBuildRoutes(app, deps) {
         res.status(400).json({ success: false, error: '不支持的发布平台' })
         return
       }
+      if (current.target !== 'combined' && current.target && current.target !== platform) {
+        res.status(400).json({ success: false, error: '此构建没有该平台的产物' })
+        return
+      }
       const build = platform === 'android'
         ? await startAndroidReleaseBuild(current, req.user)
         : await startReleaseBuild(current, req.user)
@@ -305,6 +320,10 @@ export function registerBuildRoutes(app, deps) {
       const build = await findBuildById(req.params.id)
       if (!build || build.centerSupplierId !== supplierId) {
         res.status(404).json({ success: false, error: '构建任务不存在或无权发布' })
+        return
+      }
+      if (build.target === 'android') {
+        res.status(400).json({ success: false, error: 'Android 构建不能推送到桌面端通道' })
         return
       }
       const released = await releaseBuild(build, {
@@ -407,9 +426,10 @@ export function registerBuildRoutes(app, deps) {
       const brand = claimed.brand || projectToBrand(project)
       if (!claimed.brand || !brand.updateUrl) await applyProjectReleaseFeedUrl(brand, project.id)
       if (!brand.releaseNotes || !Array.isArray(brand.releaseHistory)) {
-        const sourceInfo = await getSourceVersionInfo()
-        brand.releaseNotes = brand.releaseNotes || sourceInfo.releaseNotes || ''
-        brand.releaseHistory = Array.isArray(brand.releaseHistory) ? brand.releaseHistory : (Array.isArray(sourceInfo.history) ? sourceInfo.history : [])
+        const sourceVersions = await getSourceVersionInfo()
+        const sourceInfo = claimed.target === 'android' ? sourceVersions.android : sourceVersions
+        brand.releaseNotes = brand.releaseNotes || sourceInfo?.releaseNotes || ''
+        brand.releaseHistory = Array.isArray(brand.releaseHistory) ? brand.releaseHistory : (Array.isArray(sourceInfo?.history) ? sourceInfo.history : [])
       }
       brand.sourceBuildId = claimed.id
       brand.centerProjectId = brand.centerProjectId || project.id
@@ -486,13 +506,18 @@ export function registerBuildRoutes(app, deps) {
         res.status(403).json({ success: false, error: '该构建任务不属于当前 worker' })
         return
       }
-      const status = req.body?.status === 'succeeded' ? 'succeeded' : 'failed'
+      const files = Array.isArray(req.body?.files) ? req.body.files.map(String) : []
+      const invalidArtifacts = req.body?.status === 'succeeded' && (
+        (current.target === 'android' && (files.length !== 3 || androidBuildArtifacts(files).length !== 3)) ||
+        (current.target === 'desktop' && (!files.includes('latest.yml') || !files.some(name => name.endsWith('.exe')) || files.some(isAndroidBuildArtifact)))
+      )
+      const status = req.body?.status === 'succeeded' && !invalidArtifacts ? 'succeeded' : 'failed'
       const build = await updateBuild(req.params.id, {
         status,
-        error: status === 'failed' ? String(req.body?.error || '构建失败') : '',
+        error: invalidArtifacts ? '构建产物与请求平台不匹配或文件不完整' : status === 'failed' ? String(req.body?.error || '构建失败') : '',
         artifactDir: String(req.body?.artifactDir || ''),
         publicUrl: String(req.body?.publicUrl || ''),
-        files: Array.isArray(req.body?.files) ? req.body.files.map(String) : [],
+        files,
         androidBuildError: String(req.body?.androidBuildError || '').slice(0, 1500),
         finishedAt: nowIso(),
       })

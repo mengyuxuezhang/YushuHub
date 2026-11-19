@@ -1,3 +1,5 @@
+import { androidTestArtifacts } from '@/utils/build-artifacts'
+
 export type BuildClientMode = 'personal'
 
 export function buildClientMode(_build: any): BuildClientMode { return 'personal' }
@@ -14,9 +16,21 @@ export function buildExecutionLabel(build: any) {
 }
 
 export function buildReleaseLabel(build: any) {
+  if (build?.target === 'android') {
+    if (build.androidRelease?.status === 'published') return '已推送'
+    if (build.androidRelease?.status === 'publishing') return '正式包推送中'
+    if (build.androidRelease?.status === 'failed') return '推送失败'
+    return ''
+  }
   if (build?.releasedAt && build?.releaseUrl) return '已推送'
   if (build?.releaseStatus === 'publishing') return '正式包推送中'
   if (build?.releaseStatus === 'failed') return '推送失败'
   return ''
 }
 
+
+export function buildPlatformLabel(build: any) {
+  if (build?.target === 'android') return 'Android'
+  if (build?.target !== 'desktop' && androidTestArtifacts(build)) return '桌面端 + Android（历史）'
+  return '桌面端'
+}

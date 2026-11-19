@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { BuildTarget } from '@/api/delivery-system'
 import { Play, Save, X } from '@lucide/vue'
 import ClientMenuEditor from './ClientMenuEditor.vue'
 import ProjectAssetField from './ProjectAssetField.vue'
@@ -9,9 +10,9 @@ import LoginPreview from './LoginPreview.vue'
 import { loginDesigns } from '@/utils/login-preview'
 const previewOpen = ref(false)
 
-defineProps<{ open: boolean; editing: boolean; form: Record<string, any>; accounts: any[]; saving: boolean; errorMessage: string }>()
+defineProps<{ open: boolean; editing: boolean; form: Record<string, any>; accounts: any[]; saving: boolean; errorMessage: string; canBuildDesktop: boolean; canBuildAndroid: boolean }>()
 
-defineEmits<{ close: []; save: []; 'save-and-build': [] }>()
+defineEmits<{ close: []; save: []; 'save-and-build': [target: BuildTarget] }>()
 </script>
 
 <template>
@@ -66,7 +67,7 @@ defineEmits<{ close: []; save: []; 'save-and-build': [] }>()
         <section class="form-section"><div class="section-heading"><span>5</span><div><h3>外部链接</h3><p>内置导航由桌面端统一管理，不再提供旧版菜单的改名、隐藏和排序。历史内置菜单数据保留，不在此修改。</p></div></div><ClientMenuEditor :model-value="form.menus" @update:model-value="form.menus = $event" /></section>
         <p v-if="errorMessage" class="drawer-error">{{ errorMessage }}</p>
       </div>
-      <footer class="drawer-footer project-drawer-footer"><button class="secondary-button" :disabled="saving" @click="$emit('save-and-build')"><Play :size="16" />保存并测试构建</button><button class="primary-button" :disabled="saving" @click="$emit('save')"><Save :size="16" />{{ saving ? '保存中…' : '保存项目' }}</button></footer>
+      <footer class="drawer-footer project-drawer-footer"><button class="secondary-button" :disabled="saving || !canBuildDesktop" @click="$emit('save-and-build', 'desktop')"><Play :size="16" />保存并测试构建桌面端</button><button class="secondary-button" :disabled="saving || !canBuildAndroid" @click="$emit('save-and-build', 'android')"><Play :size="16" />保存并测试构建 Android</button><button class="primary-button" :disabled="saving" @click="$emit('save')"><Save :size="16" />{{ saving ? '保存中…' : '保存项目' }}</button></footer>
     </aside>
     <LoginPreview v-if="previewOpen" :form="form" @close="previewOpen = false" />
   </div>

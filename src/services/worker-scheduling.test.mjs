@@ -120,3 +120,17 @@ test('identifies local proxy and center-owned delegated build records', () => {
   assert.equal(isDelegatedBuildRecord({ centerSupplierId: 'supplier-a' }), true)
   assert.equal(isDelegatedBuildRecord({ remote_build_id: '', center_supplier_id: '' }), false)
 })
+
+test('compares Android version and commit without requiring the Windows version on Android-only Workers', () => {
+  const revision = 'a'.repeat(40)
+  const androidWorker = { metadata: { buildTargets: ['android'], androidVersion: '0.1.4', androidRevision: revision } }
+  const source = { version: '3.0.99', android: { version: '0.1.4', commit: revision } }
+  const [matched, wrongRevision] = annotateWorkerSourceStatus([
+    androidWorker,
+    { metadata: { ...androidWorker.metadata, androidRevision: 'b'.repeat(40) } },
+  ], source)
+  assert.equal(matched.versionMatchesSource, null)
+  assert.equal(matched.expectedAndroidVersion, '0.1.4')
+  assert.equal(matched.androidVersionMatchesSource, true)
+  assert.equal(wrongRevision.androidVersionMatchesSource, false)
+})

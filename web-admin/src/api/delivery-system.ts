@@ -17,6 +17,8 @@ export interface ReleaseHistoryItem {
   dateSource?: 'commit';
 }
 
+export type BuildTarget = "desktop" | "android";
+
 export interface AgentSourceVersionInfo extends ReleaseHistoryItem {
   configured: boolean;
   commit?: string;
@@ -24,6 +26,8 @@ export interface AgentSourceVersionInfo extends ReleaseHistoryItem {
   stale?: boolean;
   error?: string;
   history: ReleaseHistoryItem[];
+  android?: AgentSourceVersionInfo;
+  splitBuildTargets?: boolean;
 }
 const json = (body: unknown, method = "POST"): RequestInit => ({
   method,
@@ -44,8 +48,8 @@ export const listBuildPage = (query: PageQuery = {}) => {
 export const listWorkers = () => api<any[]>("/api/workers");
 export const getAgentSourceVersion = (fullHistory = false) =>
   api<AgentSourceVersionInfo>(`/api/source-version${fullHistory ? '?history=all' : ''}`);
-export const createBuild = (projectId: string, version = "") =>
-  api<any>("/api/builds", json({ projectId, version }));
+export const createBuild = (projectId: string, target: BuildTarget) =>
+  api<any>("/api/builds", json({ projectId, target }));
 export const retryBuild = (id: string) =>
   api<any>(`/api/builds/${encodeURIComponent(id)}/retry`, json({}));
 export const finishBuild = (id: string) =>

@@ -1,4 +1,4 @@
-const COLUMNS = 'id project_id owner_user_id organization_id requested_by version status log error artifact_dir public_url release_url release_status release_error android_release android_build_error files transfer_progress remote_build_id center_supplier_id center_local_build_id claimed_by started_at finished_at released_at created_at updated_at'.split(' ')
+const COLUMNS = 'id project_id owner_user_id organization_id requested_by version build_target source_revision status log error artifact_dir public_url release_url release_status release_error android_release android_build_error files transfer_progress remote_build_id center_supplier_id center_local_build_id claimed_by started_at finished_at released_at created_at updated_at'.split(' ')
 
 // Select the metadata needed by status/list consumers without reading embedded
 // branding images from MySQL. The complete brand remains stored for packaging.

@@ -578,6 +578,8 @@ export async function initDatabase(options = {}) {
   await ensureColumn('ai_builds', 'release_url', 'TEXT NULL AFTER public_url')
   await ensureColumn('ai_builds', 'release_status', 'VARCHAR(32) NOT NULL DEFAULT \'\' AFTER release_url')
   await ensureColumn('ai_builds', 'release_error', 'TEXT NULL AFTER release_status')
+  await ensureColumn('ai_builds', 'build_target', "VARCHAR(16) NOT NULL DEFAULT 'combined' AFTER version")
+  await ensureColumn('ai_builds', 'source_revision', "VARCHAR(40) NOT NULL DEFAULT '' AFTER build_target")
   await ensureColumn('ai_builds', 'android_release', 'JSON NULL AFTER release_error')
   await ensureColumn('ai_builds', 'android_build_error', 'TEXT NULL AFTER android_release')
   await ensureColumn('ai_builds', 'released_at', 'DATETIME(3) NULL AFTER finished_at')

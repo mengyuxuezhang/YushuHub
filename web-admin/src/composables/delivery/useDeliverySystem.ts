@@ -1,4 +1,5 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { androidTestArtifacts } from "@/utils/build-artifacts";
 import * as api from "@/api/delivery-system";
 import { getOrganizationQuotaUsage, listAccounts } from "@/api/organization";
 import { toUserMessage } from "@/api/client";
@@ -21,7 +22,7 @@ export function deliverySearchValues(section: DeliverySection, item: any, field:
     },
     workers: {
       worker: [item.id, item.metadata?.hostname], platform: [item.metadata?.platform],
-      version: [item.metadata?.packageVersion, item.expectedPackageVersion], build: [item.currentBuildId],
+      version: [item.metadata?.packageVersion, item.expectedPackageVersion, item.metadata?.androidVersion, item.expectedAndroidVersion], build: [item.currentBuildId],
     },
   }
   const selected = fields[section] || {}
@@ -64,15 +65,25 @@ export function useDeliverySystem(section: DeliverySection) {
       if (section === "workers" && statusFilter.value !== "all") {
         if (statusFilter.value === "online" && !item.online) return false;
         if (statusFilter.value === "offline" && item.online) return false;
-        if (statusFilter.value === "outdated" && !(item.online && item.versionMatchesSource === false)) return false;
+        if (statusFilter.value === "outdated" && !(item.online && (item.versionMatchesSource === false || item.androidVersionMatchesSource === false))) return false;
       }
       return !keyword || deliverySearchValues(section, item, appliedSearchField.value)
         .some((value) => String(value ?? "").toLowerCase().includes(keyword));
     });
   });
+  const submittingByProject = new Map<string, Promise<any>>();
+  const buildKey = (projectId: string, target: api.BuildTarget) => JSON.stringify([projectId, target]);
   function indexProjectBuilds(builds: any[]) {
     const latest: Record<string, any> = {};
-    for (const build of builds) if (!latest[build.projectId]) latest[build.projectId] = build;
+    for (const build of builds) {
+      const legacy = !build.target || build.target === "combined";
+      if (legacy && androidTestArtifacts(build)) {
+        const androidKey = buildKey(build.projectId, "android");
+        latest[androidKey] ??= build;
+      }
+      const key = buildKey(build.projectId, legacy ? "desktop" : build.target);
+      latest[key] ??= build;
+    }
     projectBuilds.value = latest;
   }
   async function load(silent = false) {
@@ -159,7 +170,7 @@ export function useDeliverySystem(section: DeliverySection) {
     errorMessage.value = "";
     drawerOpen.value = true;
   }
-  async function saveProject(startAfterSave = false) {
+  async function saveProject(target?: api.BuildTarget) {
     if (saving.value) return;
     if (!form.id || !form.appName || !form.brandName) {
       errorMessage.value = "请填写项目 ID、应用名称和品牌名称";
@@ -171,9 +182,8 @@ export function useDeliverySystem(section: DeliverySection) {
       const previous = projectMenuRows(originalProjectMenus).find((item) => item.key === 'android-download');
       if (previous) menus.push(previous);
       const saved = await api.saveProject({ ...form, menus: serializeProjectMenus(menus, originalProjectMenus) });
-      if (startAfterSave) {
-        const build = await api.createBuild(saved.id);
-        projectBuilds.value = { ...projectBuilds.value, [saved.id]: build };
+      if (target) {
+        await submitBuild(saved.id, target);
         feedback.notify("项目已保存，测试构建已提交", "success");
       } else feedback.notify("AI 项目保存成功", "success");
       drawerOpen.value = false;
@@ -199,26 +209,37 @@ export function useDeliverySystem(section: DeliverySection) {
       feedback.notify(toUserMessage(e), "error");
     }
   }
-  async function startBuild(x: any) {
-    if (buildSubmittingIds.value.includes(x.id) || activeBuildFor(x.id)) return;
-    buildSubmittingIds.value = [...buildSubmittingIds.value, x.id];
+  async function submitBuild(projectId: string, target: api.BuildTarget) {
+    const key = buildKey(projectId, target);
+    const previous = submittingByProject.get(projectId) ?? Promise.resolve();
+    const submission = previous.catch(() => {}).then(() => api.createBuild(projectId, target));
+    submittingByProject.set(projectId, submission);
+    buildSubmittingIds.value = [...buildSubmittingIds.value, key];
     try {
-      const build = await api.createBuild(x.id);
-      projectBuilds.value = { ...projectBuilds.value, [x.id]: build };
-      feedback.notify("测试构建已提交，可前往构建发布查看进度", "success");
-      if (section === "builds") await load();
-    } catch (e) {
-      feedback.notify(toUserMessage(e), "error");
+      const build = await submission;
+      projectBuilds.value = { ...projectBuilds.value, [key]: build };
     } finally {
-      buildSubmittingIds.value = buildSubmittingIds.value.filter(id => id !== x.id);
+      if (submittingByProject.get(projectId) === submission) submittingByProject.delete(projectId);
+      buildSubmittingIds.value = buildSubmittingIds.value.filter(id => id !== key);
     }
   }
-  const activeBuildFor = (projectId: string) => {
-    const build = projectBuilds.value[projectId];
+  async function startBuild(project: { id: string }, target: api.BuildTarget) {
+    if (isBuildSubmitting(project.id, target) || activeBuildFor(project.id, target)) return;
+    try {
+      await submitBuild(project.id, target);
+      feedback.notify("测试构建已提交，可前往构建发布查看进度", "success");
+    } catch (e) {
+      feedback.notify(toUserMessage(e), "error");
+    }
+  }
+  const latestBuildFor = (projectId: string, target: api.BuildTarget) => projectBuilds.value[buildKey(projectId, target)] || null;
+  const activeBuildFor = (projectId: string, target: api.BuildTarget) => {
+    const build = latestBuildFor(projectId, target);
     return build && ["queued", "running"].includes(build.status) ? build : null;
   };
-  const latestBuildFor = (projectId: string) => projectBuilds.value[projectId] || null;
-  const isBuildSubmitting = (projectId: string) => buildSubmittingIds.value.includes(projectId);
+  const isBuildSubmitting = (projectId: string, target: api.BuildTarget) => buildSubmittingIds.value.includes(buildKey(projectId, target));
+  const canBuild = (target: api.BuildTarget) => sourceVersionInfo.value.splitBuildTargets === true &&
+    Boolean(target === "desktop" ? sourceVersionInfo.value.version : sourceVersionInfo.value.android?.version);
   function buildPercent(build: any) {
     if (build?.status === "succeeded") return 100;
     if (build?.status === "failed") return 100;
@@ -414,6 +435,7 @@ export function useDeliverySystem(section: DeliverySection) {
     saveProject,
     removeProject,
     startBuild,
+    canBuild,
     activeBuildFor,
     latestBuildFor,
     isBuildSubmitting,

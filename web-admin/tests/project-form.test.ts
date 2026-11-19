@@ -26,7 +26,8 @@ async function mountProject() {
     return () => h(ProjectDrawer, {
       open: state.drawerOpen.value, editing: state.projectEditing.value, form: state.form,
       accounts: [], saving: state.saving.value, errorMessage: state.errorMessage.value,
-      onSave: () => state.saveProject(), 'onSave-and-build': () => state.saveProject(true),
+      canBuildDesktop: true, canBuildAndroid: true,
+      onSave: () => state.saveProject(), 'onSave-and-build': target => state.saveProject(target),
     })
   } })
   app.use(createPinia()); app.mount(host)
@@ -127,9 +128,9 @@ describe('current Desktop project form', () => {
       expect(mounted.save.mock.calls[0]![0].menus).toEqual([unknownRoute])
       mounted.state.openProject()
       Object.assign(mounted.state.form, { id: 'new-project', appName: '新项目', brandName: '新品牌' })
-      await mounted.state.saveProject(true)
+      await mounted.state.saveProject('android')
       expect(mounted.save.mock.calls[1]![0]).toMatchObject({ menus: [], officialSiteUrl: '', docsUrl: '', modelTutorialUrl: '' })
-      expect(mounted.build).toHaveBeenCalledWith('new-project')
+      expect(mounted.build).toHaveBeenCalledWith('new-project', 'android')
     } finally { mounted.unmount() }
   })
 
@@ -137,12 +138,31 @@ describe('current Desktop project form', () => {
     const mounted = await mountProject()
     try {
       mounted.state.openProject({ id: 'demo', appName: '演示', brandName: '品牌', menus: [link({ url: 'http://example.com' })] })
-      await mounted.state.saveProject(true)
+      await mounted.state.saveProject('android')
       expect(mounted.save).not.toHaveBeenCalled()
       expect(mounted.build).not.toHaveBeenCalled()
       expect(mounted.state.errorMessage.value).toContain('HTTPS')
       expect(mounted.state.drawerOpen.value).toBe(true)
       expect(mounted.state.saving.value).toBe(false)
+    } finally { mounted.unmount() }
+  })
+
+  it('submits desktop and Android in click order while tracking both tasks', async () => {
+    const mounted = await mountProject()
+    const project = { id: 'demo' }
+    let completeDesktop!: (value: object) => void
+    mounted.build.mockImplementationOnce(() => new Promise(resolve => { completeDesktop = resolve }))
+    mounted.build.mockResolvedValueOnce({ id: 'android-1', status: 'queued', target: 'android' })
+    try {
+      const desktop = mounted.state.startBuild(project, 'desktop')
+      const android = mounted.state.startBuild(project, 'android')
+      await vi.waitFor(() => expect(mounted.build).toHaveBeenCalledExactlyOnceWith('demo', 'desktop'))
+      expect(mounted.state.isBuildSubmitting('demo', 'android')).toBe(true)
+      completeDesktop({ id: 'desktop-1', status: 'running', target: 'desktop' })
+      await Promise.all([desktop, android])
+      expect(mounted.build.mock.calls).toEqual([['demo', 'desktop'], ['demo', 'android']])
+      expect(mounted.state.activeBuildFor('demo', 'desktop')?.id).toBe('desktop-1')
+      expect(mounted.state.activeBuildFor('demo', 'android')?.id).toBe('android-1')
     } finally { mounted.unmount() }
   })
 

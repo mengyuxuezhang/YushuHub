@@ -2,14 +2,14 @@ import { mysqlStateStore } from '../../repositories/authorization-state.mjs'
 import { digest, failure, identifier } from './protocol.mjs'
 import crypto from 'node:crypto'
 
-export function buildResourceIdentity(project, requestedBy, version, key) {
+export function buildResourceIdentity(project, requestedBy, version, key, target = 'combined') {
   if (key !== undefined && key !== null) { identifier(key, '构建请求ID'); if (key.length > 80) throw failure('INVALID_ID', '构建请求ID不能超过80字符') }
-  return { id: key ? digest(`${project.organizationId}:${key}`).slice(0, 36) : crypto.randomUUID(), fingerprint: digest(JSON.stringify([project.id, requestedBy, version])) }
+  return { id: key ? digest(`${project.organizationId}:${key}`).slice(0, 36) : crypto.randomUUID(), fingerprint: digest(JSON.stringify([project.id, requestedBy, version, ...(target === 'combined' ? [] : [target])])) }
 }
-export async function lockBuildProject(connection, project) {
+export async function lockBuildProject(connection, project, target = 'combined') {
   const [[locked]] = await connection.query('SELECT organization_id FROM ai_projects WHERE id=? FOR UPDATE', [project.id])
   if (!locked || locked.organization_id !== project.organizationId) throw failure('BUILD_SCOPE_CHANGED', '项目归属已经变化，请刷新后重试', 409)
-  const [[active]] = await connection.query("SELECT * FROM ai_builds WHERE project_id=? AND status IN ('queued','running') LIMIT 1", [project.id])
+  const [[active]] = await connection.query("SELECT * FROM ai_builds WHERE project_id=? AND build_target=? AND status IN ('queued','running') LIMIT 1", [project.id, target])
   return active || null
 }
 export async function assertProjectUserRetention(connection, id) {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { isCenterDelegatedBuild, registerBuildRoutes } from './builds.mjs'
+import { normalizeAndroidSourceVersion } from '../services/build-target.mjs'
 import { setPool } from '../db/pool.mjs'
 
 function publishHandler(deps) {
@@ -364,4 +365,51 @@ test('center retry rejects invalid login themes before changing a build', async 
   await handler({ params: { id: 'remote-build' }, centerSupplier: { id: 'supplier-demo' }, body: { brand: { loginDesign: 'untrusted' } } }, res)
   assert.equal(res.statusCode, 400)
   assert.equal(writes, 0)
+})
+
+test('independent platform requests use separate active-build checks and preserve the requested target', async () => {
+  const builds = new Map()
+  const handler = postHandler('/api/builds', {
+    safeProjectId: id => id,
+    findProjectById: async id => ({ id, ownerUserId: 'user' }),
+    findActiveBuildForProject: async (_project, _user, target) => builds.get(target),
+    createBuild: async (_project, _user, _version, { target }) => {
+      const build = { id: 'build-' + target, target, status: 'queued' }
+      builds.set(target, build)
+      return build
+    },
+    submitBuildToCenter: async build => build,
+  })
+  for (const target of ['desktop', 'android', 'desktop']) {
+    const res = responseRecorder()
+    await handler({ body: { projectId: 'demo', target }, user: { id: 'user' }, headers: {} }, res, err => { throw err })
+    assert.equal(res.body.data.target, target)
+    assert.equal(res.body.data.alreadyActive, builds.size === 2 && target === 'desktop' ? true : undefined)
+  }
+  assert.equal(builds.size, 2)
+})
+
+test('platform-specific builds cannot publish to the other platform', async () => {
+  for (const [target, platform] of [['desktop', 'android'], ['android', 'desktop']]) {
+    const handler = publishHandler({
+      findBuildById: async id => ({ id, target }),
+      startReleaseBuild: () => assert.fail('unexpected desktop release'),
+      startAndroidReleaseBuild: () => assert.fail('unexpected Android release'),
+    })
+    const res = responseRecorder()
+    await handler({ body: { platform }, params: { id: 'demo' }, user: { id: 'operator' } }, res)
+    assert.equal(res.statusCode, 400)
+  }
+})
+
+test('Android source history keeps Android versions and lower releases', () => {
+  const commit = 'a'.repeat(40)
+  const result = normalizeAndroidSourceVersion({
+    version: '0.1.5', commit, sourceOnly: true, history: [
+      { version: '0.1.4', releaseNotes: 'previous Android' },
+      { version: '3.0.99', releaseNotes: 'desktop' },
+    ],
+  }, [{ version: '0.1.3' }])
+  assert.deepEqual(result.history.map(item => item.version), ['0.1.5', '0.1.4', '0.1.3'])
+  assert.equal(result.history[1].releaseNotes, 'previous Android')
 })

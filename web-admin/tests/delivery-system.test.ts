@@ -40,14 +40,15 @@ describe('delivery and system API contracts', () => {
 
   it('separates test build submission from user publishing', async () => {
     const f = vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok({}))
-    await createBuild('project/a')
+    await createBuild('project/a', 'android')
+    expect(JSON.parse(String(f.mock.calls[0][1]?.body))).toEqual({ projectId: 'project/a', target: 'android' })
     await publishBuild('build/a')
     expect(f.mock.calls.map((x) => String(x[0]))).toEqual(['/api/builds', '/api/builds/build%2Fa/publish'])
   })
 
   it('searches projects and workers through explicit visible fields', () => {
     expect(deliverySearchValues('projects', { id: 'p-1', appName: 'Demo', brandName: 'Brand', shortName: 'DB', secret: 'hidden' }, 'all')).toEqual(['Demo', 'Brand', 'DB', 'p-1'])
-    expect(deliverySearchValues('workers', { id: 'worker-1', metadata: { hostname: 'builder', platform: 'win32', packageVersion: '3.0.0' }, expectedPackageVersion: '3.0.1', currentBuildId: 'build-1' }, 'version')).toEqual(['3.0.0', '3.0.1'])
+    expect(deliverySearchValues('workers', { id: 'worker-1', metadata: { hostname: 'builder', platform: 'win32', packageVersion: '3.0.0' }, expectedPackageVersion: '3.0.1', currentBuildId: 'build-1' }, 'version').filter(Boolean)).toEqual(['3.0.0', '3.0.1'])
   })
 
   it('serializes explicit build fields and status into the paged list request', async () => {

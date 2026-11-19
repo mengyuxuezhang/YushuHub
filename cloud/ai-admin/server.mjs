@@ -111,7 +111,7 @@ import { registerAdminBusinessRoutes } from '../../src/routes/admin-business.mjs
 import { registerProjectDownloadRoutes } from '../../src/routes/project-downloads.mjs'
 import { createProjectDownloadService, normalizeLatestDownloadFileName } from '../../src/services/project-downloads.mjs'
 import { findLatestProjectRelease, findLatestAndroidRelease, beginAndroidRelease, finishAndroidRelease } from '../../src/repositories/project-downloads.mjs'
-import { isAndroidBuildArtifact } from '../../src/services/android-build-artifacts.mjs'
+import { androidBuildArtifacts, isAndroidBuildArtifact } from '../../src/services/android-build-artifacts.mjs'
 import { createAndroidArtifactPublisher, createAndroidReleaseStarter } from '../../src/services/android-release.mjs'
 import { registerBuildRoutes } from '../../src/routes/builds.mjs'
 import { registerMembershipRoutes } from '../../src/routes/memberships.mjs'
@@ -153,6 +153,7 @@ import { normalizeImageEndpoint } from '../../src/services/image-endpoint.mjs'
 import { UpstreamAccountService } from '../../src/services/upstream-accounts.mjs'
 import { ModelServiceV2Sync } from '../../src/services/model-service-v2-sync.mjs'
 import { assertSupplierBuildQuota, normalizeSupplierProjectIds, planSupplierProjectReservation } from '../../src/services/supplier-quotas.mjs'
+import { normalizeAndroidSourceVersion, parseBuildTarget } from '../../src/services/build-target.mjs'
 import { configuredManagedWorkerIds, filterRemoteWorkers, higherPriorityWorkerIds, isDelegatedBuildRecord, isIdleCompatibleWorker, isManagedWorkerId, isWorkerDisabled, parseWorkerPriority } from '../../src/services/worker-scheduling.mjs'
 import { preserveConfiguredSecret, withEffectiveBuildCenterSettings } from '../../src/services/platform-secrets.mjs'
 import { buildListSearch } from '../../src/services/list-search.mjs'
@@ -504,15 +505,41 @@ async function getSourceVersionInfo() {
   }
 }
 
+let androidSourceCache
+async function getAndroidSourceVersionInfo() {
+  const url = process.env.AI_ANDROID_SOURCE_VERSION_URL || 'https://updates.okpa.cn/agent/android-source/latest.json'
+  if (androidSourceCache && Date.now() - androidSourceCache.checkedAt < 60000) return androidSourceCache.info
+  const baseline = normalizeAndroidSourceVersion(JSON.parse(
+    await fsp.readFile(path.join(repoRoot, 'docs', 'ANDROID_SOURCE_VERSION.json'), 'utf8'),
+  ))
+  try {
+    const manifest = await fetchJson(url, { timeoutMs: 3000 })
+    const history = androidSourceCache?.info.history || baseline.history
+    const info = normalizeAndroidSourceVersion(manifest, history)
+    androidSourceCache = { checkedAt: Date.now(), info }
+  } catch (error) {
+    const info = androidSourceCache?.info || baseline
+    androidSourceCache = { checkedAt: Date.now(), info: { ...info, stale: true, error: error.message } }
+  }
+  return androidSourceCache.info
+}
+
+async function getClientSourceVersionInfo() {
+  const [desktop, android] = await Promise.all([getSourceVersionInfo(), getAndroidSourceVersionInfo()])
+  return { ...desktop, android, splitBuildTargets: true }
+}
+
 async function getVisibleSourceVersionInfo({ fullHistory = false } = {}) {
   const now = Date.now()
   if (!fullHistory && visibleSourceVersionCache.info && now - visibleSourceVersionCache.checkedAt < 60000) return visibleSourceVersionCache.info
+  let centerConfigured = false
   if (!CENTER_SUPPLIER_MANAGEMENT_ENABLED) {
     const config = await getBuildCenterConfig().catch(() => null)
+    centerConfigured = Boolean(config?.enabled)
     if (config?.enabled) {
       try {
         const info = await buildCenterApi('/api/center/source-version', fullHistory ? { history: 'all' } : {}, config)
-        if (info?.version) {
+        if (info?.version || info?.android?.version) {
           const result = { ...info, configured: true, source: 'build-center' }
           visibleSourceVersionCache = { info: { ...result, history: Array.isArray(info.history) ? info.history.slice(0, 50) : [] }, checkedAt: now }
           return fullHistory ? result : visibleSourceVersionCache.info
@@ -522,7 +549,8 @@ async function getVisibleSourceVersionInfo({ fullHistory = false } = {}) {
       }
     }
   }
-  const info = await getSourceVersionInfo()
+  const info = await getClientSourceVersionInfo()
+  if (centerConfigured) info.splitBuildTargets = false
   visibleSourceVersionCache = { info, checkedAt: now }
   return info
 }
@@ -1030,6 +1058,8 @@ function normalizeBuild(row) {
     ownerRole: row.owner_role || '',
     requestedBy: row.requested_by,
     version: row.version,
+    target: row.build_target || 'combined',
+    sourceRevision: row.source_revision || '',
     status: row.status,
     log: redactPublicBuildLog(row.log),
     error: redactPublicBuildLog(row.error),
@@ -4180,6 +4210,11 @@ async function createCenterBuild(input, supplier) {
     [supplierId, localBuildId],
   )
   if (existingRows[0]) return normalizeBuild(existingRows[0])
+  const target = parseBuildTarget(input?.target)
+  const androidSource = target === 'android' ? await getAndroidSourceVersionInfo() : null
+  if (androidSource && (input.version !== androidSource.version || input.sourceRevision !== androidSource.commit)) {
+    throw new Error('Android 源码版本已变化，请重新提交构建')
+  }
   const originalProjectId = safeProjectId(brand.aiProjectId || brand.id)
   if (!supplier.centralAuthorization) await reserveCenterSupplierProject(supplier, originalProjectId, input?.projectIds || [originalProjectId])
   const project = await upsertCenterProject(supplierId, brand)
@@ -4219,14 +4254,16 @@ async function createCenterBuild(input, supplier) {
     if (!supplier.centralAuthorization) assertSupplierBuildQuota(actualBuildCount, supplierRows[0].max_builds)
     await connection.query(
       `INSERT INTO ai_builds (
-        id, project_id, owner_user_id, organization_id, requested_by, version, status, log, brand_json, center_supplier_id, center_local_build_id
-      ) VALUES (?, ?, 'admin', ?, ?, ?, 'queued', ?, ?, ?, ?)`,
+        id, project_id, owner_user_id, organization_id, requested_by, version, build_target, source_revision, status, log, brand_json, center_supplier_id, center_local_build_id
+      ) VALUES (?, ?, 'admin', ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
       [
         id,
         project.id,
         supplierId,
         String(input?.requestedBy || supplierId).slice(0, 64),
         buildVersion,
+        target,
+        androidSource?.commit || '',
         `[center] Submitted by ${supplierId}, local build ${localBuildId}\n`,
         JSON.stringify(centerBrand),
         supplierId,
@@ -4248,17 +4285,20 @@ async function createCenterBuild(input, supplier) {
 }
 
 async function createBuild(project, requestedBy, version = '', options = {}) {
-  const buildVersion = String(version || await getSourceVersion() || '')
-  const { id, fingerprint } = buildResourceIdentity(project, requestedBy, buildVersion, resourcesRuntime ? options.idempotencyKey : undefined)
+  const target = parseBuildTarget(options.target)
+  const androidSource = target === 'android' ? (await getVisibleSourceVersionInfo()).android : null
+  const buildVersion = String(target === 'android' ? androidSource?.version || '' : version || await getSourceVersion() || '')
+  if (target === 'android' && (!buildVersion || !androidSource?.commit)) throw new Error('Android 源码版本暂不可用')
+  const { id, fingerprint } = buildResourceIdentity(project, requestedBy, buildVersion, resourcesRuntime ? options.idempotencyKey : undefined, target)
   const write = async connection => {
     if (resourcesRuntime) {
-      const active = await lockBuildProject(connection, project)
+      const active = await lockBuildProject(connection, project, target)
       if (active) return { ...normalizeBuild(active), alreadyActive: true }
     }
     await connection.query(
-    `INSERT INTO ai_builds (id, project_id, owner_user_id, organization_id, requested_by, version, status, log)
-     VALUES (?, ?, ?, ?, ?, ?, 'queued', '')`,
-    [id, project.id, project.ownerUserId || '', project.organizationId || '', requestedBy || null, buildVersion],
+    `INSERT INTO ai_builds (id, project_id, owner_user_id, organization_id, requested_by, version, build_target, source_revision, status, log)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', '')`,
+    [id, project.id, project.ownerUserId || '', project.organizationId || '', requestedBy || null, buildVersion, target, androidSource?.commit || ''],
   )
     return findBuildById(id, connection)
   }
@@ -4268,10 +4308,10 @@ async function createBuild(project, requestedBy, version = '', options = {}) {
 
 async function prepareBuildCenterBrand(build, project, user, publicUrls = {}) {
   const brand = await projectToBuildCenterBrand(project, publicUrls)
-  const sourceInfo = await getSourceVersionInfo()
+  const sourceInfo = build.target === 'android' ? (await getVisibleSourceVersionInfo()).android : await getSourceVersionInfo()
   await applyProjectReleaseFeedUrl(brand, project.id, publicUrls.updateBaseUrl)
-  brand.releaseNotes = sourceInfo.releaseNotes || ''
-  brand.releaseHistory = Array.isArray(sourceInfo.history) ? sourceInfo.history : []
+  brand.releaseNotes = sourceInfo?.releaseNotes || ''
+  brand.releaseHistory = Array.isArray(sourceInfo?.history) ? sourceInfo.history : []
   brand.sourceAgentId = project.ownerUserId || user?.id || ''
   brand.sourceProjectId = project.id
   brand.sourceBuildId = build.id
@@ -4282,6 +4322,12 @@ async function submitBuildToCenter(build, project, user, publicUrls = {}) {
   const config = await getBuildCenterConfig()
   if (!config.enabled) return build
   try {
+    if (build.target !== 'combined') {
+      const sourceInfo = await getVisibleSourceVersionInfo()
+      if (sourceInfo.source !== 'build-center' || !sourceInfo.splitBuildTargets) {
+        throw new Error('官方构建中心暂未启用按平台构建')
+      }
+    }
     const brand = await prepareBuildCenterBrand(build, project, user, publicUrls)
     build = await updateBuild(build.id, { brand })
     const submitted = await buildCenterApi('/api/center/builds', {
@@ -4290,6 +4336,8 @@ async function submitBuildToCenter(build, project, user, publicUrls = {}) {
       view: 'status',
       requestedBy: user?.username || user?.id || build.requestedBy || '',
       version: build.version,
+      target: build.target,
+      sourceRevision: build.sourceRevision,
       brand,
       projectIds: await listLocalSupplierProjectIds(),
     }, config)
@@ -4340,13 +4388,13 @@ async function findBuildById(id, connection = null) {
   return normalizeBuild(rows[0])
 }
 
-async function findActiveBuildForProject(projectId, user) {
+async function findActiveBuildForProject(projectId, user, target = 'combined') {
   const platformScope = user.organizationContext?.dataScope === 'platform'
   const ownerUserId = user.organizationContext?.legacyOwnerUserId || user.id
   const sql = platformScope
-    ? `SELECT * FROM ai_builds WHERE project_id = ? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1`
-    : `SELECT * FROM ai_builds WHERE project_id = ? AND owner_user_id = ? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1`
-  const params = platformScope ? [projectId] : [projectId, ownerUserId]
+    ? `SELECT * FROM ai_builds WHERE project_id = ? AND build_target = ? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1`
+    : `SELECT * FROM ai_builds WHERE project_id = ? AND owner_user_id = ? AND build_target = ? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1`
+  const params = platformScope ? [projectId, target] : [projectId, ownerUserId, target]
   const [rows] = await db().query(sql, params)
   return normalizeBuild(rows[0])
 }
@@ -5656,35 +5704,63 @@ async function claimNextBuild(workerId) {
        AND (
          workers.id IS NULL
          OR TIMESTAMPDIFF(SECOND, workers.last_seen_at, CURRENT_TIMESTAMP(3)) > 120
-         OR COALESCE(workers.current_build_id, '') <> builds.id
+         OR (COALESCE(workers.current_build_id, '') <> builds.id AND
+             TIMESTAMPDIFF(SECOND, builds.started_at, CURRENT_TIMESTAMP(3)) > 120)
        )`,
     [orphanMessage],
   )
+  const [running] = await db().query(
+    "SELECT id FROM ai_builds WHERE claimed_by = ? AND status = 'running' AND remote_build_id IS NULL LIMIT 1",
+    [workerId],
+  )
+  if (running.length) return null
   await touchWorker(workerId, { status: 'online', currentBuildId: '' })
   if (isWorkerDisabled(workerId, WORKER_DISABLED)) return null
   const worker = await findWorkerById(workerId)
   const workerVersion = String(worker?.metadata?.packageVersion || '').trim()
-  if (!isDesktopNextVersion(workerVersion)) return null
+  const desktopBuildVersion = isDesktopNextVersion(workerVersion) ? workerVersion : ''
+  const targets = worker?.metadata?.buildTargets
+  const supportsDesktop = Array.isArray(targets) && targets.includes('desktop')
+  const supportsAndroid = Array.isArray(targets) && targets.includes('android')
   const preferredWorkerIds = higherPriorityWorkerIds(workerId, parseWorkerPriority(WORKER_PRIORITY))
+  const [rows] = await db().query(
+    `SELECT pending.* FROM ai_builds pending
+     WHERE pending.status = 'queued' AND pending.remote_build_id IS NULL
+       AND (
+         (? <> '' AND pending.version = ? AND (pending.build_target = 'combined' OR (pending.build_target = 'desktop' AND ?)))
+         OR (? AND pending.build_target = 'android' AND pending.version = ? AND pending.source_revision = ?)
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM ai_builds prior
+         WHERE prior.project_id = pending.project_id AND prior.remote_build_id IS NULL AND (
+           prior.status = 'running' OR (prior.status = 'queued' AND
+             (prior.created_at < pending.created_at OR (prior.created_at = pending.created_at AND prior.id < pending.id)))
+         )
+       )
+     ORDER BY pending.created_at ASC, pending.id ASC LIMIT 1`,
+    [desktopBuildVersion, desktopBuildVersion, supportsDesktop, supportsAndroid, worker?.metadata?.androidVersion || '', worker?.metadata?.androidRevision || ''],
+  )
+  if (rows.length === 0) return null
+  const build = normalizeBuild(rows[0])
   if (preferredWorkerIds.length > 0) {
     const placeholders = preferredWorkerIds.map(() => '?').join(', ')
     const [preferredWorkers] = await db().query(
       `SELECT ai_workers.*, TIMESTAMPDIFF(SECOND, last_seen_at, CURRENT_TIMESTAMP(3)) AS heartbeat_age_seconds
-       FROM ai_workers
-       WHERE id IN (${placeholders})`,
+       FROM ai_workers WHERE id IN (${placeholders})`,
       preferredWorkerIds,
     )
-    if (preferredWorkers.some((candidate) => isIdleCompatibleWorker(candidate, workerVersion))) return null
+    if (preferredWorkers.some((candidate) => {
+      if (isWorkerDisabled(candidate.id, WORKER_DISABLED)) return false
+      const metadata = normalizeWorker(candidate).metadata
+      if (!isIdleCompatibleWorker(candidate, metadata.packageVersion)) return false
+      if (build.target === 'android') {
+        return metadata.buildTargets?.includes('android') &&
+          metadata.androidVersion === build.version && metadata.androidRevision === build.sourceRevision
+      }
+      return metadata.packageVersion === build.version &&
+        (build.target === 'combined' || metadata.buildTargets?.includes('desktop'))
+    })) return null
   }
-  const [rows] = await db().query(
-    `SELECT * FROM ai_builds
-     WHERE status = 'queued' AND remote_build_id IS NULL AND version = ?
-     ORDER BY created_at ASC
-     LIMIT 1`,
-    [workerVersion],
-  )
-  if (rows.length === 0) return null
-  const build = normalizeBuild(rows[0])
   if (CENTER_SUPPLIER_MANAGEMENT_ENABLED) {
     await ensureWorkerStagingDirectory({ rootDir: PUBLIC_PREVIEW_ROOT, projectId: build.projectId })
   }
@@ -6071,15 +6147,18 @@ async function stageRemoteBuildArtifacts(localBuild, remoteBuild) {
   const ossConfig = getOssArtifactConfig(settings)
   const useOss = settings.artifactStorageMode === 'oss'
   if (useOss && !ossConfig.enabled) throw new Error('已选择 OSS 托管，但 OSS 配置不完整')
+  const androidOnly = localBuild.target === 'android'
+  const previewParts = localBuild.target === 'combined' ? [localBuild.projectId] : ['_platform-builds', localBuild.projectId, localBuild.id]
+  const previewKey = previewParts.join('/')
   const targetDir = useOss
     ? path.join(repoRoot, 'data', 'artifact-staging', localBuild.id)
-    : path.join(PUBLIC_PREVIEW_ROOT, localBuild.projectId)
+    : path.join(PUBLIC_PREVIEW_ROOT, ...previewParts)
   await fsp.mkdir(targetDir, { recursive: true })
   const copied = []
   const remoteFiles = Array.isArray(remoteBuild.files) ? remoteBuild.files : []
   const candidateFiles = remoteFiles
     .map((file) => path.basename(String(file)))
-    .filter((name) => isBuildReleaseArtifact(name) || isAndroidBuildArtifact(name))
+    .filter(name => (localBuild.target !== 'desktop' && isAndroidBuildArtifact(name)) || (!androidOnly && isBuildReleaseArtifact(name)))
   const source = {
     artifactDir: '',
     publicUrl: remoteBuild.publicUrl || '',
@@ -6107,11 +6186,15 @@ async function stageRemoteBuildArtifacts(localBuild, remoteBuild) {
     await copyOrDownloadBuildFile(source, name, targetDir, (progress) => updateTransferProgress(index, progress))
     copied.push(name)
   }
-  if (!copied.includes('latest.yml') || !copied.some((name) => name.endsWith('.exe'))) {
-    throw new Error('官方测试包产物不完整')
+  if (androidOnly) {
+    if (copied.length !== 3 || androidBuildArtifacts(copied).length !== 3) {
+      throw new Error('官方 Android 测试包产物不完整')
+    }
+  } else {
+    if (!copied.includes('latest.yml') || !copied.some(name => name.endsWith('.exe'))) throw new Error('官方测试包产物不完整')
+    await normalizeLatestYmlFileUrls(targetDir)
+    await cleanupStalePackageFiles(targetDir, copied, localBuild.id, '测试包')
   }
-  await normalizeLatestYmlFileUrls(targetDir)
-  await cleanupStalePackageFiles(targetDir, copied, localBuild.id, '测试包')
   if (useOss) {
     await updateBuild(localBuild.id, {
       transferProgress: {
@@ -6129,7 +6212,7 @@ async function stageRemoteBuildArtifacts(localBuild, remoteBuild) {
     }).catch(() => {})
   }
   const publicUrl = useOss
-    ? await uploadBuildDirToOss(ossConfig, targetDir, localBuild.projectId, copied, 'ai-staging', (progress) => updateBuild(localBuild.id, {
+    ? await uploadBuildDirToOss(ossConfig, targetDir, previewKey, copied, 'ai-staging', (progress) => updateBuild(localBuild.id, {
         transferProgress: {
           phase: 'staging',
           status: progress.status || 'uploading',
@@ -6143,7 +6226,7 @@ async function stageRemoteBuildArtifacts(localBuild, remoteBuild) {
           updatedAt: nowIso(),
         },
       }).catch(() => {}))
-    : `${PUBLIC_PREVIEW_BASE_URL.replace(/\/$/, '')}/${localBuild.projectId}/`
+    : `${PUBLIC_PREVIEW_BASE_URL.replace(/\/$/, '')}/${previewKey}/`
   if (useOss) {
     await fsp.rm(targetDir, { recursive: true, force: true }).catch(() => {})
   }
@@ -6800,7 +6883,7 @@ registerAdminBusinessRoutes(app, {
   deleteProject,
   listBuildsForUser,
   listVisibleWorkers,
-  getSourceVersionInfo,
+  getSourceVersionInfo: getVisibleSourceVersionInfo,
   diagnosticsInfo,
   listEndUsersForAdmin,
   createEndUserByAdmin,
@@ -6850,7 +6933,7 @@ registerBuildRoutes(app, {
   claimNextBuild,
   projectToBrand,
   applyProjectReleaseFeedUrl,
-  getSourceVersionInfo,
+  getSourceVersionInfo: getClientSourceVersionInfo,
   touchWorker,
   appendBuildLog,
 })

@@ -1,0 +1,14 @@
+{
+  "version": "0.1.4",
+  "publishedAt": "2026-11-19T11:17:09Z",
+  "commit": "a71ee2e579dae1057e898f433ddbb2a055f7e35c",
+  "sourceOnly": true,
+  "releaseNotes": "共用本机和桌面远程聊天界面，优化远程会话更新节奏。",
+  "history": [
+    {
+      "version": "0.1.4",
+      "publishedAt": "2026-11-19T11:17:09Z",
+      "releaseNotes": "共用本机和桌面远程聊天界面，优化远程会话更新节奏。"
+    }
+  ]
+}

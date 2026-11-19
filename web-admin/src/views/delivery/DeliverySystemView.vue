@@ -121,7 +121,7 @@ const meta = {
       <p v-if="d.errorMessage.value" class="drawer-error">{{ d.errorMessage.value }}</p><button class="primary-button" :disabled="d.saving.value" @click="d.updatePassword">{{ d.saving.value ? "更新中…" : "更新密码" }}</button>
     </section>
 
-    <ProjectDrawer v-if="section === 'projects'" :open="d.drawerOpen.value" :editing="d.projectEditing.value" :form="d.form" :accounts="d.accounts.value" :saving="d.saving.value" :error-message="d.errorMessage.value" @close="d.drawerOpen.value = false" @save="d.saveProject()" @save-and-build="d.saveProject(true)" />
+    <ProjectDrawer v-if="section === 'projects'" :open="d.drawerOpen.value" :editing="d.projectEditing.value" :form="d.form" :accounts="d.accounts.value" :saving="d.saving.value" :error-message="d.errorMessage.value" @close="d.drawerOpen.value = false" @save="d.saveProject()" :can-build-desktop="d.canBuild('desktop')" :can-build-android="d.canBuild('android')" @save-and-build="d.saveProject($event)" />
     <DeliveryDrawer v-else-if="section === 'settings'" :open="d.drawerOpen.value" :section="section" :form="d.form" :saving="d.saving.value" :smtp-testing="d.smtpTesting.value" v-model:smtp-test-email="d.smtpTestEmail.value" :error-message="d.errorMessage.value" @close="d.drawerOpen.value = false" @save="d.saveSettings()" @test-smtp="d.testSmtp()" />
     <BuildLogDrawer v-if="section === 'builds'" :open="d.buildLogOpen.value" :build="d.selectedBuild.value" :stage="d.buildStage(d.selectedBuild.value)" :percent="d.buildPercent(d.selectedBuild.value)" @close="d.closeBuildLog" @refresh="d.load()" />
   </section>
