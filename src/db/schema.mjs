@@ -1630,6 +1630,9 @@ export async function initDatabase(options = {}) {
   await ensureColumn('ai_credit_ledger', 'pricing_rule_id', 'VARCHAR(64) NOT NULL DEFAULT "" AFTER provider_key_preview')
   await ensureColumn('ai_credit_ledger', 'billing_type', 'VARCHAR(32) NOT NULL DEFAULT "" AFTER pricing_rule_id')
   await ensureColumn('ai_credit_ledger', 'deduct_status', 'VARCHAR(32) NOT NULL DEFAULT "succeeded" AFTER billing_type')
+  await ensureColumn('ai_credit_ledger', 'client_source', "VARCHAR(16) NOT NULL DEFAULT 'unknown'")
+  await ensureColumn('ai_model_operations', 'client_source', "VARCHAR(16) NOT NULL DEFAULT 'unknown'")
+  await ensureColumn('ai_voice_operations', 'client_source', "VARCHAR(16) NOT NULL DEFAULT 'unknown'")
   await ensureColumn('ai_credit_ledger', 'raw_usage_json', 'JSON NULL AFTER request_id')
   await pool.query(`
     UPDATE ai_model_provider_keys k

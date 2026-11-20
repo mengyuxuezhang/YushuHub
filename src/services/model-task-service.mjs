@@ -33,7 +33,7 @@ export class ModelTaskService {
     this.contextResolver = contextResolver
   }
 
-  async submit(user, input) {
+  async submit(user, input, clientSource) {
     assertSafeTaskRequest(input.request)
     const capability = await this.capabilities(user, input.capabilityId)
     const estimate = await this.pricing.quote(input.pricingPlanId, input.estimatedUsage || [], user.organizationId)
@@ -41,6 +41,7 @@ export class ModelTaskService {
       throw Object.assign(new Error('计费方案与模型任务能力不匹配'), { statusCode: 409, code: 'MODEL_TASK_PRICING_MISMATCH' })
     }
     const reserved = await this.operations.reserve(user, {
+      clientSource,
       capabilityId: capability.id, taskType: capability.taskType, operationType: input.operationType || capability.taskType,
       idempotencyKey: input.idempotencyKey, fingerprint: fingerprint({ capabilityId: capability.id, request: input.request }),
       adapterId: capability.protocolAdapter, configRevision: capability.configRevision,

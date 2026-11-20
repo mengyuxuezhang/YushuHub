@@ -46,9 +46,9 @@ describe('business operation API contracts', () => {
   it('serializes explicit payment and credit search fields without leaking them into paths', async () => {
     const request = vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok({ items: [], page: 1, pageSize: 20, total: 0, totalPages: 1 }))
     await listPaymentOrders({ search: 'alice', searchField: 'user', provider: 'wechat', status: 'paid' })
-    await listCreditLedger({ search: 'request-1', searchField: 'note', changeType: 'consume' })
+    await listCreditLedger({ search: 'request-1', searchField: 'note', changeType: 'consume', clientSource: 'android' })
     expect(String(request.mock.calls[0][0])).toBe('/api/payment-orders?search=alice&searchField=user&status=paid&provider=wechat')
-    expect(String(request.mock.calls[1][0])).toBe('/api/credits/ledger?search=request-1&searchField=note&changeType=consume')
+    expect(String(request.mock.calls[1][0])).toBe('/api/credits/ledger?search=request-1&searchField=note&changeType=consume&clientSource=android')
   })
 
   it('serializes terminal-user and redeem-code fields with structured status', async () => {

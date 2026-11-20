@@ -1,3 +1,4 @@
+import { requestLedgerSource } from '../services/credit-ledger-source.mjs'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
@@ -312,4 +313,46 @@ test('per-user overload rejects before upstream work without damaging Keys or ch
     assert.equal(upstreamCalls,8);assert.equal(calls.failure,0);assert.equal(calls.deduct,0)
   } finally { release();await Promise.all(pending) }
   assert.equal(calls.deduct,8)
+})
+
+test('client catalog maps chat capability flags and preserves explicit and legacy settings', async () => {
+  const { modelCatalogHandler } = createRouteHarness({
+    listClientModelCatalog: async () => ({ models: [
+      { id: 'chat', modelType: 'text', capabilities: ['text', 'Image Understanding', 'tool_calls'], reasoning: { enabled: true } },
+      { id: 'text', modelType: 'text', capabilities: ['text'] },
+      { id: 'explicit', modelType: 'text', capabilities: ['vision'], supportsVision: false },
+      { id: 'legacy', modelType: 'text', capabilities: [] },
+      { id: 'image', modelType: 'image', capabilities: ['image_generation'] },
+    ] }),
+  })
+  const res = createResponse()
+  await modelCatalogHandler({ clientUser: { id: 'user-1' } }, res)
+  const [chat, text, explicit, legacy, image] = res.payload.data.models
+  assert.deepEqual([chat.supportsVision, chat.supportsTools, chat.supportsReasoning], [true, true, true])
+  assert.deepEqual([text.supportsVision, text.supportsTools, text.supportsReasoning], [false, false, false])
+  assert.equal(explicit.supportsVision, false)
+  assert.equal(legacy.supportsTools, undefined)
+  assert.equal(image.supportsVision, undefined)
+})
+
+test('ledger source accepts client platforms and the old desktop header without guessing mobile', () => {
+  assert.equal(requestLedgerSource({'x-agent-client-platform': 'android'}), 'android')
+  assert.equal(requestLedgerSource({'x-agent-client-platform': 'desktop'}), 'desktop')
+  assert.equal(requestLedgerSource({'x-agent-session-id': 'legacy-desktop'}), 'desktop')
+  assert.equal(requestLedgerSource({'x-agent-client-platform': 'admin', 'x-agent-session-id': 'test'}), 'unknown')
+  assert.equal(requestLedgerSource({}), 'unknown')
+})
+
+test('persists request source for search success and failure independently of usage', async (t) => {
+  const deducted = []
+  const { handler, calls } = createRouteHarness({
+    deductCreditsForLocalUsage: async (...args) => deducted.push(args.at(-1)),
+  })
+  const provider = t.mock.method(globalThis, 'fetch', async () => Response.json({ code: 200, data: {} }))
+  const req = { clientUser: { id: 'user-1' }, body: { query: 'Agent' } }
+  await handler({ ...req, headers: { 'x-agent-client-platform': 'android' } }, createResponse())
+  provider.mock.mockImplementation(async () => Response.json({ message: 'unavailable' }, { status: 503 }))
+  await handler({ ...req, headers: { 'x-agent-session-id': 'previous-desktop-client' } }, createResponse())
+  assert.equal(deducted[0].clientSource, 'android')
+  assert.equal(calls.usageFailure[0].at(-1), 'desktop')
 })

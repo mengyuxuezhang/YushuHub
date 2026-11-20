@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { creditLedgerSources } from '@/utils/credit-ledger-source'
 import SearchToolbar, { type SearchFieldOption } from '@/components/common/SearchToolbar.vue'
 import type { BusinessSection, useBusinessOperations } from '@/composables/business/useBusinessOperations'
 
@@ -34,7 +35,13 @@ const fields: Record<string, SearchFieldOption[]> = {
       <select v-model="b.providerFilter.value" aria-label="支付渠道" @change="b.submitSearch"><option value="all">全部渠道</option><option value="wechat">微信支付</option><option value="alipay">支付宝</option></select>
       <select v-model="b.statusFilter.value" aria-label="订单状态" @change="b.submitSearch"><option value="all">全部状态</option><option value="pending">待支付</option><option value="paid">已支付</option><option value="closed">已关闭</option><option value="failed">失败</option><option value="refunded">已退款</option></select>
     </template>
-    <select v-else-if="section === 'credits'" v-model="b.changeTypeFilter.value" aria-label="积分变动类型" @change="b.submitSearch"><option value="all">全部类型</option><option v-for="(label, value) in creditTypeNames" :key="value" :value="value">{{ label }}</option></select>
+    <template v-else-if="section === 'credits'">
+      <select v-model="b.changeTypeFilter.value" aria-label="积分变动类型" @change="b.submitSearch"><option value="all">全部类型</option><option v-for="(label, value) in creditTypeNames" :key="value" :value="value">{{ label }}</option></select>
+      <select v-model="b.clientSourceFilter.value" aria-label="积分流水来源" @change="b.submitSearch">
+        <option value="all">全部来源</option>
+        <option v-for="(label, value) in creditLedgerSources" :key="value" :value="value">{{ label }}</option>
+      </select>
+    </template>
     <select v-else-if="section === 'end-users'" v-model="b.statusFilter.value" aria-label="用户状态" @change="b.submitSearch"><option value="all">全部状态</option><option value="enabled">启用</option><option value="disabled">停用</option></select>
     <select v-else-if="section === 'redeem-codes'" v-model="b.statusFilter.value" aria-label="兑换码状态" @change="b.submitSearch"><option value="all">全部状态</option><option value="unused">未使用</option><option value="used">已兑换</option><option value="disabled">已停用</option><option value="expired">已过期</option></select>
   </SearchToolbar>

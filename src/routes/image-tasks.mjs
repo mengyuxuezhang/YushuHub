@@ -1,3 +1,4 @@
+import { requestLedgerSource } from '../services/credit-ledger-source.mjs'
 import { requireClientAuth } from '../middleware/auth.mjs'
 import { publicImageTask } from '../services/image-tasks.mjs'
 
@@ -13,7 +14,7 @@ export function registerImageTaskRoutes(app, { service, findUser, models }) {
     }
   }
   app.get('/api/client/images/models', requireClientAuth, route((_req, user) => models(user)))
-  app.post('/api/client/images/tasks', requireClientAuth, route(async (req, user) => publicImageTask(await service.submit(user, req.body || {}))))
+  app.post('/api/client/images/tasks', requireClientAuth, route(async (req, user) => publicImageTask(await service.submit(user, req.body || {}, requestLedgerSource(req.headers)))))
   app.get('/api/client/images/tasks/by-request/:requestId', requireClientAuth, route(async (req, user) => publicImageTask(await service.operations.findByRequest(user, 'image_generation', req.params.requestId))))
   app.get('/api/client/images/tasks/:id', requireClientAuth, route(async (req, user) => publicImageTask(await service.operations.find(user, req.params.id))))
 }

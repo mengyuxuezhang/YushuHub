@@ -221,7 +221,7 @@ test('credit ledger forwards explicit search fields to the scoped query', async 
   })
   const route = routes.find((item) => item.method === 'GET' && item.path === '/api/credits/ledger')
   const req = {
-    query: { search: 'alice', searchField: 'user', changeType: 'consume', page: '2', pageSize: '20' },
+    query: { search: 'alice', searchField: 'user', changeType: 'consume', clientSource: 'android', page: '2', pageSize: '20' },
     user: { id: 'agent-a', role: 'agent' },
     organizationContext: { organizationId: 'org-a' },
   }
@@ -234,6 +234,7 @@ test('credit ledger forwards explicit search fields to the scoped query', async 
     userId: undefined,
     ownerUserId: undefined,
     changeType: 'consume',
+    clientSource: 'android',
     search: 'alice',
     searchField: 'user',
     page: '2',

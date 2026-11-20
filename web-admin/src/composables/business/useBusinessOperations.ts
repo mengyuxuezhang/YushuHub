@@ -24,6 +24,7 @@ export function useBusinessOperations(section: BusinessSection) {
     statusFilter = ref("all"),
     providerFilter = ref("all"),
     changeTypeFilter = ref("all"),
+    clientSourceFilter = ref("all"),
     activeTab = ref("primary"),
     errorMessage = ref("");
   const page = ref(1), pageSize = ref(20), total = ref(0), totalPages = ref(1);
@@ -76,6 +77,7 @@ export function useBusinessOperations(section: BusinessSection) {
         status: statusFilter.value,
         provider: providerFilter.value,
         changeType: changeTypeFilter.value,
+        clientSource: clientSourceFilter.value,
       };
       if (section === "end-users") applyPage(await api.listEndUsers(query));
       if (section === "memberships")
@@ -449,6 +451,7 @@ export function useBusinessOperations(section: BusinessSection) {
     statusFilter.value = "all";
     providerFilter.value = "all";
     changeTypeFilter.value = "all";
+    clientSourceFilter.value = "all";
     page.value = 1;
     if (section !== "memberships") await load();
   }
@@ -470,6 +473,7 @@ export function useBusinessOperations(section: BusinessSection) {
     statusFilter,
     providerFilter,
     changeTypeFilter,
+    clientSourceFilter,
     activeTab,
     page,
     pageSize,

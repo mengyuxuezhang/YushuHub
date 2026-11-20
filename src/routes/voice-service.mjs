@@ -1,3 +1,4 @@
+import { requestLedgerSource } from '../services/credit-ledger-source.mjs'
 import multer from 'multer'
 import { requireClientAuth } from '../middleware/auth.mjs'
 import { publicVoiceOperation } from '../services/private-voices.mjs'
@@ -18,7 +19,7 @@ function sendFailure(res, error) {
 
 export function registerVoiceServiceRoutes(app, service) {
   const wrap = handler => async (req, res) => {
-    try { res.json({ success: true, data: await handler(req.clientUser, req) }) }
+    try { res.json({ success: true, data: await handler({ ...req.clientUser, ledgerClientSource: requestLedgerSource(req.headers) }, req) }) }
     catch (error) { sendFailure(res, error) }
   }
   app.get('/api/client/voices', requireClientAuth, wrap(user => service.list(user)))

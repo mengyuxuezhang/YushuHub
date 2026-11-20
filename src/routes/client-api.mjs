@@ -1,3 +1,4 @@
+import { requestLedgerSource } from '../services/credit-ledger-source.mjs'
 import { desktopProofHeaders } from '../services/authorization/desktop-proof.mjs'
 import { randomUUID } from 'node:crypto'
 import { requireClientAuth, getClientAuthUser } from '../middleware/auth.mjs'
@@ -44,6 +45,22 @@ function modelPreference(model = {}) {
     + (Number(model.contextWindow || 0) > 0 ? 1 : 0)
 }
 
+function clientModelCapabilities(model) {
+  if (model.modelType !== 'text') return model
+  const capabilities = new Set((Array.isArray(model.capabilities) ? model.capabilities : [])
+    .filter(item => typeof item === 'string' && item.trim())
+    .map(item => item.trim().toLowerCase().replace(/[-\s]+/g, '_')))
+  if (!capabilities.size && !model.reasoning?.enabled) return model
+  return {
+    ...model,
+    ...(capabilities.size ? {
+      supportsVision: model.supportsVision ?? ['vision', 'image_understanding', 'image_input', 'multimodal'].some(value => capabilities.has(value)),
+      supportsTools: model.supportsTools ?? ['tool_calls', 'tools', 'tool', 'function_calling'].some(value => capabilities.has(value)),
+    } : {}),
+    supportsReasoning: model.supportsReasoning ?? (Boolean(model.reasoning?.enabled) || capabilities.has('reasoning')),
+  }
+}
+
 export function dedupeClientModelCatalog(catalog = {}) {
   const dedupe = (items) => {
     const unique = new Map()
@@ -53,7 +70,7 @@ export function dedupeClientModelCatalog(catalog = {}) {
       const current = unique.get(id)
       if (!current || modelPreference(model) > modelPreference(current)) unique.set(id, model)
     }
-    return [...unique.values()]
+    return [...unique.values()].map(clientModelCapabilities)
   }
   return {
     ...catalog,
@@ -261,6 +278,7 @@ export function registerClientApiRoutes(app, deps) {
   })
 
   app.post('/api/client/model/v1/chat/completions', requireClientAuth, async (req, res) => {
+    const clientSource = requestLedgerSource(req.headers)
     let context
     let proxyLifecycle
     let proxyRequestId = ''
@@ -365,6 +383,7 @@ export function registerClientApiRoutes(app, deps) {
           context,
           upstream.headers.get('x-request-id') || proxyRequestId,
           `上游请求失败 (HTTP ${upstream.status}): ${String(errorReason || '未知错误').slice(0, 220)}`,
+          clientSource,
         ).catch((err) => writeAppLog('credits', `记录上游失败调用明细失败：${err instanceof Error ? err.message : String(err)}`))
         if (providerHttpError) {
           res.setHeader('X-Agent-Error-Code', providerHttpError.code)
@@ -382,7 +401,7 @@ export function registerClientApiRoutes(app, deps) {
       }
       const finishDeduct = async (usage, requestId = '') => {
         try {
-          await deductCreditsForLocalUsage(req.clientUser.id, context, usage || {}, requestId, usage ? {} : { deductStatus: 'missing_usage' })
+          await deductCreditsForLocalUsage(req.clientUser.id, context, usage || {}, requestId, usage ? { clientSource } : { clientSource, deductStatus: 'missing_usage' })
         } catch (err) {
           writeAppLog('credits', err instanceof Error ? err.message : String(err))
         }
@@ -412,9 +431,9 @@ export function registerClientApiRoutes(app, deps) {
         // Keep response passthrough even if the provider returns non-JSON.
       }
       if (usage) {
-        await deductCreditsForLocalUsage(req.clientUser.id, context, usage, requestId)
+        await deductCreditsForLocalUsage(req.clientUser.id, context, usage, requestId, { clientSource })
       } else {
-        await deductCreditsForLocalUsage(req.clientUser.id, context, {}, requestId, { deductStatus: 'missing_usage' })
+        await deductCreditsForLocalUsage(req.clientUser.id, context, {}, requestId, { clientSource, deductStatus: 'missing_usage' })
       }
       await recordModelKeySuccess(context.key.id)
       res.send(text)
@@ -436,6 +455,7 @@ export function registerClientApiRoutes(app, deps) {
           context,
           proxyRequestId,
           `代理请求失败：${err instanceof Error ? err.message : String(err)}`,
+          clientSource,
         ).catch((recordErr) => writeAppLog('credits', `记录代理失败调用明细失败：${recordErr instanceof Error ? recordErr.message : String(recordErr)}`))
       }
       writeAppLog('model-proxy', JSON.stringify({
@@ -474,7 +494,7 @@ export function registerClientApiRoutes(app, deps) {
       const user = await findEndUserById(req.clientUser.id)
       const context = await resolveModelProxyContext(req.body?.model || '', req.clientUser.id, 'image')
       await assertClientModelRequestAllowed(user, context.pricingRule)
-      const data = await generateImageForClient(req.clientUser.id, req.body || {}, context)
+      const data = await generateImageForClient(req.clientUser.id, req.body || {}, context, requestLedgerSource(req.headers))
       res.json({ success: true, data })
     } catch (err) {
       const billingFailure = clientBillingErrorResponse(err)
@@ -489,6 +509,7 @@ export function registerClientApiRoutes(app, deps) {
   })
 
   app.post('/api/client/model/search', requireClientAuth, async (req, res) => {
+    const clientSource = requestLedgerSource(req.headers)
     let context
     try {
       const user = await findEndUserById(req.clientUser.id)
@@ -535,12 +556,14 @@ export function registerClientApiRoutes(app, deps) {
           context,
           upstream.headers.get('x-request-id') || payload?.log_id || '',
           `上游请求失败 (HTTP ${upstream.status}): ${String(errorReason || '未知错误').slice(0, 220)}`,
+          clientSource,
         ).catch((err) => writeAppLog('credits', `记录搜索失败调用明细失败：${err instanceof Error ? err.message : String(err)}`))
         res.status(upstream.status).json({ success: false, error: payload?.message || payload?.msg || text || upstream.statusText })
         return
       }
       const data = normalizeBochaSearchPayload(payload || {}, context, upstreamBody)
       await deductCreditsForLocalUsage(req.clientUser.id, context, {}, data.requestId, {
+        clientSource,
         deductStatus: context.pricingRule.billingType === 'per_request' ? 'succeeded' : 'missing_usage',
         note: context.pricingRule.billingType === 'per_request' ? '搜索模型调用扣费' : '搜索模型调用成功，但当前计费规则不是按次，未扣费',
       })
@@ -554,6 +577,7 @@ export function registerClientApiRoutes(app, deps) {
           context,
           '',
           `搜索请求失败：${err instanceof Error ? err.message : String(err)}`,
+          clientSource,
         ).catch((recordErr) => writeAppLog('credits', `记录搜索失败调用明细失败：${recordErr instanceof Error ? recordErr.message : String(recordErr)}`))
       }
       const billingFailure = clientBillingErrorResponse(err)

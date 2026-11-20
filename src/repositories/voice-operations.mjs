@@ -1,3 +1,4 @@
+import { normalizeLedgerSource } from '../services/credit-ledger-source.mjs'
 import { randomUUID } from 'node:crypto'
 
 function failure(code, message, statusCode = 409) { return Object.assign(new Error(message), { code, statusCode }) }
@@ -48,8 +49,8 @@ export class VoiceOperationRepository {
       }
       await connection.query('UPDATE ai_end_users SET credit_balance=credit_balance-? WHERE id=?', [points, user.id])
       await connection.query(`INSERT INTO ai_voice_operations
-        (id,organization_id,user_id,voice_id,operation_type,idempotency_key,input_fingerprint,points_reserved)
-        VALUES (?,?,?,?,?,?,?,?)`, [id, user.organizationId, user.id, voiceId, operation, idempotencyKey, fingerprint, points])
+        (id,organization_id,user_id,voice_id,operation_type,idempotency_key,input_fingerprint,points_reserved,client_source)
+        VALUES (?,?,?,?,?,?,?,?,?)`, [id, user.organizationId, user.id, voiceId, operation, idempotencyKey, fingerprint, points, normalizeLedgerSource(user.ledgerClientSource)])
       const [[row]] = await connection.query('SELECT * FROM ai_voice_operations WHERE id=?', [id])
       return { created: true, operation: row }
     })
@@ -81,9 +82,9 @@ export class VoiceOperationRepository {
       if (status === 'succeeded') {
         const [[balance]] = await connection.query('SELECT credit_balance FROM ai_end_users WHERE id=?', [user.id])
         await connection.query(`INSERT INTO ai_credit_ledger
-          (id,user_id,organization_id,change_type,points_delta,balance_after,request_id,billing_type,deduct_status,note)
-          VALUES (?,?,?,'consume',?,?,?,'voice','succeeded',?)`,
-        [randomUUID(), user.id, user.organizationId, -settled, balance.credit_balance, id, `语音服务：${row.operation_type}`])
+          (id,user_id,organization_id,change_type,points_delta,balance_after,request_id,billing_type,deduct_status,note,client_source)
+          VALUES (?,?,?,'consume',?,?,?,'voice','succeeded',?,?)`,
+        [randomUUID(), user.id, user.organizationId, -settled, balance.credit_balance, id, `语音服务：${row.operation_type}`, normalizeLedgerSource(row.client_source)])
       }
       await connection.query(`UPDATE ai_voice_operations SET status=?,points_settled=?,points_reserved=0,
         result_json=?,error_code=?,completed_at=CURRENT_TIMESTAMP(3) WHERE id=?`, [status, settled, result === null ? null : JSON.stringify(result), errorCode, id])

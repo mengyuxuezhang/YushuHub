@@ -261,6 +261,7 @@ export function registerAdminBusinessRoutes(app, deps) {
         userId: req.query.userId,
         ownerUserId: req.query.ownerUserId,
         changeType: req.query.changeType,
+        clientSource: req.query.clientSource,
         search: req.query.search,
         searchField: req.query.searchField,
         page: req.query.page,

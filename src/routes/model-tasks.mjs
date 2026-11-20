@@ -1,3 +1,4 @@
+import { requestLedgerSource } from '../services/credit-ledger-source.mjs'
 import { requireClientAuth } from '../middleware/auth.mjs'
 
 const parse = value => {
@@ -18,7 +19,7 @@ function failure(res, error) {
 
 export function registerModelTaskRoutes(app, service) {
   app.post('/api/client/model-tasks', requireClientAuth, async (req, res) => {
-    try { res.json({ success: true, data: publicTask(await service.submit(req.clientUser, req.body || {})) }) }
+    try { res.json({ success: true, data: publicTask(await service.submit(req.clientUser, req.body || {}, requestLedgerSource(req.headers))) }) }
     catch (error) { failure(res, error) }
   })
   app.get('/api/client/model-tasks/:id', requireClientAuth, async (req, res) => {

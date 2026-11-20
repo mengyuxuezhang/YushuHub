@@ -1,3 +1,4 @@
+import { normalizeLedgerSource } from '../services/credit-ledger-source.mjs'
 import { randomUUID } from 'node:crypto'
 
 const fail = (code, message, statusCode = 409) => Object.assign(new Error(message), { code, statusCode })
@@ -40,9 +41,9 @@ export class ModelOperationRepository {
       const id = randomUUID()
       await connection.query('UPDATE ai_end_users SET credit_balance=credit_balance-? WHERE id=?', [points, user.id])
       await connection.query(`INSERT INTO ai_model_operations
-        (id,organization_id,user_id,capability_id,upstream_account_id,task_type,operation_type,idempotency_key,input_fingerprint,adapter_id,config_revision,pricing_snapshot_json,points_reserved)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, [id, user.organizationId, user.id, input.capabilityId, input.upstreamAccountId || '', input.taskType, input.operationType,
-        input.idempotencyKey, input.fingerprint, input.adapterId, input.configRevision, safeJson(input.pricingSnapshot), points])
+        (id,organization_id,user_id,capability_id,upstream_account_id,task_type,operation_type,idempotency_key,input_fingerprint,adapter_id,config_revision,pricing_snapshot_json,points_reserved,client_source)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [id, user.organizationId, user.id, input.capabilityId, input.upstreamAccountId || '', input.taskType, input.operationType,
+        input.idempotencyKey, input.fingerprint, input.adapterId, input.configRevision, safeJson(input.pricingSnapshot), points, normalizeLedgerSource(input.clientSource)])
       const [[row]] = await connection.query('SELECT * FROM ai_model_operations WHERE id=?', [id])
       return { created: true, operation: row }
     })
@@ -84,9 +85,9 @@ export class ModelOperationRepository {
       if (input.status === 'succeeded') {
         const [[balance]] = await connection.query('SELECT credit_balance FROM ai_end_users WHERE id=?', [user.id])
         await connection.query(`INSERT INTO ai_credit_ledger
-          (id,user_id,organization_id,change_type,points_delta,balance_after,request_id,billing_type,deduct_status,note,raw_usage_json)
-          VALUES (?,?,?,'consume',?,?,?,'compound_v2','succeeded',?,?)`, [randomUUID(), user.id, user.organizationId, -finalPoints,
-          balance.credit_balance, id, `模型任务：${row.task_type}`, safeJson(input.usage || [])])
+          (id,user_id,organization_id,change_type,points_delta,balance_after,request_id,billing_type,deduct_status,note,raw_usage_json,client_source)
+          VALUES (?,?,?,'consume',?,?,?,'compound_v2','succeeded',?,?,?)`, [randomUUID(), user.id, user.organizationId, -finalPoints,
+          balance.credit_balance, id, `模型任务：${row.task_type}`, safeJson(input.usage || []), normalizeLedgerSource(row.client_source)])
       }
       await connection.query(`UPDATE ai_model_operations SET status=?,points_settled=?,points_reserved=0,usage_json=?,result_json=?,cost_snapshot_json=?,
         error_kind=?,error_code=?,completed_at=CURRENT_TIMESTAMP(3) WHERE id=?`, [input.status, finalPoints, safeJson(input.usage || []), safeJson(input.result),

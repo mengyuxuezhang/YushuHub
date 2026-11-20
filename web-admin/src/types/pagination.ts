@@ -14,6 +14,7 @@ export interface PageQuery {
   status?: string
   provider?: string
   changeType?: string
+  clientSource?: string
 }
 
 export function pageQueryString(query: PageQuery = {}) {
@@ -25,6 +26,7 @@ export function pageQueryString(query: PageQuery = {}) {
   if (query.status && query.status !== 'all') params.set('status', query.status)
   if (query.provider && query.provider !== 'all') params.set('provider', query.provider)
   if (query.changeType && query.changeType !== 'all') params.set('changeType', query.changeType)
+  if (query.clientSource && query.clientSource !== 'all') params.set('clientSource', query.clientSource)
   const value = params.toString()
   return value ? `?${value}` : ''
 }

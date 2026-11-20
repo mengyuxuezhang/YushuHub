@@ -1,3 +1,4 @@
+import { normalizeLedgerSource } from '../../src/services/credit-ledger-source.mjs'
 import { createAuthorizationOnboarding } from '../../src/services/authorization/onboarding.mjs'
 import { registerAuthorizationOnboardingRoutes } from '../../src/routes/authorization-onboarding.mjs'
 import { restartAuthorizationConnection } from '../../src/services/authorization/restart.mjs'
@@ -3031,8 +3032,8 @@ async function appendCreditLedger(conn, userId, input = {}) {
     `INSERT INTO ai_credit_ledger (
       id, user_id, change_type, points_delta, balance_after, cost_usd, upstream_log_id, upstream_quota,
       provider_id, provider_name, provider_key_id, provider_key_preview, pricing_rule_id, billing_type, deduct_status,
-      model_name, prompt_tokens, completion_tokens, total_tokens, note, request_id, raw_usage_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      model_name, prompt_tokens, completion_tokens, total_tokens, note, request_id, raw_usage_json, client_source
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       crypto.randomUUID(),
       userId,
@@ -3056,6 +3057,7 @@ async function appendCreditLedger(conn, userId, input = {}) {
       String(input.note || '').slice(0, 255),
       String(input.requestId || '').slice(0, 80),
       input.rawUsage ? JSON.stringify(input.rawUsage) : null,
+      normalizeLedgerSource(input.clientSource),
     ],
   )
   return balanceAfter
@@ -3073,6 +3075,7 @@ async function adjustEndUserCredits(id, input = {}, actor = null) {
     await conn.query('UPDATE ai_end_users SET credit_balance = credit_balance + ? WHERE id = ?', [amount, user.id])
     await appendCreditLedger(conn, user.id, {
       changeType: 'admin_adjust',
+      clientSource: 'admin',
       pointsDelta: amount,
       note: input.note || (amount > 0 ? '后台充值' : '后台扣减'),
       requestId: actor?.id || '',
@@ -3096,6 +3099,7 @@ function normalizeCreditLedgerRow(row) {
     displayName: row.display_name,
     ownerUserId: row.owner_user_id || '',
     changeType: row.change_type,
+    clientSource: row.change_type === 'admin_adjust' ? 'admin' : normalizeLedgerSource(row.client_source),
     pointsDelta: Number(row.points_delta || 0),
     balanceAfter: Number(row.balance_after || 0),
     costUsd: Number(row.cost_usd || 0),
@@ -3149,6 +3153,11 @@ async function listCreditLedgerPage(options = {}) {
   if (changeType) {
     where.push('l.change_type = ?')
     params.push(changeType)
+  }
+  if (['desktop', 'android', 'admin', 'unknown'].includes(options.clientSource)) {
+    // Historical manual adjustments already identify their administrative origin.
+    where.push("(CASE WHEN l.change_type = 'admin_adjust' THEN 'admin' ELSE l.client_source END) = ?")
+    params.push(options.clientSource)
   }
   const search = buildListSearch(options, {
     ledgerId: ['l.id'],
@@ -3460,7 +3469,7 @@ const resolveModelProxyContext = createModelProxyContextResolver({
   }, effectiveGatewayPricingRule, previewSecret,
 })
 
-async function generateImageForClient(userId, input = {}, resolvedContext = null) {
+async function generateImageForClient(userId, input = {}, resolvedContext = null, clientSource) {
   const request = normalizeImageGenerationRequest(input)
   const context = resolvedContext || await resolveModelProxyContext(request.model, userId, 'image')
   if (context.model.modelType !== 'image') throw new Error('当前模型分类不是图片模型，请选择图片生成模型')
@@ -3524,6 +3533,7 @@ async function generateImageForClient(userId, input = {}, resolvedContext = null
     .map(([tier, count]) => `${tier}x${count}`)
     .join('、')
   await deductCreditsForLocalUsage(userId, context, data.usage, data.requestId, {
+    clientSource,
     note: tierSummary ? `图片生成扣费（${tierSummary}）` : '图片生成扣费',
   })
   await recordModelKeySuccess(context.key.id)
@@ -3635,7 +3645,7 @@ async function recordModelKeySuccess(keyId) {
   ).catch(() => {})
 }
 
-async function recordModelKeyUsageFailure(userId, context, requestId, errorMessage) {
+async function recordModelKeyUsageFailure(userId, context, requestId, errorMessage, clientSource) {
   if (!userId || !context?.key?.id) return
   const conn = await db().getConnection()
   try {
@@ -3653,6 +3663,7 @@ async function recordModelKeyUsageFailure(userId, context, requestId, errorMessa
       modelName: context.model?.modelId || '',
       note: String(errorMessage || '模型上游请求失败').slice(0, 255),
       requestId,
+      clientSource,
     })
     await conn.commit()
   } catch (err) {
@@ -3690,6 +3701,7 @@ async function deductCreditsForLocalUsage(userId, context, usage, requestId = ''
       totalTokens: billing.totalTokens,
       note: options.note || (deductStatus === 'missing_usage' ? '模型调用成功，但上游未返回 usage，未扣费' : '模型调用扣费'),
       requestId,
+      clientSource: options.clientSource,
       rawUsage: usage || {},
     })
     await conn.commit()

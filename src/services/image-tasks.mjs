@@ -52,7 +52,7 @@ export class ImageTaskService {
     this.resolveContext = resolveContext; this.operations = operations; this.fetch = fetchImpl
   }
 
-  async submit(user, input) {
+  async submit(user, input, clientSource) {
     const { requestId, request } = normalizeImageTask(input)
     const context = await this.resolveContext(user, request.model)
     const body = imageTaskPayload(request, context.model.modelId, context.imageConfig)
@@ -69,6 +69,7 @@ export class ImageTaskService {
     const estimate = quotePricing(plan, imageBillingEvents(plan, context.imageConfig, spec, null, true, rates), rates)
     const fingerprint = createHash('sha256').update(JSON.stringify(request)).digest('hex')
     const reserved = await this.operations.reserve(user, {
+      clientSource,
       capabilityId: context.capabilityId, taskType: 'image_generation', operationType: 'image_generation',
       idempotencyKey: requestId, fingerprint, adapterId: 'openai.images', configRevision: context.configRevision,
       pricingSnapshot: snapshot, points: estimate.points,
