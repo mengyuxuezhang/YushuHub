@@ -16,6 +16,7 @@ import { createJsonRequestBodyParser } from '../../src/middleware/json-request-b
 import { modelCapacity, capacityInteger } from '../../src/services/model-capacity.mjs'
 import { createModelProxyContextResolver } from '../../src/services/model-proxy-context.mjs'
 import { queryModelProviders } from '../../src/repositories/model-providers.mjs'
+import { claimWorkerBuild, findNextWorkerBuild } from '../../src/repositories/worker-build-queue.mjs'
 import express from 'express'
 import { normalizeLoginDesign, preserveSubmittedLoginBrandFields } from '../../src/services/login-brand.mjs'
 import fs from 'node:fs'
@@ -5770,30 +5771,23 @@ async function claimNextBuild(workerId) {
   const supportsDesktop = Array.isArray(targets) && targets.includes('desktop')
   const supportsAndroid = Array.isArray(targets) && targets.includes('android')
   const preferredWorkerIds = higherPriorityWorkerIds(workerId, parseWorkerPriority(WORKER_PRIORITY))
-  const [rows] = await db().query(
-    `SELECT pending.* FROM ai_builds pending
-     WHERE pending.status = 'queued' AND pending.remote_build_id IS NULL
-       AND (
-         (? <> '' AND pending.version = ? AND (pending.build_target = 'combined' OR (pending.build_target = 'desktop' AND ?)))
-         OR (? AND pending.build_target = 'android' AND pending.version = ? AND pending.source_revision = ?)
-       )
-       AND NOT EXISTS (
-         SELECT 1 FROM ai_builds prior
-         WHERE prior.project_id = pending.project_id AND prior.remote_build_id IS NULL AND (
-           prior.status = 'running' OR (prior.status = 'queued' AND
-             (prior.created_at < pending.created_at OR (prior.created_at = pending.created_at AND prior.id < pending.id)))
-         )
-       )
-     ORDER BY pending.created_at ASC, pending.id ASC LIMIT 1`,
-    [desktopBuildVersion, desktopBuildVersion, supportsDesktop, supportsAndroid, worker?.metadata?.androidVersion || '', worker?.metadata?.androidRevision || ''],
-  )
-  if (rows.length === 0) return null
-  const build = normalizeBuild(rows[0])
+  const build = normalizeBuild(await findNextWorkerBuild(db(), {
+    desktopVersion: desktopBuildVersion,
+    supportsDesktop,
+    supportsAndroid,
+    androidVersion: worker?.metadata?.androidVersion || '',
+    androidRevision: worker?.metadata?.androidRevision || '',
+  }))
+  if (!build) return null
   if (preferredWorkerIds.length > 0) {
     const placeholders = preferredWorkerIds.map(() => '?').join(', ')
     const [preferredWorkers] = await db().query(
       `SELECT ai_workers.*, TIMESTAMPDIFF(SECOND, last_seen_at, CURRENT_TIMESTAMP(3)) AS heartbeat_age_seconds
-       FROM ai_workers WHERE id IN (${placeholders})`,
+       FROM ai_workers WHERE id IN (${placeholders})
+         AND NOT EXISTS (
+           SELECT 1 FROM ai_builds running_build
+           WHERE running_build.claimed_by = ai_workers.id AND running_build.status = 'running' AND running_build.remote_build_id IS NULL
+         )`,
       preferredWorkerIds,
     )
     if (preferredWorkers.some((candidate) => {
@@ -5811,16 +5805,10 @@ async function claimNextBuild(workerId) {
   if (CENTER_SUPPLIER_MANAGEMENT_ENABLED) {
     await ensureWorkerStagingDirectory({ rootDir: PUBLIC_PREVIEW_ROOT, projectId: build.projectId })
   }
-  const [result] = await db().query(
-    `UPDATE ai_builds
-     SET status = 'running', started_at = CURRENT_TIMESTAMP(3), claimed_by = ?, log = ?
-     WHERE id = ? AND status = 'queued'`,
-    [workerId, `[${nowIso()}] Claimed by ${workerId}\n`, build.id],
-  )
-  if (result.affectedRows !== 1) return null
-  const next = await findBuildById(build.id)
-  await touchWorker(workerId, { status: 'online', currentBuildId: build.id, claimed: true })
-  return next
+  const claimed = await claimWorkerBuild(db(), {
+    buildId: build.id, projectId: build.projectId, workerId, log: `[${nowIso()}] Claimed by ${workerId}\n`,
+  })
+  return claimed ? findBuildById(build.id) : null
 }
 
 function buildArtifactUrl(baseUrl, fileName) {

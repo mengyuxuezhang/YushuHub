@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { findNextWorkerBuild } from '../repositories/worker-build-queue.mjs'
 
 import {
   annotateWorkerSourceStatus,
@@ -133,4 +134,44 @@ test('compares Android version and commit without requiring the Windows version 
   assert.equal(matched.expectedAndroidVersion, '0.1.4')
   assert.equal(matched.androidVersionMatchesSource, true)
   assert.equal(wrongRevision.androidVersionMatchesSource, false)
+})
+
+test('runs desktop and Android independently within one project while preserving FIFO and combined-build exclusivity', async (t) => {
+  let DatabaseSync
+  try {
+    ({ DatabaseSync } = await import('node:sqlite'))
+  } catch (error) {
+    if (error.code !== 'ERR_UNKNOWN_BUILTIN_MODULE') throw error
+    return t.skip('SQLite is available in the Node 24 CI runtime')
+  }
+  const database = new DatabaseSync(':memory:')
+  t.after(() => database.close())
+  database.exec(`CREATE TABLE ai_builds (
+    id TEXT PRIMARY KEY, project_id TEXT, build_target TEXT, status TEXT,
+    remote_build_id TEXT, version TEXT, source_revision TEXT, created_at INTEGER
+  )`)
+  const insert = database.prepare("INSERT INTO ai_builds VALUES (?, 'brand', ?, ?, NULL, ?, ?, ?)")
+  const repository = {
+    query: async (sql, values) => [database.prepare(sql).all(...values.map(value => typeof value === 'boolean' ? Number(value) : value))],
+  }
+  const worker = { desktopVersion: '3.0.102', supportsDesktop: true, supportsAndroid: true, androidVersion: '0.1.7', androidRevision: 'pinned' }
+  const next = async (capabilities = worker) => (await findNextWorkerBuild(repository, capabilities))?.id ?? null
+  insert.run('desktop-1', 'desktop', 'running', worker.desktopVersion, '', 1)
+  insert.run('android-1', 'android', 'queued', worker.androidVersion, 'pinned', 2)
+  insert.run('android-2', 'android', 'queued', worker.androidVersion, 'pinned', 2)
+  insert.run('desktop-2', 'desktop', 'queued', worker.desktopVersion, '', 3)
+  assert.equal(await next(), 'android-1')
+  assert.equal(await next({ ...worker, supportsAndroid: false }), null)
+  assert.equal(await next({ ...worker, androidRevision: 'different' }), null)
+  database.exec("UPDATE ai_builds SET status = 'running' WHERE id = 'android-1'")
+  assert.equal(await next(), null)
+  database.exec("UPDATE ai_builds SET status = 'succeeded' WHERE id = 'desktop-1'")
+  assert.equal(await next(), 'desktop-2')
+  database.exec("UPDATE ai_builds SET status = 'succeeded'")
+  insert.run('legacy', 'combined', 'queued', worker.desktopVersion, '', 4)
+  insert.run('android-3', 'android', 'queued', worker.androidVersion, 'pinned', 5)
+  assert.equal(await next(), 'legacy')
+  assert.equal(await next({ ...worker, desktopVersion: '' }), null)
+  database.exec("UPDATE ai_builds SET status = 'running' WHERE id = 'legacy'")
+  assert.equal(await next(), null)
 })
