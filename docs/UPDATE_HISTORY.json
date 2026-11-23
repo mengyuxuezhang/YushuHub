@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.9.84",
+    "publishedAt": "2026-11-23T09:57:38Z",
+    "releaseNotes": "修复阿里云 OSS 自动压缩 JSON 时，中央误判直传测试包校验失败的问题。"
+  },
+  {
     "version": "1.9.83",
     "publishedAt": "2026-11-23T08:29:12Z",
     "releaseNotes": "修复平台设置保存安装包存储时误校验既有构建中心凭据的问题。旧版授权模式显示供应商 ID 和 Token 输入项，已保存的 Token 继续隐藏。"
