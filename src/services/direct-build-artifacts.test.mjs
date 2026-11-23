@@ -92,6 +92,19 @@ test('private shared R2 supplies authenticated download links without a public o
   assert.equal(requests.length, 3)
 })
 
+test('R2 public development URLs support downloads from the bucket origin', () => {
+  const publicBaseUrl = 'https://pub-' + 'b'.repeat(32) + '.r2.dev'
+  const config = normalizeR2ReleaseConfig({ ...r2, publicBaseUrl: publicBaseUrl + '/' })
+  assert.equal(config.enabled, true)
+  assert.equal(config.publicBaseUrl, publicBaseUrl)
+  const grant = makeR2UploadGrant(config, build)
+  assert.equal(new URL(grant.publicUrl).origin, publicBaseUrl)
+  assert.deepEqual(validateUploadGrant(grant, build.projectId, build.id), grant)
+  for (const invalidUrl of [publicBaseUrl + '/installer.apk', publicBaseUrl + './installer.apk', publicBaseUrl + '?download=1', r2.endpoint]) {
+    assert.equal(normalizeR2ReleaseConfig({ ...r2, publicBaseUrl: invalidUrl }).enabled, false)
+  }
+})
+
 test('both manifests reject unsafe names, mixed platforms and invalid objects', async () => {
   const desktop = ['installer.exe', 'installer.exe.blockmap', 'latest.json', 'latest.yml'].map(name => ({ ...files[0], name }))
   assert(validUploadFiles(files, 'android'))

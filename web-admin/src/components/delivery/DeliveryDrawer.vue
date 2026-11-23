@@ -35,7 +35,7 @@ defineEmits<{ close: []; save: []; testSmtp: []; 'update:smtpTestEmail': [value:
           <label><span>S3 Endpoint</span><input v-model.trim="form.r2Storage.endpoint" placeholder="https://账号ID.r2.cloudflarestorage.com" /></label>
           <label><span>Access Key ID</span><input v-model.trim="form.r2Storage.accessKeyId" autocomplete="off" /></label>
           <label><span>Secret Access Key</span><input v-model="form.r2Storage.secretAccessKey" type="password" autocomplete="new-password" :placeholder="form.r2Storage.secretConfigured ? '已配置，留空保持不变' : '请输入 Secret Access Key'" /></label>
-          <label><span>HTTPS 下载域名</span><input v-model.trim="form.r2Storage.publicBaseUrl" placeholder="https://downloads.example.com" /><small>填写绑定至此 Bucket 的自定义域名。</small></label>
+          <label><span>HTTPS 下载域名</span><input v-model.trim="form.r2Storage.publicBaseUrl" placeholder="https://downloads.example.com" /><small>填写此 Bucket 的自定义域名或 Public Development URL。使用 r2.dev 时只填写域名，适用于少量下载，Cloudflare 会限速。</small></label>
           <label><span>对象目录前缀（可选）</span><input v-model.trim="form.r2Storage.prefix" placeholder="agent" /></label>
         </div>
       </section>

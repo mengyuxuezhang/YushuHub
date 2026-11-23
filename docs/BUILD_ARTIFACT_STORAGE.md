@@ -6,14 +6,14 @@
 
 有自己的 OSS 或 R2 时，支持直传的构建机会用本次任务的临时授权上传到该桶的测试目录。「构建发布」显示测试包后，分别点击「推送桌面端」或「推送安卓版」。同桶正式发布通过对象存储复制，用户从代理商配置的下载域名获取安装包。
 
-选择 Cloudflare R2 时，先在 Cloudflare 创建存储桶并绑定用于下载的 HTTPS 自定义域名。在 R2 的「Manage API Tokens」创建仅授权这个桶的 **Object Read & Write** API Token。把以下值填入代理商后台：
+选择 Cloudflare R2 时，先在 Cloudflare 创建用于公开安装包的专用桶。可绑定 HTTPS 自定义域名，或在桶的「Settings → Public Development URL」开启 `r2.dev` 下载。`r2.dev` 有访问限速，适合测试和少量下载。在 R2 的「Manage API Tokens」创建仅授权这个桶的 **Object Read & Write** API Token，然后填写以下设置。
 
 | 字段 | 来源 |
 | --- | --- |
 | Bucket | R2 存储桶名称 |
 | S3 Endpoint | R2 桶详情里的 S3 API 地址 |
 | Access Key ID、Secret Access Key | R2 API Token 创建页面生成的 S3 密钥对 |
-| HTTPS 下载域名 | 已绑定到此桶的自定义域名 |
+| HTTPS 下载域名 | 此桶的自定义域名或 `https://pub-<32 位十六进制标识>.r2.dev`，使用 `r2.dev` 时填写根地址 |
 | 对象目录前缀 | 可选。使用独立前缀区分同桶部署 |
 
 Secret Access Key 保存时加密，表单不回填。保留管理端数据目录中的 `data/artifact-storage.key` 与数据库备份。正式下载域名需要允许读对应对象，桌面更新清单 `latest.yml` 和 `latest.json` 使用绕过缓存或短缓存策略。测试包与正式包使用不同前缀，设置短期保留时只匹配 `<前缀>/ai-staging/`。

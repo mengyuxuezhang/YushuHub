@@ -147,8 +147,11 @@ export function validR2Bucket(bucket) {
 export function normalizeR2ReleaseConfig(config = {}) {
   const endpoint = r2Endpoint(config.endpoint)?.href || ''
   const publicUrl = httpsUrl(config.publicBaseUrl)
-  const publicBaseUrl = publicUrl && !/(?:^|\.)(?:r2\.dev|r2\.cloudflarestorage\.com)$/.test(publicUrl.hostname)
-    ? publicUrl.href.replace(/\/+$/, '') : ''
+  const host = publicUrl?.hostname.replace(/\.$/, '') || ''
+  const developmentDomain = /(?:^|\.)r2\.dev$/.test(host)
+  const validDevelopmentUrl = developmentDomain && /^pub-[a-f0-9]{32}\.r2\.dev$/.test(publicUrl.hostname) && publicUrl.pathname === '/'
+  const validCustomUrl = publicUrl && !developmentDomain && !/(?:^|\.)r2\.cloudflarestorage\.com$/.test(host)
+  const publicBaseUrl = validDevelopmentUrl || validCustomUrl ? publicUrl.href.replace(/\/+$/, '') : ''
   const prefix = String(config.prefix || '').trim().replace(/^\/+|\/+$/g, '')
   const enabled = Boolean(endpoint && publicBaseUrl && validR2Bucket(config.bucket) && /^[a-zA-Z0-9]{1,160}$/.test(config.accessKeyId || '')
     && (config.secretAccessKey || config.encryptedSecret) && (!prefix || prefix.split('/').every(part => PREFIX_PART.test(part))))
