@@ -212,7 +212,9 @@ export function r2UploadHeaders(file) {
 }
 
 export async function verifyDirectArtifact(url, file, provider, fetchImpl = fetch, headers = {}) {
-  const response = await fetchImpl(url, { method: 'HEAD', headers, redirect: 'error', signal: AbortSignal.timeout(15_000) })
+  // OSS can gzip JSON on demand, which removes the original content-length from HEAD.
+  const requestHeaders = provider === 'oss' ? { ...headers, 'accept-encoding': 'identity' } : headers
+  const response = await fetchImpl(url, { method: 'HEAD', headers: requestHeaders, redirect: 'error', signal: AbortSignal.timeout(15_000) })
     .catch(() => null)
   const digest = response?.headers.get(provider === 'r2' ? 'x-amz-meta-sha256' : 'x-oss-meta-sha256')
   if (!response?.ok || Number(response.headers.get('content-length')) !== file.size || digest !== file.sha256) {
