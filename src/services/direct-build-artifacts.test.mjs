@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { makeDirectUploadService, makeOssUploadGrant, makeR2UploadGrant, normalizeR2ReleaseConfig, putR2ReleaseObject,
-  readBuildR2, sameBucketBuildPrefix, validateUploadGrant, validUploadFiles, verifyDirectArtifact } from './direct-build-artifacts.mjs'
+  probeR2DevelopmentArtifact, readBuildR2, sameBucketBuildPrefix, validateUploadGrant, validUploadFiles, verifyDirectArtifact } from './direct-build-artifacts.mjs'
 
 const build = { id: 'local-build', projectId: 'brand-one', target: 'android' }
 const center = { ...build, id: 'center-build', centerSupplierId: 'supplier' }
@@ -123,6 +123,27 @@ test('artifact verification rejects invalid metadata immediately and leaves OSS 
     calls++
     throw Object.assign(new Error('connection timed out'), { code: 'ETIMEDOUT' })
   }), /产物校验失败/)
+  assert.equal(calls, 1)
+})
+
+test('R2 public probe retries connection timeouts and bounds the HEAD fallback to a byte range', async () => {
+  const sent = []
+  const probe = async (_url, options) => {
+    sent.push(options)
+    if (sent.length === 1) throw Object.assign(new Error('connect timeout'), { code: 'ETIMEDOUT' })
+    return new Response(null, { status: sent.length === 2 ? 405 : 206 })
+  }
+  assert.equal(await probeR2DevelopmentArtifact(r2.publicBaseUrl, probe), null)
+  assert.equal(sent.length, 0)
+  const url = 'https://pub-' + 'b'.repeat(32) + '.r2.dev/build/installer.exe'
+  assert.equal(await probeR2DevelopmentArtifact(url, probe), true)
+  assert.deepEqual(sent.map(request => request.method), ['HEAD', 'HEAD', 'GET'])
+  assert.equal(sent[2].headers.range, 'bytes=0-0')
+  let calls = 0
+  assert.equal(await probeR2DevelopmentArtifact(url, async () => {
+    calls++
+    return new Response(null, { status: 404 })
+  }), false)
   assert.equal(calls, 1)
 })
 

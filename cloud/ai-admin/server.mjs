@@ -162,7 +162,7 @@ import { buildListSearch } from '../../src/services/list-search.mjs'
 import { canManageBuiltinRoleTemplates } from '../../src/services/role-template-lifecycle.mjs'
 import { remoteBuildMetadataPatch } from '../../src/services/build-record-sync.mjs'
 import { resolveBuildBrandAssets } from '../../src/services/build-brand-assets.mjs'
-import { makeDirectUploadService, makeOssUploadGrant, makeR2UploadGrant, normalizeR2ReleaseConfig, privateUploadField, putR2ReleaseObject, sameBucketBuildPrefix, validateUploadGrant } from '../../src/services/direct-build-artifacts.mjs'
+import { makeDirectUploadService, makeOssUploadGrant, makeR2UploadGrant, normalizeR2ReleaseConfig, privateUploadField, probeR2DevelopmentArtifact, putR2ReleaseObject, sameBucketBuildPrefix, validateUploadGrant } from '../../src/services/direct-build-artifacts.mjs'
 import { startBuildCenterSyncScheduler } from '../../src/services/build-center-sync-scheduler.mjs'
 import { isPaginationRequested, pageResult, parsePagination } from '../../src/utils/pagination.mjs'
 import {
@@ -6170,13 +6170,16 @@ async function canAccessBuildFile(build, name) {
     } catch {}
   }
   if (!build.publicUrl) return false
+  const url = buildArtifactUrl(build.publicUrl, name)
+  const r2Accessible = await probeR2DevelopmentArtifact(url)
+  if (r2Accessible !== null) return r2Accessible
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 15 * 1000)
   try {
-    const response = await fetch(buildArtifactUrl(build.publicUrl, name), { method: 'HEAD', signal: controller.signal })
+    const response = await fetch(url, { method: 'HEAD', signal: controller.signal })
     if (response.ok) return true
     if (response.status === 405 || response.status === 403) {
-      const fallback = await fetch(buildArtifactUrl(build.publicUrl, name), { signal: controller.signal })
+      const fallback = await fetch(url, { signal: controller.signal })
       return fallback.ok
     }
     return false

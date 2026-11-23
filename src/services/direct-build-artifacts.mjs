@@ -12,6 +12,7 @@ const PREFIX_PART = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,239}$/
 const SHA256 = /^[a-f0-9]{64}$/
 const MD5 = /^[a-zA-Z0-9+/]{22}==$/
 const R2_DIR = /^r2-build\/[A-Za-z0-9_-]{1,120}\/[a-f0-9]{32}$/
+const R2_DEVELOPMENT_HOST = /^pub-[a-f0-9]{32}\.r2\.dev$/
 const r2VerificationAgent = new Agent({ keepAlive: true, autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 1_800 })
 const r2TransientErrors = new Set(['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'ABORT_ERR', 'UND_ERR_CONNECT_TIMEOUT'])
 export const privateUploadField = '__directArtifactUpload'
@@ -153,7 +154,7 @@ export function normalizeR2ReleaseConfig(config = {}) {
   const publicUrl = httpsUrl(config.publicBaseUrl)
   const host = publicUrl?.hostname.replace(/\.$/, '') || ''
   const developmentDomain = /(?:^|\.)r2\.dev$/.test(host)
-  const validDevelopmentUrl = developmentDomain && /^pub-[a-f0-9]{32}\.r2\.dev$/.test(publicUrl.hostname) && publicUrl.pathname === '/'
+  const validDevelopmentUrl = developmentDomain && R2_DEVELOPMENT_HOST.test(publicUrl.hostname) && publicUrl.pathname === '/'
   const validCustomUrl = publicUrl && !developmentDomain && !/(?:^|\.)r2\.cloudflarestorage\.com$/.test(host)
   const publicBaseUrl = validDevelopmentUrl || validCustomUrl ? publicUrl.href.replace(/\/+$/, '') : ''
   const prefix = String(config.prefix || '').trim().replace(/^\/+|\/+$/g, '')
@@ -218,15 +219,16 @@ export function r2UploadHeaders(file) {
     'x-amz-meta-sha256': file.sha256, 'if-none-match': '*' }
 }
 
-function requestR2Head(url, { method, headers, signal }) {
+function requestR2Headers(url, { method, headers, signal }) {
   return new Promise((resolve, reject) => {
-    const head = request(url, { method, headers, signal, agent: r2VerificationAgent }, response => {
-      response.resume()
+    const probe = request(url, { method, headers, signal, agent: r2VerificationAgent }, response => {
       resolve({ status: response.statusCode, ok: response.statusCode >= 200 && response.statusCode < 300,
         headers: new Headers(response.headers) })
+      if (method === 'HEAD') response.resume()
+      else response.destroy()
     })
-    head.once('error', reject)
-    head.end()
+    probe.once('error', reject)
+    probe.end()
   })
 }
 
@@ -235,24 +237,40 @@ function isTransientR2Error(error) {
     Boolean(error?.errors?.some(isTransientR2Error) || (error?.cause && isTransientR2Error(error.cause)))
 }
 
-export async function verifyDirectArtifact(url, file, provider, fetchImpl, headers = {}) {
-  // Object stores can compress JSON on demand and omit its original size from HEAD.
-  const requestHeaders = { ...headers, 'accept-encoding': 'identity' }
-  const isR2 = provider === 'r2'
-  const send = fetchImpl ?? (isR2 ? requestR2Head : fetch)
+async function requestArtifactHeaders(url, { method, headers, retryR2, send }) {
   let response
   for (let attempt = 1; ; attempt++) {
     let retry
     try {
-      response = await send(url, { method: 'HEAD', headers: requestHeaders, redirect: 'error', signal: AbortSignal.timeout(15_000) })
+      response = await send(url, { method, headers, redirect: 'error', signal: AbortSignal.timeout(15_000) })
       retry = response.status === 408 || response.status === 504
     } catch (error) {
       response = null
-      retry = isR2 && isTransientR2Error(error)
+      retry = isTransientR2Error(error)
     }
-    if (!isR2 || !retry || attempt === 3) break
+    if (!retryR2 || !retry || attempt === 3) break
     await delay(attempt * 250)
   }
+  return response
+}
+
+export async function probeR2DevelopmentArtifact(url, send = requestR2Headers) {
+  const target = httpsUrl(url)
+  if (!target || !R2_DEVELOPMENT_HOST.test(target.hostname)) return null
+  const response = await requestArtifactHeaders(target.href, { method: 'HEAD', retryR2: true, send })
+  if (response?.ok) return true
+  if (response?.status !== 403 && response?.status !== 405) return false
+  const fallback = await requestArtifactHeaders(target.href, { method: 'GET', headers: { range: 'bytes=0-0' }, retryR2: true, send })
+  return Boolean(fallback?.ok)
+}
+
+export async function verifyDirectArtifact(url, file, provider, fetchImpl, headers = {}) {
+  // Object stores can compress JSON on demand and omit its original size from HEAD.
+  const retryR2 = provider === 'r2'
+  const response = await requestArtifactHeaders(url, {
+    method: 'HEAD', headers: { ...headers, 'accept-encoding': 'identity' }, retryR2,
+    send: fetchImpl ?? (retryR2 ? requestR2Headers : fetch),
+  })
   const digest = response?.headers.get(provider === 'r2' ? 'x-amz-meta-sha256' : 'x-oss-meta-sha256')
   if (!response?.ok || Number(response.headers.get('content-length')) !== file.size || digest !== file.sha256) {
     throw new Error('对象存储产物校验失败：' + file.name)
