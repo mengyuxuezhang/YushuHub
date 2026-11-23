@@ -1,4 +1,6 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto'
+import { Agent, request } from 'node:https'
+import { setTimeout as delay } from 'node:timers/promises'
 import { AwsClient } from 'aws4fetch'
 import { androidBuildArtifacts, isAndroidBuildArtifact } from './android-build-artifacts.mjs'
 
@@ -10,6 +12,8 @@ const PREFIX_PART = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,239}$/
 const SHA256 = /^[a-f0-9]{64}$/
 const MD5 = /^[a-zA-Z0-9+/]{22}==$/
 const R2_DIR = /^r2-build\/[A-Za-z0-9_-]{1,120}\/[a-f0-9]{32}$/
+const r2VerificationAgent = new Agent({ keepAlive: true, autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 1_800 })
+const r2TransientErrors = new Set(['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'ABORT_ERR', 'UND_ERR_CONNECT_TIMEOUT'])
 export const privateUploadField = '__directArtifactUpload'
 
 function httpsUrl(value) {
@@ -214,18 +218,48 @@ export function r2UploadHeaders(file) {
     'x-amz-meta-sha256': file.sha256, 'if-none-match': '*' }
 }
 
-export async function verifyDirectArtifact(url, file, provider, fetchImpl = fetch, headers = {}) {
+function requestR2Head(url, { method, headers, signal }) {
+  return new Promise((resolve, reject) => {
+    const head = request(url, { method, headers, signal, agent: r2VerificationAgent }, response => {
+      response.resume()
+      resolve({ status: response.statusCode, ok: response.statusCode >= 200 && response.statusCode < 300,
+        headers: new Headers(response.headers) })
+    })
+    head.once('error', reject)
+    head.end()
+  })
+}
+
+function isTransientR2Error(error) {
+  return r2TransientErrors.has(error?.code) || error?.name === 'TimeoutError' ||
+    Boolean(error?.errors?.some(isTransientR2Error) || (error?.cause && isTransientR2Error(error.cause)))
+}
+
+export async function verifyDirectArtifact(url, file, provider, fetchImpl, headers = {}) {
   // Object stores can compress JSON on demand and omit its original size from HEAD.
   const requestHeaders = { ...headers, 'accept-encoding': 'identity' }
-  const response = await fetchImpl(url, { method: 'HEAD', headers: requestHeaders, redirect: 'error', signal: AbortSignal.timeout(15_000) })
-    .catch(() => null)
+  const isR2 = provider === 'r2'
+  const send = fetchImpl ?? (isR2 ? requestR2Head : fetch)
+  let response
+  for (let attempt = 1; ; attempt++) {
+    let retry
+    try {
+      response = await send(url, { method: 'HEAD', headers: requestHeaders, redirect: 'error', signal: AbortSignal.timeout(15_000) })
+      retry = response.status === 408 || response.status === 504
+    } catch (error) {
+      response = null
+      retry = isR2 && isTransientR2Error(error)
+    }
+    if (!isR2 || !retry || attempt === 3) break
+    await delay(attempt * 250)
+  }
   const digest = response?.headers.get(provider === 'r2' ? 'x-amz-meta-sha256' : 'x-oss-meta-sha256')
   if (!response?.ok || Number(response.headers.get('content-length')) !== file.size || digest !== file.sha256) {
     throw new Error('对象存储产物校验失败：' + file.name)
   }
 }
 
-export function makeDirectUploadService({ readGrant, readR2 = readBuildR2, fetchImpl = fetch }) {
+export function makeDirectUploadService({ readGrant, readR2 = readBuildR2, fetchImpl }) {
   return {
     async plan(build, files) {
       const grant = await readGrant(build)

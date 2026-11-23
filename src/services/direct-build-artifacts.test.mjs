@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { makeDirectUploadService, makeOssUploadGrant, makeR2UploadGrant, normalizeR2ReleaseConfig, putR2ReleaseObject,
-  readBuildR2, sameBucketBuildPrefix, validateUploadGrant, validUploadFiles } from './direct-build-artifacts.mjs'
+  readBuildR2, sameBucketBuildPrefix, validateUploadGrant, validUploadFiles, verifyDirectArtifact } from './direct-build-artifacts.mjs'
 
 const build = { id: 'local-build', projectId: 'brand-one', target: 'android' }
 const center = { ...build, id: 'center-build', centerSupplierId: 'supplier' }
@@ -91,6 +91,39 @@ test('private shared R2 supplies authenticated download links without a public o
   assert.deepEqual(Object.keys(downloads), names)
   assert(Object.values(downloads).every(url => new URL(url).searchParams.has('X-Amz-Signature')))
   assert.equal(requests.length, 3)
+})
+
+test('R2 artifact verification recovers from a nested connection timeout and an HTTP gateway timeout', async () => {
+  const file = files[0]
+  const sent = []
+  const fetchHead = async (_url, options) => {
+    sent.push(options)
+    if (sent.length === 1) {
+      const timeout = Object.assign(new Error('connection timed out'), { code: 'ETIMEDOUT' })
+      throw new TypeError('fetch failed', { cause: new AggregateError([timeout]) })
+    }
+    if (sent.length === 2) return new Response(null, { status: 504 })
+    return new Response(null, { headers: { 'content-length': String(file.size), 'x-amz-meta-sha256': file.sha256 } })
+  }
+  await verifyDirectArtifact(r2.endpoint, file, 'r2', fetchHead)
+  assert.equal(sent.length, 3)
+  assert.equal(new Set(sent.map(options => options.signal)).size, 3)
+  assert(sent.every(options => options.method === 'HEAD' && options.headers['accept-encoding'] === 'identity'))
+})
+
+test('artifact verification rejects invalid metadata immediately and leaves OSS timeouts to its existing callers', async () => {
+  let calls = 0
+  await assert.rejects(verifyDirectArtifact(r2.endpoint, files[0], 'r2', async () => {
+    calls++
+    return new Response(null, { headers: { 'content-length': String(files[0].size), 'x-amz-meta-sha256': files[1].sha256 } })
+  }), /产物校验失败/)
+  assert.equal(calls, 1)
+  calls = 0
+  await assert.rejects(verifyDirectArtifact(oss.publicBaseUrl, files[0], 'oss', async () => {
+    calls++
+    throw Object.assign(new Error('connection timed out'), { code: 'ETIMEDOUT' })
+  }), /产物校验失败/)
+  assert.equal(calls, 1)
 })
 
 test('R2 public development URLs support downloads from the bucket origin', () => {

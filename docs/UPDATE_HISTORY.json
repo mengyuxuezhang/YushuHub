@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.9.88",
+    "publishedAt": "2026-11-23T13:17:22Z",
+    "releaseNotes": "改善构建中心对 Cloudflare R2 产物的验收。单次地址连接等待调整至 1.8 秒，发生临时超时时自动重试。"
+  },
+  {
     "version": "1.9.87",
     "publishedAt": "2026-11-23T12:08:44Z",
     "releaseNotes": "修复中央构建机直传代理商 Cloudflare R2 时，临时凭据在预签名请求中的传递方式，恢复桌面和 Android 安装包直传。"
