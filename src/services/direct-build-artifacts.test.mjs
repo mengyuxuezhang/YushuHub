@@ -24,11 +24,12 @@ function objectHead(provider, requests) {
     const target = new URL(url)
     const file = files.find(item => target.pathname.endsWith('/' + item.name))
     requests.push({ target, options })
-    if (provider === 'oss' && file?.name.endsWith('.json') && options.headers['accept-encoding'] !== 'identity') {
-      return new Response(null, { headers: { 'content-encoding': 'gzip', 'x-oss-meta-sha256': file.sha256 } })
+    const digestHeader = provider === 'oss' ? 'x-oss-meta-sha256' : 'x-amz-meta-sha256'
+    if (file?.name.endsWith('.json') && options.headers['accept-encoding'] !== 'identity') {
+      return new Response(null, { headers: { 'content-encoding': 'gzip', [digestHeader]: file.sha256 } })
     }
     return new Response(null, { status: file ? 200 : 404,
-      headers: file ? { 'content-length': String(file.size), [provider === 'oss' ? 'x-oss-meta-sha256' : 'x-amz-meta-sha256']: file.sha256 } : {} })
+      headers: file ? { 'content-length': String(file.size), [digestHeader]: file.sha256 } : {} })
   }
 }
 

@@ -1,8 +1,8 @@
 [
   {
-    "version": "1.9.84",
-    "publishedAt": "2026-11-23T09:57:38Z",
-    "releaseNotes": "修复阿里云 OSS 自动压缩 JSON 时，中央误判直传测试包校验失败的问题。"
+    "version": "1.9.85",
+    "publishedAt": "2026-11-23T10:02:15Z",
+    "releaseNotes": "修复 Cloudflare R2 和阿里云 OSS 自动压缩 JSON 时，中央误判直传构建产物校验失败的问题。"
   },
   {
     "version": "1.9.83",
