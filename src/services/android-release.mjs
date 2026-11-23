@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { ANDROID_APK, ANDROID_BRAND, ANDROID_SOURCE, DEFAULT_ANDROID_PUBLIC_SOURCE_REPOSITORY, MAX_ANDROID_BRAND_SIZE, androidBuildArtifacts, androidSharedSource, androidUpdateManifest, validAndroidBuildMetadata } from './android-build-artifacts.mjs'
+import { artifactObjectUrl, sameBucketBuildPrefix, verifyDirectArtifact, verifyR2ReleaseObject } from './direct-build-artifacts.mjs'
 
 async function fileSha256(file) {
   const hash = createHash('sha256')
@@ -39,17 +40,23 @@ export function createAndroidReleaseStarter({ authorize, begin, finish, readBuil
   }
 }
 
-export function createAndroidArtifactPublisher({ readSettings, readOssConfig, publicRoot, publicBaseUrl, temporary, copyBuildFile, uploadFile, canAccessFile, sourceRepository = DEFAULT_ANDROID_PUBLIC_SOURCE_REPOSITORY, sourceAvailable = publicAndroidSourceAvailable }) {
+async function verifyUploadedAndroid(config, previewUrl, objectKey, file) {
+  if (config.provider === 'r2') return verifyR2ReleaseObject(config, objectKey, file)
+  return verifyDirectArtifact(artifactObjectUrl(previewUrl, file.name), file, 'oss')
+}
+
+export function createAndroidArtifactPublisher({ readSettings, readOssConfig, publicRoot, publicBaseUrl, temporary, copyBuildFile, uploadFile, copyObject, canAccessFile, sourceRepository = DEFAULT_ANDROID_PUBLIC_SOURCE_REPOSITORY, sourceAvailable = publicAndroidSourceAvailable, verifyUploaded = verifyUploadedAndroid }) {
   return async function publish(build, files) {
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(build.id) || !/^[a-z0-9][a-z0-9-]{1,62}$/.test(build.projectId)) {
       throw new Error('Android 发布标识无效')
     }
     const settings = await readSettings()
-    const oss = readOssConfig(settings)
-    const useOss = settings.artifactStorageMode === 'oss'
-    if (useOss && !oss.enabled) throw new Error('OSS 配置不完整')
+    const oss = await readOssConfig(settings)
+    const useOss = ['oss', 'r2'].includes(settings.artifactStorageMode)
+    if (useOss && !oss.enabled) throw new Error('对象存储配置不完整')
     const relative = `android/${build.projectId}/${build.id}`
     const target = path.join(publicRoot, ...relative.split('/'))
+    const directPrefix = useOss && copyObject ? sameBucketBuildPrefix(oss, build) : null
     await mkdir(temporary, { recursive: true })
     const staging = await mkdtemp(path.join(temporary, 'release-'))
     const [apk, source, metadataFile] = files
@@ -72,6 +79,7 @@ export function createAndroidArtifactPublisher({ readSettings, readOssConfig, pu
         if (!await sourceAvailable(github.archiveUrl)) throw new Error('对应 Android 源码提交尚未在公开 GitHub 仓库提供')
       }
       for (const [index, file] of [apk, source].entries()) {
+        if (directPrefix && sharedSource && index === 0) continue
         await copyBuildFile(build, file, staging)
         const size = (await stat(path.join(staging, file))).size
         if (!size) throw new Error('Android 产物为空')
@@ -83,13 +91,21 @@ export function createAndroidArtifactPublisher({ readSettings, readOssConfig, pu
       }
       const stagedApk = path.join(staging, ANDROID_APK)
       const { version, versionCode, size, sha256 } = metadata
-      if ((await stat(stagedApk)).size !== size || await fileSha256(stagedApk) !== sha256) {
+      const sameBucket = directPrefix && sharedSource
+      if (sameBucket) {
+        await verifyUploaded(oss, build.publicUrl, directPrefix + '/' + apk, { name: apk, size, sha256 })
+      } else if ((await stat(stagedApk)).size !== size || await fileSha256(stagedApk) !== sha256) {
         throw new Error('Android APK 校验失败')
       }
       let url
       if (useOss) {
         const prefix = [oss.prefix, 'ai', relative].filter(Boolean).join('/')
-        for (const name of names) await uploadFile(oss, path.join(staging, name), `${prefix}/${name}`)
+        if (sameBucket) {
+          await copyObject(oss, directPrefix + '/' + apk, prefix + '/' + ANDROID_APK)
+          await copyObject(oss, directPrefix + '/' + source, prefix + '/' + ANDROID_BRAND)
+        } else {
+          for (const name of names) await uploadFile(oss, path.join(staging, name), `${prefix}/${name}`)
+        }
         url = `${oss.publicBaseUrl.replace(/\/$/, '')}/${prefix}/`
       } else {
         await mkdir(path.dirname(target), { recursive: true })

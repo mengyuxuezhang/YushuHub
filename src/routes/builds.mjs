@@ -20,6 +20,7 @@ import { PUBLIC_ADMIN_BASE_URL, PUBLIC_UPDATE_BASE_URL, PUBLIC_PREVIEW_BASE_URL 
 import { resolvePublicUrlsForRequest } from '../utils/public-url.mjs'
 import { annotateWorkerSourceStatus, isManagedWorkerId, resolveWorkerHeartbeatBuildId } from '../services/worker-scheduling.mjs'
 import { buildStatusColumns, compactBuildStatus } from '../services/build-status-view.mjs'
+import { privateUploadField, validateUploadGrant } from '../services/direct-build-artifacts.mjs'
 
 export function isCenterDelegatedBuild(build) {
   return Boolean(String(build?.centerSupplierId || '').trim())
@@ -56,6 +57,7 @@ export function registerBuildRoutes(app, deps) {
     touchWorker,
     appendBuildLog,
     officialResources,
+    directBuildUploads,
   } = deps
 
   app.post('/api/builds', requireAuth, requirePermission('builds.create', '提交测试打包'), async (req, res, next) => {
@@ -121,7 +123,7 @@ export function registerBuildRoutes(app, deps) {
         const remotes = await buildCenterApi('/api/center/builds/status', { buildIds: [current.remoteBuildId] }, config)
         const remote = Array.isArray(remotes) ? remotes.find(item => item.id === current.remoteBuildId) : null
         if (!remote || !['queued', 'running', 'succeeded', 'failed'].includes(remote.status)) throw new Error('无法确认原官方构建状态，请稍后重试')
-        if (remote.status === 'succeeded' && (!remote.publicUrl || !Array.isArray(remote.files) || remote.files.length === 0)) throw new Error('原官方构建产物已不可用，请重新提交构建任务')
+        if (remote.status === 'succeeded' && (!(remote.publicUrl || remote.artifactDownloadUrls) || !Array.isArray(remote.files) || remote.files.length === 0)) throw new Error('原官方构建产物已不可用，请重新提交构建任务')
         if (remote.status !== 'failed') {
           const build = await updateBuild(current.id, {
             status: remote.status === 'succeeded' ? 'running' : remote.status,
@@ -274,7 +276,13 @@ export function registerBuildRoutes(app, deps) {
         ].filter(Boolean).join(' OR ')}) ORDER BY created_at DESC`,
         [supplierId, ...ids, ...localIds],
       )
-      res.json({ success: true, data: rows.map(row => lightweight ? compactBuildStatus(normalizeBuild(row)) : normalizeBuild(row)) })
+      const builds = await Promise.all(rows.map(async row => {
+        const build = normalizeBuild(row)
+        const downloadUrls = await directBuildUploads?.downloadUrls?.(build)
+        const status = lightweight ? compactBuildStatus(build) : build
+        return downloadUrls ? { ...status, artifactDownloadUrls: downloadUrls } : status
+      }))
+      res.json({ success: true, data: builds })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
     }
@@ -304,6 +312,11 @@ export function registerBuildRoutes(app, deps) {
         centerProjectId: currentBrand?.centerProjectId || current.projectId,
       } : null
       if (refreshedBrand) preserveSubmittedLoginBrandFields(refreshedBrand, refreshedBrand)
+      if (refreshedBrand) {
+        const grant = validateUploadGrant(refreshedBrand[privateUploadField], refreshedBrand.sourceProjectId, current.centerLocalBuildId)
+        delete refreshedBrand[privateUploadField]
+        if (grant) refreshedBrand[privateUploadField] = grant
+      }
       const build = await resetBuildForRetry(current.id, {
         log: `${current.log || ''}[center] Retry requested by ${supplierId}\n`,
         ...(refreshedBrand ? { brand: refreshedBrand } : {}),
@@ -392,7 +405,8 @@ export function registerBuildRoutes(app, deps) {
   app.post('/api/center/source-version', requireCenterAuth, async (_req, res, next) => {
     try {
       const info = await getSourceVersionInfo()
-      res.json({ success: true, data: _req.body?.history === 'all' ? { ...info, history: readAgentReleaseHistory(info, repoRoot) } : info })
+      const sourceInfo = { ...info, ...(directBuildUploads?.plan ? { directArtifactUploads: true } : {}) }
+      res.json({ success: true, data: _req.body?.history === 'all' ? { ...sourceInfo, history: readAgentReleaseHistory(info, repoRoot) } : sourceInfo })
     } catch (err) {
       next(err)
     }
@@ -438,6 +452,7 @@ export function registerBuildRoutes(app, deps) {
         success: true,
         data: {
           build: claimed,
+          ...(directBuildUploads?.plan ? { directArtifactUploads: true } : {}),
           project,
           brand,
           updateRoot: PUBLIC_UPDATE_ROOT,
@@ -512,11 +527,21 @@ export function registerBuildRoutes(app, deps) {
         (current.target === 'desktop' && (!files.includes('latest.yml') || !files.some(name => name.endsWith('.exe')) || files.some(isAndroidBuildArtifact)))
       )
       const status = req.body?.status === 'succeeded' && !invalidArtifacts ? 'succeeded' : 'failed'
+      // A lost response can be retried by the same Worker without publishing again.
+      if (current.status === 'succeeded') {
+        res.json({ success: true, data: current })
+        return
+      }
+      if (req.body?.directUpload && (status !== 'succeeded' || current.status !== 'running' || !directBuildUploads)) {
+        throw new Error('构建任务当前无法接收直传产物')
+      }
+      const location = req.body?.directUpload
+        ? await directBuildUploads.accept(current, req.body.directUpload, files)
+        : { artifactDir: String(req.body?.artifactDir || ''), publicUrl: String(req.body?.publicUrl || '') }
       const build = await updateBuild(req.params.id, {
         status,
         error: invalidArtifacts ? '构建产物与请求平台不匹配或文件不完整' : status === 'failed' ? String(req.body?.error || '构建失败') : '',
-        artifactDir: String(req.body?.artifactDir || ''),
-        publicUrl: String(req.body?.publicUrl || ''),
+        ...location,
         files,
         androidBuildError: String(req.body?.androidBuildError || '').slice(0, 1500),
         finishedAt: nowIso(),
@@ -524,6 +549,20 @@ export function registerBuildRoutes(app, deps) {
       if (req.body?.log) await appendBuildLog(req.params.id, String(req.body.log))
       await touchWorker(workerId, { status: 'online', currentBuildId: '', completed: true })
       res.json({ success: true, data: build })
+    } catch (err) {
+      res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.post('/api/worker/builds/:id/artifact-upload', requireWorkerAuth, async (req, res) => {
+    try {
+      const build = await findBuildById(req.params.id)
+      if (!build || build.status !== 'running' || build.claimedBy !== readWorkerId(req)) {
+        res.status(403).json({ success: false, error: '当前 Worker 无权为此任务上传产物' })
+        return
+      }
+      const plan = build.target === 'combined' ? null : await directBuildUploads?.plan(build, req.body?.files)
+      res.json({ success: true, data: plan || null })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
     }

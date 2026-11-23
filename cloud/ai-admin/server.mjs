@@ -161,6 +161,7 @@ import { buildListSearch } from '../../src/services/list-search.mjs'
 import { canManageBuiltinRoleTemplates } from '../../src/services/role-template-lifecycle.mjs'
 import { remoteBuildMetadataPatch } from '../../src/services/build-record-sync.mjs'
 import { resolveBuildBrandAssets } from '../../src/services/build-brand-assets.mjs'
+import { makeDirectUploadService, makeOssUploadGrant, makeR2UploadGrant, normalizeR2ReleaseConfig, privateUploadField, putR2ReleaseObject, sameBucketBuildPrefix, validateUploadGrant } from '../../src/services/direct-build-artifacts.mjs'
 import { startBuildCenterSyncScheduler } from '../../src/services/build-center-sync-scheduler.mjs'
 import { isPaginationRequested, pageResult, parsePagination } from '../../src/utils/pagination.mjs'
 import {
@@ -1047,6 +1048,7 @@ function normalizeProject(row, publicAdminBaseUrl = PUBLIC_ADMIN_BASE_URL) {
 function normalizeBuild(row) {
   if (!row) return null
   const storedBrand = parseJson(row.brand_json, null)
+  if (storedBrand && typeof storedBrand === 'object') delete storedBrand[privateUploadField]
   const build = {
     id: row.id,
     projectId: row.project_id,
@@ -1368,6 +1370,7 @@ function normalizePlatformSettings(row = {}) {
       publicBaseUrl: row.oss_public_base_url,
     }),
     ossPrefix: trimSlashes(row.oss_prefix || defaultPlatformSettings.ossPrefix),
+    r2Storage: parseJson(row.r2_storage_json, {}) || {},
     modelGatewayBaseUrl: String(row.model_gateway_base_url || defaultPlatformSettings.modelGatewayBaseUrl),
     modelUsageBaseUrl: String(row.model_usage_base_url || defaultPlatformSettings.modelUsageBaseUrl),
     modelGatewayKey: String(row.model_gateway_key || ''),
@@ -1384,6 +1387,11 @@ function normalizePlatformSettings(row = {}) {
 
 function sanitizePlatformSettings(settings, options = {}) {
   const safe = { ...(settings || {}) }
+  delete safe.r2Storage
+  if (options.includeBuildCenter && settings?.r2Storage) {
+    const { endpoint, bucket, accessKeyId, publicBaseUrl, prefix, encryptedSecret } = settings.r2Storage
+    safe.r2Storage = { endpoint, bucket, accessKeyId, publicBaseUrl, prefix, secretConfigured: Boolean(encryptedSecret) }
+  }
   if (!options.includeBuildCenter) {
     delete safe.buildCenterUrl
     delete safe.buildCenterSupplierId
@@ -4244,6 +4252,8 @@ async function createCenterBuild(input, supplier) {
   centerBrand.sourceProjectId = originalProjectId
   centerBrand.sourceBuildId = localBuildId
   centerBrand.centerProjectId = project.id
+  const grant = validateUploadGrant(brand[privateUploadField], originalProjectId, localBuildId)
+  if (grant) centerBrand[privateUploadField] = grant
 
   const id = crypto.randomUUID()
   const buildVersion = String(input?.version || await getSourceVersion() || '')
@@ -4326,14 +4336,32 @@ async function createBuild(project, requestedBy, version = '', options = {}) {
 
 async function prepareBuildCenterBrand(build, project, user, publicUrls = {}) {
   const brand = await projectToBuildCenterBrand(project, publicUrls)
-  const sourceInfo = build.target === 'android' ? (await getVisibleSourceVersionInfo()).android : await getSourceVersionInfo()
+  const visibleSource = await getVisibleSourceVersionInfo()
+  const sourceInfo = build.target === 'android' ? visibleSource.android : await getSourceVersionInfo()
   await applyProjectReleaseFeedUrl(brand, project.id, publicUrls.updateBaseUrl)
   brand.releaseNotes = sourceInfo?.releaseNotes || ''
   brand.releaseHistory = Array.isArray(sourceInfo?.history) ? sourceInfo.history : []
   brand.sourceAgentId = project.ownerUserId || user?.id || ''
   brand.sourceProjectId = project.id
   brand.sourceBuildId = build.id
+  if (visibleSource.directArtifactUploads) {
+    brand[privateUploadField] = await projectArtifactUploadGrant(build) || { provider: 'shared-r2' }
+  }
   return brand
+}
+
+async function projectArtifactUploadGrant(build) {
+  if (build.target === 'combined') return null
+  const settings = await getPlatformSettings('platform')
+  if (settings.artifactStorageMode === 'r2') {
+    const grant = makeR2UploadGrant(await getObjectArtifactConfig(settings), build)
+    if (!grant) throw new Error('Cloudflare R2 安装包存储配置不完整')
+    return grant
+  }
+  if (settings.artifactStorageMode === 'oss' && process.env.AI_BUILD_DIRECT_OSS !== '0') {
+    return makeOssUploadGrant(getOssArtifactConfig(settings), build)
+  }
+  return null
 }
 
 async function submitBuildToCenter(build, project, user, publicUrls = {}) {
@@ -4347,7 +4375,8 @@ async function submitBuildToCenter(build, project, user, publicUrls = {}) {
       }
     }
     const brand = await prepareBuildCenterBrand(build, project, user, publicUrls)
-    build = await updateBuild(build.id, { brand })
+    const { [privateUploadField]: _uploadGrant, ...publicBrand } = brand
+    build = await updateBuild(build.id, { brand: publicBrand })
     const submitted = await buildCenterApi('/api/center/builds', {
       supplierId: config.supplierId,
       localBuildId: build.id,
@@ -4397,6 +4426,7 @@ async function resetBuildForRetry(buildId, extraPatch = {}) {
     startedAt: null,
     finishedAt: null,
     releasedAt: null,
+    resetLocalUploadGrant: true,
     ...extraPatch,
   })
 }
@@ -4526,7 +4556,7 @@ async function performCenterBuildSync({ platformScope = false, ownerUserId = '' 
     const metadataPatch = remoteBuildMetadataPatch(local, remote)
     if (Object.keys(metadataPatch).length > 0) { await updateBuild(local.id, metadataPatch); updated += 1 }
     if (!['queued', 'running'].includes(local.status)) continue
-    if (remote.status === 'succeeded' && remote.publicUrl && Array.isArray(remote.files) && remote.files.length > 0) {
+      if (remote.status === 'succeeded' && (remote.publicUrl || remote.artifactDownloadUrls) && Array.isArray(remote.files) && remote.files.length > 0) {
       if (localizeCenterBuildInBackground({ ...local, ...metadataPatch }, remote, config)) localizationStarted += 1
       continue
     }
@@ -4635,6 +4665,10 @@ async function updateBuild(buildId, patch) {
       else if (key === 'startedAt' || key === 'finishedAt' || key === 'releasedAt') values.push(toMysqlDateTime(patch[key]))
       else values.push(patch[key])
     }
+  }
+  if (patch.resetLocalUploadGrant && !Object.hasOwn(patch, 'brand')) {
+    fields.push("brand_json = CASE WHEN COALESCE(center_supplier_id, '') = '' AND COALESCE(remote_build_id, '') = '' THEN JSON_REMOVE(brand_json, ?) ELSE brand_json END")
+    values.push(`$.${privateUploadField}`)
   }
   if (fields.length === 0) return findBuildById(buildId)
   values.push(buildId)
@@ -4756,6 +4790,7 @@ async function savePlatformSettings(userId, input) {
   const modelGatewayKey = preserveConfiguredSecret(input.modelGatewayKey, existing.modelGatewayKey, Boolean(modelGatewayBaseUrl))
   const modelPointsPerUsd = Number(input.modelPointsPerUsd || defaultPlatformSettings.modelPointsPerUsd)
   const artifactStorageMode = normalizeArtifactStorageMode(input.artifactStorageMode || existing.artifactStorageMode)
+  const r2Storage = await saveR2ArtifactSettings(id, input.r2Storage, existing.r2Storage, artifactStorageMode === 'r2')
   const ossAccessKeyId = String(input.ossAccessKeyId || '').trim()
   const rawOssAccessKeySecret = String(input.ossAccessKeySecret || '').trim()
   const ossAccessKeySecret = rawOssAccessKeySecret || (ossAccessKeyId ? existing.ossAccessKeySecret : '')
@@ -4818,6 +4853,7 @@ async function savePlatformSettings(userId, input) {
     oss_endpoint: ossEndpoint,
     oss_public_base_url: ossPublicBaseUrl,
     oss_prefix: ossPrefix,
+    r2_storage_json: JSON.stringify(r2Storage),
     model_gateway_base_url: modelGatewayBaseUrl,
     model_usage_base_url: modelUsageBaseUrl,
     model_gateway_key: modelGatewayKey,
@@ -4832,8 +4868,8 @@ async function savePlatformSettings(userId, input) {
   })
   await db().query(
     `INSERT INTO ai_platform_settings
-      (id, system_name, system_subtitle, login_title, login_subtitle, login_background_url, login_panel_color, login_content_json, primary_color, logo_text, login_crystal_faces_json, build_center_url, build_center_supplier_id, build_center_token, artifact_storage_mode, oss_access_key_id, oss_access_key_secret, oss_bucket, oss_endpoint, oss_public_base_url, oss_prefix, model_gateway_base_url, model_usage_base_url, model_gateway_key, model_points_per_usd, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, smtp_from_name, smtp_from_email)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, system_name, system_subtitle, login_title, login_subtitle, login_background_url, login_panel_color, login_content_json, primary_color, logo_text, login_crystal_faces_json, build_center_url, build_center_supplier_id, build_center_token, artifact_storage_mode, oss_access_key_id, oss_access_key_secret, oss_bucket, oss_endpoint, oss_public_base_url, oss_prefix, model_gateway_base_url, model_usage_base_url, model_gateway_key, model_points_per_usd, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, smtp_from_name, smtp_from_email, r2_storage_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
       system_name = VALUES(system_name),
       system_subtitle = VALUES(system_subtitle),
@@ -4865,7 +4901,8 @@ async function savePlatformSettings(userId, input) {
       smtp_user = VALUES(smtp_user),
       smtp_pass = IF(VALUES(smtp_pass) = '', smtp_pass, VALUES(smtp_pass)),
       smtp_from_name = VALUES(smtp_from_name),
-      smtp_from_email = VALUES(smtp_from_email)`,
+      smtp_from_email = VALUES(smtp_from_email),
+      r2_storage_json = VALUES(r2_storage_json)`,
     [
       id,
       settings.systemName,
@@ -4899,6 +4936,7 @@ async function savePlatformSettings(userId, input) {
       settings.smtpPass,
       settings.smtpFromName,
       settings.smtpFromEmail,
+      JSON.stringify(settings.r2Storage),
     ],
   )
   return getPlatformSettings(id)
@@ -5832,11 +5870,54 @@ function getOssArtifactConfig(settings) {
   return config
 }
 
+async function saveR2ArtifactSettings(id, input, existing, selected) {
+  if (!selected) return existing
+  const fields = Object.fromEntries(['endpoint', 'bucket', 'accessKeyId', 'publicBaseUrl', 'prefix'].map(key => [
+    key, String(input?.[key] ?? existing?.[key] ?? '').trim(),
+  ]))
+  const secret = String(input?.secretAccessKey || '').trim()
+  const sameIdentity = fields.accessKeyId === existing?.accessKeyId && fields.endpoint.replace(/\/+$/, '') === existing?.endpoint?.replace(/\/+$/, '')
+  const config = normalizeR2ReleaseConfig({ ...fields, secretAccessKey: secret, encryptedSecret: sameIdentity ? existing?.encryptedSecret : '' })
+  if (!config.enabled || secret.length > 256 || fields.accessKeyId.length > 160 || config.prefix.length > 255) {
+    throw new Error('请选择 R2 Bucket、S3 Endpoint、HTTPS 下载域名，并提供对应的 Access Key ID 和 Secret Access Key')
+  }
+  return { ...fields, endpoint: config.endpoint, publicBaseUrl: config.publicBaseUrl, prefix: config.prefix,
+    encryptedSecret: secret ? await artifactCredentialVault.seal(secret, 'r2:' + id) : config.encryptedSecret }
+}
+
+async function getObjectArtifactConfig(settings) {
+  if (settings.artifactStorageMode !== 'r2') return getOssArtifactConfig(settings)
+  const config = normalizeR2ReleaseConfig(settings.r2Storage)
+  if (!config.enabled) return config
+  try {
+    return { ...config, secretAccessKey: await artifactCredentialVault.unseal(config.encryptedSecret, 'r2:platform') }
+  } catch {
+    throw new Error('R2 存储密钥无法解密，请恢复密钥文件或在平台设置重新填写')
+  }
+}
+
+async function uploadArtifactObject(config, filePath, key, onProgress) {
+  if (config.provider !== 'r2') return uploadFileToAliyunOss(config, filePath, key, onProgress)
+  const digest = crypto.createHash('sha256')
+  for await (const chunk of fs.createReadStream(filePath)) digest.update(chunk)
+  const size = (await fsp.stat(filePath)).size
+  const contentType = ossContentType(path.basename(filePath))
+  const body = await fs.openAsBlob(filePath, { type: contentType })
+  await putR2ReleaseObject(config, key, { body, headers: { 'content-type': contentType,
+    'content-length': String(size), 'x-amz-meta-sha256': digest.digest('hex') } })
+  if (onProgress) await onProgress({ fileName: path.basename(filePath), transferredBytes: size, totalBytes: size, percent: 100, done: true })
+}
+
+async function copyArtifactObject(config, source, target) {
+  if (config.provider !== 'r2') return copyAliyunOssObject(config, source, target)
+  await putR2ReleaseObject(config, target, { headers: { 'x-amz-copy-source': '/' + config.bucket + '/' + encodeOssObjectKey(source) } })
+}
+
 async function getProjectReleaseFeedUrl(projectId, publicUpdateBaseUrl = PUBLIC_UPDATE_BASE_URL) {
   const id = String(projectId || '').trim()
   const settings = await getPlatformSettings('platform')
-  const ossConfig = getOssArtifactConfig(settings)
-  if (settings.artifactStorageMode === 'oss' && ossConfig.enabled) {
+  const ossConfig = settings.artifactStorageMode === 'r2' ? normalizeR2ReleaseConfig(settings.r2Storage) : getOssArtifactConfig(settings)
+  if (settings.artifactStorageMode !== 'local' && ossConfig.enabled) {
     const objectPrefix = [ossConfig.prefix, 'ai', id].filter(Boolean).join('/')
     return `${ossConfig.publicBaseUrl.replace(/\/$/, '')}/${objectPrefix}/`
   }
@@ -5949,28 +6030,30 @@ function ossObjectKeyFromPublicUrl(config, publicUrl, fileName) {
   if (!base || !url.startsWith(`${base}/`)) return ''
   try {
     const parsed = new URL(url)
-    return decodeURIComponent(parsed.pathname.replace(/^\/+/, ''))
+    const basePath = new URL(base).pathname.replace(/\/+$/, '')
+    return decodeURIComponent(parsed.pathname.slice(basePath.length + 1))
   } catch {
     return ''
   }
 }
 
-async function verifyPublicArtifactUrl(publicUrl, label = '公开访问') {
-  const latestUrl = buildArtifactUrl(publicUrl, 'latest.yml')
+async function verifyPublicArtifactUrl(publicUrl, label = '公开访问', name = 'latest.yml') {
+  const artifactUrl = buildArtifactUrl(publicUrl, name)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 15 * 1000)
   try {
-    let response = await fetch(latestUrl, { method: 'HEAD', signal: controller.signal })
+    let response = await fetch(artifactUrl, { method: 'HEAD', signal: controller.signal })
     if (!response.ok && response.status !== 405) {
       throw new Error(`HTTP ${response.status}`)
     }
     if (response.status === 405) {
-      response = await fetch(latestUrl, { headers: { Range: 'bytes=0-0' }, signal: controller.signal })
+      response = await fetch(artifactUrl, { headers: { Range: 'bytes=0-0' }, signal: controller.signal })
       if (!response.ok && response.status !== 206) throw new Error(`HTTP ${response.status}`)
+      await response.body?.cancel()
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    throw new Error(`${label}校验失败：${message}。请确认正式包更新地址可公开访问，并且 latest.yml 可以下载。`)
+    throw new Error(`${label}校验失败：${message}。请确认 ${name} 可以下载。`)
   } finally {
     clearTimeout(timer)
   }
@@ -6022,7 +6105,7 @@ async function uploadBuildDirToOss(config, sourceDir, projectId, files, channel,
       totalFiles,
       percent: Math.floor((index / totalFiles) * 100),
     })
-    await uploadFileToAliyunOss(config, path.join(sourceDir, name), `${objectPrefix}/${name}`, (progress) => {
+    await uploadArtifactObject(config, path.join(sourceDir, name), `${objectPrefix}/${name}`, (progress) => {
       const filePercent = Number(progress.percent || 0)
       const overallPercent = Math.max(0, Math.min(100, Math.floor(((index + filePercent / 100) / totalFiles) * 100)))
       if (onProgress) return onProgress({
@@ -6046,8 +6129,9 @@ async function uploadBuildDirToOss(config, sourceDir, projectId, files, channel,
     })
   }
   const publicUrl = `${config.publicBaseUrl.replace(/\/$/, '')}/${objectPrefix}/`
-  if (onProgress) await onProgress({ status: 'verifying', fileName: 'latest.yml', currentFileIndex: totalFiles, totalFiles, percent: 100 })
-  await verifyPublicArtifactUrl(publicUrl, 'OSS 公开访问')
+  const expected = files.includes('latest.yml') ? ['latest.yml'] : files
+  if (onProgress) await onProgress({ status: 'verifying', fileName: expected[0], currentFileIndex: totalFiles, totalFiles, percent: 100 })
+  await Promise.all(expected.map(name => verifyPublicArtifactUrl(publicUrl, '对象存储公开访问', name)))
   return publicUrl
 }
 
@@ -6056,7 +6140,7 @@ async function copyBuildObjectsWithinOss(config, build, files, channel, onProgre
   const objectPrefix = [config.prefix, channel, build.projectId].filter(Boolean).join('/')
   const names = files.map((file) => path.basename(String(file))).filter(Boolean)
   const sources = names.map((name) => ({ name, sourceKey: ossObjectKeyFromPublicUrl(config, build.publicUrl, name) }))
-  if (sources.some((item) => !item.sourceKey)) throw new Error('测试包不在当前代理 OSS 中，无法服务端复制')
+  if (sources.some((item) => !item.sourceKey)) throw new Error('测试包不在当前代理的存储桶内，无法服务端复制')
   const totalFiles = sources.length || 1
   for (const [index, item] of sources.entries()) {
     if (onProgress) await onProgress({
@@ -6066,7 +6150,7 @@ async function copyBuildObjectsWithinOss(config, build, files, channel, onProgre
       totalFiles,
       percent: Math.floor((index / totalFiles) * 100),
     })
-    await copyAliyunOssObject(config, item.sourceKey, `${objectPrefix}/${item.name}`)
+    await copyArtifactObject(config, item.sourceKey, `${objectPrefix}/${item.name}`)
     if (onProgress) await onProgress({
       status: 'copied',
       fileName: item.name,
@@ -6077,7 +6161,7 @@ async function copyBuildObjectsWithinOss(config, build, files, channel, onProgre
   }
   const publicUrl = `${config.publicBaseUrl.replace(/\/$/, '')}/${objectPrefix}/`
   if (onProgress) await onProgress({ status: 'verifying', fileName: 'latest.yml', currentFileIndex: totalFiles, totalFiles, percent: 100 })
-  await verifyPublicArtifactUrl(publicUrl, 'OSS 公开访问')
+  await verifyPublicArtifactUrl(publicUrl, '对象存储公开访问')
   return publicUrl
 }
 
@@ -6093,8 +6177,8 @@ async function copyOrDownloadBuildFile(build, name, targetDir, onProgress = null
       if (!build.publicUrl) throw err
     }
   }
-  if (!build.publicUrl) throw new Error(`构建产物不存在：${name}`)
-  const url = buildArtifactUrl(build.publicUrl, name)
+  const url = build.artifactDownloadUrls?.[name] || (build.publicUrl ? buildArtifactUrl(build.publicUrl, name) : '')
+  if (!url) throw new Error('构建产物不存在：' + name)
   await downloadBuildArtifact({ url, targetPath, fileName: name, onProgress })
 }
 
@@ -6162,16 +6246,15 @@ async function cleanupStalePackageFiles(targetDir, keepNames, buildId, label) {
 
 async function stageRemoteBuildArtifacts(localBuild, remoteBuild) {
   const settings = await getPlatformSettings('platform')
-  const ossConfig = getOssArtifactConfig(settings)
-  const useOss = settings.artifactStorageMode === 'oss'
-  if (useOss && !ossConfig.enabled) throw new Error('已选择 OSS 托管，但 OSS 配置不完整')
+  const ossConfig = await getObjectArtifactConfig(settings)
+  const useOss = settings.artifactStorageMode !== 'local'
+  if (useOss && !ossConfig.enabled) throw new Error('安装包对象存储配置不完整')
   const androidOnly = localBuild.target === 'android'
   const previewParts = localBuild.target === 'combined' ? [localBuild.projectId] : ['_platform-builds', localBuild.projectId, localBuild.id]
   const previewKey = previewParts.join('/')
   const targetDir = useOss
     ? path.join(repoRoot, 'data', 'artifact-staging', localBuild.id)
     : path.join(PUBLIC_PREVIEW_ROOT, ...previewParts)
-  await fsp.mkdir(targetDir, { recursive: true })
   const copied = []
   const remoteFiles = Array.isArray(remoteBuild.files) ? remoteBuild.files : []
   const candidateFiles = remoteFiles
@@ -6180,7 +6263,19 @@ async function stageRemoteBuildArtifacts(localBuild, remoteBuild) {
   const source = {
     artifactDir: '',
     publicUrl: remoteBuild.publicUrl || '',
+    artifactDownloadUrls: remoteBuild.artifactDownloadUrls,
   }
+  if (useOss && sameBucketBuildPrefix(ossConfig, { ...localBuild, publicUrl: remoteBuild.publicUrl })) {
+    if (!candidateFiles.length) throw new Error('对象存储直传产物不完整')
+    const accessible = await Promise.all(candidateFiles.map(name => canAccessBuildFile(source, name)))
+    if (!accessible.every(Boolean)) throw new Error('对象存储直传产物不可访问')
+    await updateBuild(localBuild.id, {
+      transferProgress: { phase: 'staging', status: 'completed', overallPercent: 100, updatedAt: nowIso() },
+    }).catch(() => {})
+    return { artifactDir: '', publicUrl: source.publicUrl, files: candidateFiles,
+      log: (remoteBuild.log || localBuild.log || '') + '[admin] 安装包已直传到本项目对象存储\n' }
+  }
+  await fsp.mkdir(targetDir, { recursive: true })
   const totalFiles = candidateFiles.length || 1
   const updateTransferProgress = async (index, progress) => {
     const currentPercent = Number(progress.percent || 0)
@@ -6218,7 +6313,7 @@ async function stageRemoteBuildArtifacts(localBuild, remoteBuild) {
       transferProgress: {
         phase: 'staging',
         status: 'uploading',
-        currentFile: '正在上传到代理 OSS',
+        currentFile: '正在上传到代理存储桶',
         currentFileIndex: totalFiles,
         totalFiles,
         currentFilePercent: 100,
@@ -6274,6 +6369,7 @@ function isPathInside(parent, child) {
 async function cleanupBuildArtifacts(build) {
   const artifactDir = String(build?.artifactDir || '')
   if (!artifactDir) return { removed: false, reason: 'no-artifact-dir' }
+  if (/^r2-build\/[A-Za-z0-9_-]{1,120}\/[a-f0-9]{32}$/.test(artifactDir)) return { removed: false, reason: 'r2-lifecycle' }
   if (!isPathInside(PUBLIC_PREVIEW_ROOT, artifactDir)) {
     throw new Error('构建产物目录不在测试包目录内，拒绝删除')
   }
@@ -6406,9 +6502,9 @@ async function releaseBuild(build, user) {
   await assertBuildArtifactsAvailable(build)
 
   const settings = await getPlatformSettings('platform')
-  const ossConfig = getOssArtifactConfig(settings)
-  const useOss = settings.artifactStorageMode === 'oss'
-  if (useOss && !ossConfig.enabled) throw new Error('已选择 OSS 托管，但 OSS 配置不完整')
+  const ossConfig = await getObjectArtifactConfig(settings)
+  const useOss = settings.artifactStorageMode !== 'local'
+  if (useOss && !ossConfig.enabled) throw new Error('安装包对象存储配置不完整')
 
   const candidateFiles = build.files
     .map((file) => path.basename(String(file)))
@@ -6419,7 +6515,7 @@ async function releaseBuild(build, user) {
         transferProgress: {
           phase: 'release',
           status: 'copying',
-          currentFile: '正在通过 OSS 服务端复制正式包',
+          currentFile: '正在通过对象存储复制正式包',
           currentFileIndex: 0,
           totalFiles: candidateFiles.length,
           currentFilePercent: 0,
@@ -6433,7 +6529,7 @@ async function releaseBuild(build, user) {
         transferProgress: {
           phase: 'release',
           status: progress.status || 'copying',
-          currentFile: progress.status === 'verifying' ? '正在校验正式包公开访问' : `OSS 服务端复制：${progress.fileName || ''}`,
+        currentFile: progress.status === 'verifying' ? '正在校验正式包公开访问' : `对象存储复制：${progress.fileName || ''}`,
           currentFileIndex: progress.currentFileIndex || 0,
           totalFiles: progress.totalFiles || candidateFiles.length,
           currentFilePercent: 100,
@@ -6459,10 +6555,10 @@ async function releaseBuild(build, user) {
           updatedAt: nowIso(),
         },
       })
-      await appendBuildLog(build.id, `[admin] Released by ${user.username} to ${releaseUrl} via OSS server-side copy.\n`)
+      await appendBuildLog(build.id, `[admin] Released by ${user.username} to ${releaseUrl} via object storage copy.\n`)
       return { ...next, releaseUrl, releasedAt: next.releasedAt || nowIso() }
     } catch (err) {
-      await appendBuildLog(build.id, `[admin] OSS server-side release copy unavailable, fallback to local transfer: ${err instanceof Error ? err.message : String(err)}\n`).catch(() => {})
+      await appendBuildLog(build.id, `[admin] Object storage release copy unavailable, fallback to local transfer: ${err instanceof Error ? err.message : String(err)}\n`).catch(() => {})
     }
   }
 
@@ -6624,13 +6720,14 @@ const startAndroidReleaseBuild = createAndroidReleaseStarter({
   log: appendBuildLog,
   publish: createAndroidArtifactPublisher({
     readSettings: () => getPlatformSettings('platform'),
-    readOssConfig: getOssArtifactConfig,
+    readOssConfig: getObjectArtifactConfig,
     sourceRepository: process.env.AI_ANDROID_PUBLIC_SOURCE_REPOSITORY,
     publicRoot: PUBLIC_UPDATE_ROOT,
     publicBaseUrl: PUBLIC_UPDATE_BASE_URL,
     temporary: path.join(repoRoot, 'data', 'android-release-staging'),
     copyBuildFile: copyOrDownloadBuildFile,
-    uploadFile: uploadFileToAliyunOss,
+    uploadFile: uploadArtifactObject,
+    copyObject: copyArtifactObject,
     canAccessFile: canAccessBuildFile,
   }),
 })
@@ -6826,6 +6923,7 @@ const voicePool = {
 }
 registerUpstreamAccountRoutes(app, new UpstreamAccountService(voicePool))
 const voiceCredentialVault = new ModelCredentialVault(MODEL_CREDENTIAL_KEY_PATH)
+const artifactCredentialVault = new ModelCredentialVault(path.join(repoRoot, 'data', 'artifact-storage.key'))
 const voiceOperations = new VoiceOperationRepository(voicePool)
 const pricingPlanRepository = new PricingPlanRepository(voicePool)
 const voiceContexts = new VoiceModelContext({ pool: voicePool, vault: voiceCredentialVault, allowedModels: allowedProviderModelIdSetForUser, pricingPlans: pricingPlanRepository })
@@ -6925,7 +7023,30 @@ registerAdminBusinessRoutes(app, {
 })
 
 const resourcesRuntime = resourceRuntime({ client: CENTER_SUPPLIER_MANAGEMENT_ENABLED ? null : authorizationRuntime?.client, database: db, resolveOrganization: organizationRepository.findOrganizationById, readBuild: findBuildById })
+const directBuildUploads = makeDirectUploadService({
+  readGrant: async build => {
+    if (!build.centerSupplierId && !build.remoteBuildId && !build.delegatedToCenter) return projectArtifactUploadGrantForClaim(build)
+    if (!build.centerLocalBuildId) return null
+    const [[row]] = await db().query('SELECT JSON_EXTRACT(brand_json, ?) AS uploadGrant FROM ai_builds WHERE id = ? LIMIT 1', ['$.'.concat(privateUploadField), build.id])
+    return validateUploadGrant(parseJson(row?.uploadGrant, null), build.brand?.sourceProjectId, build.centerLocalBuildId)
+  },
+})
+async function projectArtifactUploadGrantForClaim(build) {
+  const jsonPath = '$.' + privateUploadField
+  const [[row]] = await db().query('SELECT JSON_EXTRACT(brand_json, ?) AS uploadGrant FROM ai_builds WHERE id = ? LIMIT 1', [jsonPath, build.id])
+  const existing = validateUploadGrant(parseJson(row?.uploadGrant, null), build.projectId, build.id)
+  if (existing) return existing
+  const grant = await projectArtifactUploadGrant(build)
+  if (!grant) return null
+  const [result] = await db().query(
+    'UPDATE ai_builds SET brand_json=JSON_SET(COALESCE(brand_json, JSON_OBJECT()), ?, JSON_EXTRACT(?, "$")) WHERE id=? AND claimed_by=? AND status="running" AND JSON_EXTRACT(brand_json, ?) IS NULL',
+    [jsonPath, JSON.stringify(grant), build.id, build.claimedBy, jsonPath],
+  )
+  if (result.affectedRows !== 1) throw new Error('无法为当前构建签发对象存储授权')
+  return grant
+}
 registerBuildRoutes(app, {
+  directBuildUploads,
   officialResources: CENTER_SUPPLIER_MANAGEMENT_ENABLED && process.env.AI_OFFICIAL_AUTHORIZATION_MODE !== 'legacy' ? officialResourceClient({ centerUrl: process.env.AI_LICENSE_CENTER_URL || 'https://license.okpa.cn' }) : null,
   findProjectById,
   findActiveBuildForProject,

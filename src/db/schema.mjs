@@ -644,6 +644,7 @@ export async function initDatabase(options = {}) {
   await ensureColumn('ai_platform_settings', 'oss_endpoint', 'VARCHAR(255) NULL AFTER oss_bucket')
   await ensureColumn('ai_platform_settings', 'oss_public_base_url', 'TEXT NULL AFTER oss_endpoint')
   await ensureColumn('ai_platform_settings', 'oss_prefix', 'VARCHAR(255) NULL AFTER oss_public_base_url')
+  await ensureColumn('ai_platform_settings', 'r2_storage_json', 'TEXT NULL')
   await ensureColumn('ai_platform_settings', 'model_gateway_base_url', 'TEXT NULL AFTER oss_prefix')
   await ensureColumn('ai_platform_settings', 'model_usage_base_url', 'TEXT NULL AFTER model_gateway_base_url')
   await ensureColumn('ai_platform_settings', 'model_gateway_key', 'TEXT NULL AFTER model_usage_base_url')

@@ -108,3 +108,45 @@ test('shared Android source publication stores only APK and branding together', 
   await assert.rejects(publish(build, names), /品牌配置包校验失败/)
   assert.deepEqual(uploads, [])
 })
+
+test('publishing direct Android artifacts copies within the selected bucket after validating metadata', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'test-android-direct-release-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const names = ['android-remote-arm64.apk', 'android-remote-brand.zip', 'android-remote-update.json']
+  const brand = 'project branding'
+  const sourceRevision = 'b'.repeat(40)
+  const sha = value => createHash('sha256').update(value).digest('hex')
+  const metadata = { version: '0.1.7', versionCode: 11231433, size: 250_000_000, sha256: 'a'.repeat(64),
+    sourceRevision, brandSha256: sha(brand) }
+  const nonce = 'c'.repeat(32)
+  const previewKey = 'dist/ai-staging/_platform-builds/brand/local/' + nonce
+  const origin = 'https://downloads.example.test'
+  const build = { id: 'local', projectId: 'brand', target: 'android', version: '0.1.7', sourceRevision,
+    publicUrl: origin + '/' + previewKey + '/' }
+  for (const mode of ['oss', 'r2']) {
+    const copy = []
+    const publish = createAndroidArtifactPublisher({
+      readSettings: async () => ({ artifactStorageMode: mode }),
+      readOssConfig: async () => ({ enabled: true, provider: mode, prefix: 'dist', publicBaseUrl: origin }),
+      publicRoot: root, publicBaseUrl: origin, temporary: path.join(root, 'staging'),
+      copyBuildFile: async (_build, file, to) => {
+        assert.notEqual(file, names[0], 'the APK must not pass through the management server')
+        await writeFile(path.join(to, file), file === names[1] ? brand : JSON.stringify(metadata))
+      },
+      uploadFile: async () => assert.fail('reupload must not be used for direct artifacts'),
+      copyObject: async (_storage, from, to) => copy.push([from, to]),
+      verifyUploaded: async (storage, url, key, file) => {
+        assert.equal(storage.provider, mode)
+        assert.equal(url, build.publicUrl)
+        assert.equal(key, previewKey + '/' + names[0])
+        assert.deepEqual(file, { name: names[0], size: metadata.size, sha256: metadata.sha256 })
+      },
+      canAccessFile: async () => true,
+      sourceAvailable: async () => true,
+    })
+    const release = await publish(build, names)
+    assert.equal(release.url, origin + '/dist/ai/android/brand/local/')
+    assert.deepEqual(copy, [[previewKey + '/' + names[0], 'dist/ai/android/brand/local/android-arm64.apk'],
+      [previewKey + '/' + names[1], 'dist/ai/android/brand/local/android-brand.zip']])
+  }
+})

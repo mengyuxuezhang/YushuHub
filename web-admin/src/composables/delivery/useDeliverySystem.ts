@@ -286,6 +286,7 @@ export function useDeliverySystem(section: DeliverySection) {
       ...settings.value,
       buildCenterToken: "",
       ossAccessKeySecret: "",
+      r2Storage: { ...settings.value.r2Storage, secretAccessKey: "" },
       smtpPass: "",
       modelGatewayKey: "",
     });

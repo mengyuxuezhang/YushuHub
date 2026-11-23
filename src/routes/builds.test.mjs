@@ -86,6 +86,24 @@ test('isCenterDelegatedBuild only marks official-center mirror records', () => {
   assert.equal(isCenterDelegatedBuild({ remoteBuildId: 'remote-build' }), false)
 })
 
+test('only the Worker holding the running build can request a direct upload plan', async () => {
+  const build = { id: 'build-1', claimedBy: 'worker-owner', status: 'running', target: 'desktop' }
+  const calls = []
+  const handler = postHandler('/api/worker/builds/:id/artifact-upload', {
+    findBuildById: async () => build,
+    directBuildUploads: { plan: async (record, files) => { calls.push([record, files]); return { provider: 'r2' } } },
+  })
+  const request = { params: { id: build.id }, headers: {}, body: { workerId: 'worker-other', files: ['manifest'] } }
+  const denied = responseRecorder()
+  await handler(request, denied)
+  assert.equal(denied.statusCode, 403)
+  assert.deepEqual(calls, [])
+  const accepted = responseRecorder()
+  await handler({ ...request, body: { ...request.body, workerId: 'worker-owner' } }, accepted)
+  assert.deepEqual(accepted.body.data, { provider: 'r2' })
+  assert.deepEqual(calls, [[build, ['manifest']]])
+})
+
 test('lightweight status and acknowledgement omit images, while legacy responses keep the full brand', async () => {
   const record = { id: 'remote', status: 'succeeded', files: [{ sha256: 'digest' }], brand: { clientMode: 'personal', sourceProjectId: 'project', sourceBuildId: 'local', logoUrl: 'data:image/png;base64,' + 'x'.repeat(6_000_000) } }
   const status = postHandler('/api/center/builds/status', { normalizeBuild: row => row })

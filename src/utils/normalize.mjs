@@ -16,7 +16,8 @@ export function trimSlashes(value) {
 }
 
 export function normalizeArtifactStorageMode(value) {
-  return String(value || '').trim() === 'oss' ? 'oss' : 'local'
+  const mode = String(value || '').trim()
+  return ['oss', 'r2'].includes(mode) ? mode : 'local'
 }
 
 export function normalizeOssPublicBaseUrl({ bucket, endpoint, publicBaseUrl }) {

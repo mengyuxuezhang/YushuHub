@@ -104,7 +104,18 @@ const meta = {
       <div class="settings-summary-grid">
         <article class="panel-card"><span>平台品牌</span><strong>{{ d.settings.value.systemName || "未配置" }}</strong><small>{{ d.settings.value.systemSubtitle }}</small></article>
         <article class="panel-card"><span>构建中心</span><strong>{{ d.settings.value.buildCenterConfigured ? `已配置${d.settings.value.buildCenterConfigSource === 'environment' ? '（环境变量）' : d.settings.value.buildCenterConfigSource === 'mixed' ? '（混合来源）' : ''}` : "未配置" }}</strong><small>{{ d.settings.value.effectiveBuildCenterUrl || "使用本地构建" }}</small><BuildCenterLicense /></article>
-        <article class="panel-card"><span>安装包存储</span><strong>{{ d.settings.value.artifactStorageMode === "oss" ? "阿里云 OSS" : "本地目录" }}</strong><small>{{ d.settings.value.artifactStorageMode === "oss" ? `${d.settings.value.ossBucket || "未配置 Bucket"} · ${d.settings.value.ossEndpoint || "未配置 Endpoint"}` : "服务器本地目录" }}</small></article>
+        <article class="panel-card">
+          <span>安装包存储</span>
+          <template v-if="d.settings.value.artifactStorageMode === 'r2'">
+            <strong>Cloudflare R2</strong>
+            <small>{{ d.settings.value.r2Storage?.bucket || "未配置 Bucket" }} · {{ d.settings.value.r2Storage?.publicBaseUrl || "未配置下载域名" }}</small>
+          </template>
+          <template v-else-if="d.settings.value.artifactStorageMode === 'oss'">
+            <strong>阿里云 OSS</strong>
+            <small>{{ d.settings.value.ossBucket || "未配置 Bucket" }} · {{ d.settings.value.ossEndpoint || "未配置 Endpoint" }}</small>
+          </template>
+          <template v-else><strong>本地目录</strong><small>服务器本地目录</small></template>
+        </article>
         <article class="panel-card"><span>邮件服务</span><strong>{{ d.settings.value.smtpHost ? "已配置" : "未配置" }}</strong><small>{{ d.settings.value.smtpFromEmail || "-" }}</small></article>
       </div>
       <section class="panel-card security-note"><ShieldCheck /><div><h2>敏感字段安全策略</h2><p>列表和编辑器不会回填 Token、存储密钥、SMTP 密码和模型网关 Key；留空保存保持服务器原值。</p></div></section>

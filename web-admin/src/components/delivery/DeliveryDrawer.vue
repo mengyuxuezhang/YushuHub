@@ -17,7 +17,7 @@ defineEmits<{ close: []; save: []; testSmtp: []; 'update:smtpTestEmail': [value:
       </section>
       <section class="form-section artifact-storage-section">
         <div><h3>安装包存储</h3><p>选择构建产物保存位置；已有安装包不会因切换存储方式而迁移。</p></div>
-        <label><span>存储方式</span><select v-model="form.artifactStorageMode"><option value="local">本地目录</option><option value="oss">阿里云 OSS</option></select></label>
+        <label><span>存储方式</span><select v-model="form.artifactStorageMode"><option value="local">本地目录</option><option value="oss">阿里云 OSS</option><option value="r2">Cloudflare R2</option></select></label>
         <div v-if="form.artifactStorageMode === 'oss'" class="form-grid-v2">
           <label><span>AccessKey ID</span><input v-model.trim="form.ossAccessKeyId" autocomplete="off" /></label>
           <label><span>AccessKey Secret</span><input v-model="form.ossAccessKeySecret" type="password" autocomplete="new-password" :placeholder="form.ossAccessKeySecretConfigured ? '已配置，留空保持不变' : '请输入 AccessKey Secret'" /><small v-if="form.ossAccessKeySecretConfigured">如更换 AccessKey ID，请同时填写对应的新 Secret。</small></label>
@@ -25,6 +25,14 @@ defineEmits<{ close: []; save: []; testSmtp: []; 'update:smtpTestEmail': [value:
           <label><span>Endpoint</span><input v-model.trim="form.ossEndpoint" placeholder="oss-cn-hangzhou.aliyuncs.com" /></label>
           <label><span>公开访问域名</span><input v-model.trim="form.ossPublicBaseUrl" placeholder="https://下载域名或 Bucket 地址" /><small>用于生成测试包和正式包的下载链接。</small></label>
           <label><span>对象目录前缀</span><input v-model.trim="form.ossPrefix" placeholder="agent/ai" /></label>
+        </div>
+        <div v-if="form.artifactStorageMode === 'r2'" class="form-grid-v2">
+          <label><span>Bucket</span><input v-model.trim="form.r2Storage.bucket" placeholder="例如 agent-builds" /></label>
+          <label><span>S3 Endpoint</span><input v-model.trim="form.r2Storage.endpoint" placeholder="https://账号ID.r2.cloudflarestorage.com" /></label>
+          <label><span>Access Key ID</span><input v-model.trim="form.r2Storage.accessKeyId" autocomplete="off" /></label>
+          <label><span>Secret Access Key</span><input v-model="form.r2Storage.secretAccessKey" type="password" autocomplete="new-password" :placeholder="form.r2Storage.secretConfigured ? '已配置，留空保持不变' : '请输入 Secret Access Key'" /></label>
+          <label><span>HTTPS 下载域名</span><input v-model.trim="form.r2Storage.publicBaseUrl" placeholder="https://downloads.example.com" /><small>填写绑定至此 Bucket 的自定义域名。</small></label>
+          <label><span>对象目录前缀（可选）</span><input v-model.trim="form.r2Storage.prefix" placeholder="agent" /></label>
         </div>
       </section>
       <section class="form-section smtp-settings-section">
