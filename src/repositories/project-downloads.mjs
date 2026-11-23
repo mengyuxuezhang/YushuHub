@@ -12,14 +12,23 @@ export async function findLatestProjectRelease(projectId, connection = db()) {
 }
 
 export async function findLatestAndroidRelease(projectId, connection = db()) {
+  return readPublishedAndroidRelease(projectId, '', connection)
+}
+export async function findPublishedAndroidRelease(projectId, buildId, connection = db()) {
+  return readPublishedAndroidRelease(projectId, buildId, connection)
+}
+async function readPublishedAndroidRelease(projectId, buildId, connection) {
   const [rows] = await connection.query(
-    `SELECT android_release FROM ai_builds WHERE project_id = ? AND status = 'succeeded'
+    `SELECT id, android_release FROM ai_builds WHERE project_id = ? AND status = 'succeeded'
+       ${buildId ? 'AND id = ?' : ''}
        AND JSON_UNQUOTE(JSON_EXTRACT(android_release, '$.status')) = 'published'
      ORDER BY CAST(JSON_UNQUOTE(JSON_EXTRACT(android_release, '$.versionCode')) AS UNSIGNED) DESC,
-       created_at DESC, id DESC LIMIT 1`, [projectId],
+       created_at DESC, id DESC LIMIT 1`, buildId ? [projectId, buildId] : [projectId],
   )
-  const value = rows[0]?.android_release
-  return typeof value === 'string' ? JSON.parse(value) : value ?? null
+  const row = rows[0]
+  if (!row) return null
+  const release = typeof row.android_release === 'string' ? JSON.parse(row.android_release) : row.android_release
+  return release ? { ...release, buildId: row.id } : null
 }
 
 export async function beginAndroidRelease(buildId, release, connection = db()) {

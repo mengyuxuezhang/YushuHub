@@ -111,8 +111,8 @@ import { registerUserUsageReportRoutes } from '../../src/routes/user-usage-repor
 import { registerAdminBusinessRoutes } from '../../src/routes/admin-business.mjs'
 import { registerProjectDownloadRoutes } from '../../src/routes/project-downloads.mjs'
 import { createProjectDownloadService, normalizeLatestDownloadFileName } from '../../src/services/project-downloads.mjs'
-import { findLatestProjectRelease, findLatestAndroidRelease, beginAndroidRelease, finishAndroidRelease } from '../../src/repositories/project-downloads.mjs'
-import { androidBuildArtifacts, isAndroidBuildArtifact } from '../../src/services/android-build-artifacts.mjs'
+import { findLatestProjectRelease, findLatestAndroidRelease, findPublishedAndroidRelease, beginAndroidRelease, finishAndroidRelease } from '../../src/repositories/project-downloads.mjs'
+import { DEFAULT_ANDROID_PUBLIC_SOURCE_REPOSITORY, androidBuildArtifacts, androidSharedSource, isAndroidBuildArtifact } from '../../src/services/android-build-artifacts.mjs'
 import { createAndroidArtifactPublisher, createAndroidReleaseStarter } from '../../src/services/android-release.mjs'
 import { registerBuildRoutes } from '../../src/routes/builds.mjs'
 import { registerMembershipRoutes } from '../../src/routes/memberships.mjs'
@@ -214,7 +214,7 @@ app.use((req, res, next) => {
   next()
 })
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true }))
-registerProjectDownloadRoutes(app, { downloads: createProjectDownloadService({ findProject: findProjectById, findLatestRelease: findLatestProjectRelease, findLatestAndroidRelease }) })
+registerProjectDownloadRoutes(app, { downloads: createProjectDownloadService({ findProject: findProjectById, findLatestRelease: findLatestProjectRelease, findLatestAndroidRelease, findPublishedAndroidRelease, androidSourceRepository: process.env.AI_ANDROID_PUBLIC_SOURCE_REPOSITORY }) })
 app.use('/updates/ai', express.static(PUBLIC_UPDATE_ROOT, { maxAge: '5m' }))
 app.use('/updates/ai-staging', express.static(PUBLIC_PREVIEW_ROOT, { maxAge: '5m' }))
 app.use('/agent/ai', express.static(PUBLIC_UPDATE_ROOT, { maxAge: '5m' }))
@@ -1084,6 +1084,12 @@ function normalizeBuild(row) {
     releasedAt: row.released_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  }
+  if (build.target === 'android' && androidBuildArtifacts(build.files)[1]?.endsWith('-brand.zip')) {
+    build.androidSourceUrl = androidSharedSource({
+      sourceRepository: process.env.AI_ANDROID_PUBLIC_SOURCE_REPOSITORY ?? DEFAULT_ANDROID_PUBLIC_SOURCE_REPOSITORY,
+      sourceRevision: build.sourceRevision,
+    })?.sourceUrl || ''
   }
   if (Object.prototype.hasOwnProperty.call(row, 'can_operate')) build.canOperate = Boolean(row.can_operate)
   return build
@@ -6619,6 +6625,7 @@ const startAndroidReleaseBuild = createAndroidReleaseStarter({
   publish: createAndroidArtifactPublisher({
     readSettings: () => getPlatformSettings('platform'),
     readOssConfig: getOssArtifactConfig,
+    sourceRepository: process.env.AI_ANDROID_PUBLIC_SOURCE_REPOSITORY,
     publicRoot: PUBLIC_UPDATE_ROOT,
     publicBaseUrl: PUBLIC_UPDATE_BASE_URL,
     temporary: path.join(repoRoot, 'data', 'android-release-staging'),

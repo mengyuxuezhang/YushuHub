@@ -8,6 +8,7 @@ test('public GET/HEAD alias redirects to the current formal release without auth
   let file = 'brand-3.0.83-x64.exe'
   let android = 'https://cdn.example.test/brand/android'
   let signed = null
+  let pinned = null
   const downloads = createProjectDownloadService({
     findProject: async id => id === 'brand' ? {
       status: 'enabled', latestDownloadFileName: 'brand-latest-x64.exe',
@@ -15,6 +16,7 @@ test('public GET/HEAD alias redirects to the current formal release without auth
     } : null,
     findLatestRelease: async () => ({ status: 'succeeded', releaseStatus: '', releasedAt: '2026-01-01', releaseUrl: 'https://cdn.example.test/brand/', files: [file] }),
     findLatestAndroidRelease: async () => signed,
+    findPublishedAndroidRelease: async (project, id) => project === 'brand' && id === pinned?.buildId ? pinned : null,
   })
   const app = express()
   registerProjectDownloadRoutes(app, { downloads })
@@ -58,10 +60,14 @@ test('public GET/HEAD alias redirects to the current formal release without auth
   assert.equal((await request('/api/client/android-download/other/file')).status, 404)
   signed = { status: 'publishing', url: 'https://cdn.example.test/brand/build' }
   assert.deepEqual(await (await request('/api/client/android-download/brand')).json(), { available: false })
-  signed = { status: 'published', url: 'https://cdn.example.test/brand/build', version: '0.1.3',
+  pinned = signed = { status: 'published', buildId: 'published-legacy', url: 'https://cdn.example.test/brand/build', version: '0.1.3',
     versionCode: 11191420, publishedAt: '2026-11-19T06:20:00.000Z', size: 8192, sha256: 'a'.repeat(64) }
   assert.deepEqual(await (await request('/api/client/android-download/brand')).json(), { available: true })
-  assert.match(await (await request('/api/client/android-download/brand/file')).text(), /下载对应源码/)
+  const legacyPage = await (await request('/api/client/android-download/brand/file')).text()
+  assert.match(legacyPage, /source\/published-legacy">对应版本源码与许可/)
+  assert.match(legacyPage, /apk\/published-legacy/)
+  assert.equal((await request('/api/client/android-download/brand/source/published-legacy')).headers.get('location'), 'https://cdn.example.test/brand/build/android-source.zip')
+  assert.ok(legacyPage.includes('href="https://github.com/mengyuxuezhang/Agent-Mobile"'))
   assert.equal((await request('/api/client/android-download/brand/apk')).headers.get('location'), 'https://cdn.example.test/brand/build/android-arm64.apk')
   assert.equal((await request('/api/client/android-download/brand/source')).headers.get('location'), 'https://cdn.example.test/brand/build/android-source.zip')
   const manifest = await request('/api/client/android-download/brand/update.json')
@@ -69,4 +75,15 @@ test('public GET/HEAD alias redirects to the current formal release without auth
   assert.deepEqual(await manifest.json(), { schema: 1, version: '0.1.3+11191420', tag: 'v0.1.3', publishedAt: signed.publishedAt,
     assets: { arm64: { name: 'android-arm64.apk', url: 'https://cdn.example.test/brand/build/android-arm64.apk', size: 8192, sha256: signed.sha256 } } })
   assert.equal((await request('/api/client/android-download/other/update.json')).status, 404)
+  pinned = signed = { ...signed, buildId: 'published-one', sourceRepository: 'org/mobile', sourceRevision: 'b'.repeat(40) }
+  const page = await (await request('/api/client/android-download/brand/file')).text()
+  assert.match(page, /<small><a href="[^"]*source\/published-one">对应版本源码与许可/)
+  assert.match(page, /apk\/published-one/)
+  assert.ok(page.includes('href="https://github.com/org/mobile"'))
+  signed = { ...signed, buildId: 'published-two', sourceRevision: 'c'.repeat(40) }
+  const sourcePage = await (await request('/api/client/android-download/brand/source/published-one')).text()
+  assert.ok(sourcePage.includes('https://github.com/org/mobile/tree/' + 'b'.repeat(40)))
+  assert.ok(sourcePage.includes('https://cdn.example.test/brand/build/android-brand.zip'))
+  assert.equal((await request('/api/client/android-download/brand/apk/published-one')).headers.get('location'), 'https://cdn.example.test/brand/build/android-arm64.apk')
+  assert.equal((await request('/api/client/android-download/brand/source/wrong-build')).status, 404)
 })

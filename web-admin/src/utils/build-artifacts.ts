@@ -1,6 +1,7 @@
 export interface BuildArtifactSource {
   publicUrl?: string
   releaseUrl?: string
+  androidSourceUrl?: string
   files?: unknown
 }
 
@@ -41,10 +42,15 @@ export function androidTestArtifacts(build: BuildArtifactSource | null | undefin
   if (!apk) return null
   const source = apk.replace(/-arm64\.apk$/, '-source.zip')
   const metadata = apk.replace(/-arm64\.apk$/, '-update.json')
-  if (!files.includes(source) || !files.includes(metadata)) return null
-  return { apk: buildFileUrl(build?.publicUrl, apk), source: buildFileUrl(build?.publicUrl, source) }
+  const brand = apk.replace(/-arm64\.apk$/, '-brand.zip')
+  if (!files.includes(metadata) || files.includes(source) === files.includes(brand)) return null
+  return {
+    apk: buildFileUrl(build?.publicUrl, apk),
+    source: files.includes(source) ? buildFileUrl(build?.publicUrl, source) : buildPublicUrl(build?.androidSourceUrl),
+    brand: files.includes(brand) ? buildFileUrl(build?.publicUrl, brand) : '',
+  }
 }
 
 export function isAndroidTestArtifact(name: string) {
-  return /^android-[A-Za-z0-9_-]{1,64}-(?:arm64\.apk|source\.zip|update\.json)$/.test(name)
+  return /^android-[A-Za-z0-9_-]{1,64}-(?:arm64\.apk|(?:source|brand)\.zip|update\.json)$/.test(name)
 }

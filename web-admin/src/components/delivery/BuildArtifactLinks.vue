@@ -15,7 +15,13 @@ const testPrimary = computed(() => primaryBuildArtifact(desktop.value, testUrl.v
 const releasePrimary = computed(() => primaryBuildArtifact(desktop.value, releaseUrl.value))
 const android = computed(() => androidTestArtifacts(props.build))
 const androidRelease = computed(() => buildFileUrl(props.build?.androidRelease?.url, 'android-arm64.apk'))
-const androidSource = computed(() => buildFileUrl(props.build?.androidRelease?.url, 'android-source.zip'))
+const androidSource = computed(() => {
+  const release = props.build?.androidRelease
+  if (!release?.url) return ''
+  if (!release.sourceRevision) return buildFileUrl(release.url, 'android-source.zip')
+  const { projectId, id } = props.build
+  return projectId && id ? `/api/client/android-download/${encodeURIComponent(projectId)}/source/${encodeURIComponent(id)}` : ''
+})
 </script>
 
 <template>
@@ -47,8 +53,9 @@ const androidSource = computed(() => buildFileUrl(props.build?.androidRelease?.u
   <div v-if="activeTarget !== 'desktop' && (android || build.androidBuildError || build.androidRelease)" class="artifact-links-compact">
     <a v-if="android?.apk" class="artifact-download-primary" :href="android.apk" target="_blank" rel="noopener"><Download :size="14" />Android 测试包</a>
     <a v-if="!compact && android?.source" :href="android.source" target="_blank" rel="noopener">Android 测试包对应源码</a>
+    <a v-if="!compact && android?.brand" :href="android.brand" target="_blank" rel="noopener">Android 测试包品牌配置与图标</a>
     <a v-if="androidRelease" class="artifact-download-primary is-release" :href="androidRelease" target="_blank" rel="noopener"><PackageCheck :size="14" />Android 正式包</a>
-    <a v-if="!compact && androidSource" :href="androidSource" target="_blank" rel="noopener">Android 正式包对应源码</a>
+    <a v-if="!compact && androidSource" :href="androidSource" target="_blank" rel="noopener">Android 正式包对应源码与许可</a>
     <span v-if="build.androidRelease?.status === 'publishing'" class="artifact-release-state">Android 推送中</span>
     <span v-if="build.androidRelease?.status === 'failed'" class="artifact-release-state is-failed">{{ build.androidRelease.error }}</span>
     <span v-if="build.androidBuildError" class="artifact-release-state is-failed" :title="build.androidBuildError">Android 构建失败</span>

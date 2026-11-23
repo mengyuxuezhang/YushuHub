@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { ANDROID_APK, ANDROID_SOURCE, androidBuildArtifacts, androidUpdateManifest, validAndroidBuildMetadata } from './android-build-artifacts.mjs'
+import { ANDROID_APK, ANDROID_BRAND, ANDROID_SOURCE, DEFAULT_ANDROID_PUBLIC_SOURCE_REPOSITORY, MAX_ANDROID_BRAND_SIZE, androidBuildArtifacts, androidSharedSource, androidUpdateManifest, validAndroidBuildMetadata } from './android-build-artifacts.mjs'
 
 async function fileSha256(file) {
   const hash = createHash('sha256')
@@ -28,8 +28,10 @@ export function createAndroidReleaseStarter({ authorize, begin, finish, readBuil
         if (!androidUpdateManifest(release)) throw new Error('Android 发布信息无效')
         await finish(build.id, attempt, release)
         await log(build.id, '[admin] Android 正式包及源码已推送\n').catch(() => {})
-      } catch {
-        await finish(build.id, attempt, { status: 'failed', error: 'Android 推送失败，请检查存储及产物后重试' }).catch(() => {})
+      } catch (error) {
+        const message = error?.message === '对应 Android 源码提交尚未在公开 GitHub 仓库提供'
+          ? error.message : 'Android 推送失败，请检查存储及产物后重试'
+        await finish(build.id, attempt, { status: 'failed', error: message }).catch(() => {})
         await log(build.id, '[admin] Android 推送失败\n').catch(() => {})
       }
     })
@@ -37,7 +39,7 @@ export function createAndroidReleaseStarter({ authorize, begin, finish, readBuil
   }
 }
 
-export function createAndroidArtifactPublisher({ readSettings, readOssConfig, publicRoot, publicBaseUrl, temporary, copyBuildFile, uploadFile, canAccessFile }) {
+export function createAndroidArtifactPublisher({ readSettings, readOssConfig, publicRoot, publicBaseUrl, temporary, copyBuildFile, uploadFile, canAccessFile, sourceRepository = DEFAULT_ANDROID_PUBLIC_SOURCE_REPOSITORY, sourceAvailable = publicAndroidSourceAvailable }) {
   return async function publish(build, files) {
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(build.id) || !/^[a-z0-9][a-z0-9-]{1,62}$/.test(build.projectId)) {
       throw new Error('Android 发布标识无效')
@@ -50,18 +52,33 @@ export function createAndroidArtifactPublisher({ readSettings, readOssConfig, pu
     const target = path.join(publicRoot, ...relative.split('/'))
     await mkdir(temporary, { recursive: true })
     const staging = await mkdtemp(path.join(temporary, 'release-'))
-    const names = [ANDROID_APK, ANDROID_SOURCE]
+    const [apk, source, metadataFile] = files
+    const sharedSource = source.endsWith('-brand.zip')
+    const names = [ANDROID_APK, sharedSource ? ANDROID_BRAND : ANDROID_SOURCE]
     try {
-      const [apk, source, metadataFile] = files
       await copyBuildFile(build, metadataFile, staging)
       const metadataPath = path.join(staging, metadataFile)
       if ((await stat(metadataPath)).size > 4096) throw new Error('Android 版本信息异常')
       const metadata = JSON.parse(await readFile(metadataPath, 'utf8'))
       if (!validAndroidBuildMetadata(metadata)) throw new Error('Android 版本信息无效')
+      let sourceInfo
+      if (sharedSource) {
+        sourceInfo = { sourceRepository, sourceRevision: metadata.sourceRevision, brandSha256: metadata.brandSha256 }
+        const github = androidSharedSource(sourceInfo)
+        if (!github || build.target !== 'android' || metadata.sourceRevision !== build.sourceRevision
+          || metadata.version !== build.version || !/^[0-9a-f]{64}$/.test(metadata.brandSha256 || '')) {
+          throw new Error('Android 对应源码或品牌包校验信息无效')
+        }
+        if (!await sourceAvailable(github.archiveUrl)) throw new Error('对应 Android 源码提交尚未在公开 GitHub 仓库提供')
+      }
       for (const [index, file] of [apk, source].entries()) {
         await copyBuildFile(build, file, staging)
         const size = (await stat(path.join(staging, file))).size
         if (!size) throw new Error('Android 产物为空')
+        if (sharedSource && index === 1 && (size > MAX_ANDROID_BRAND_SIZE
+          || await fileSha256(path.join(staging, file)) !== sourceInfo.brandSha256)) {
+          throw new Error('Android 品牌配置包校验失败')
+        }
         await rename(path.join(staging, file), path.join(staging, names[index]))
       }
       const stagedApk = path.join(staging, ANDROID_APK)
@@ -78,7 +95,10 @@ export function createAndroidArtifactPublisher({ readSettings, readOssConfig, pu
         await mkdir(path.dirname(target), { recursive: true })
         // Each build has its own immutable directory. A retry can reuse a prior complete copy.
         if ((await Promise.all(names.map((name) => stat(path.join(target, name)).catch(() => null)))).every((item) => item?.size)) {
-          if (await fileSha256(path.join(target, ANDROID_APK)) !== sha256) throw new Error('Android 正式包与当前构建产物不一致')
+          if (await fileSha256(path.join(target, ANDROID_APK)) !== sha256 || (sharedSource
+            && await fileSha256(path.join(target, ANDROID_BRAND)) !== sourceInfo.brandSha256)) {
+            throw new Error('Android 正式包与当前构建产物不一致')
+          }
         } else {
           const localStage = await mkdtemp(path.join(path.dirname(target), '.android-stage-'))
           try {
@@ -89,9 +109,18 @@ export function createAndroidArtifactPublisher({ readSettings, readOssConfig, pu
         url = `${publicBaseUrl.replace(/\/$/, '')}/${relative}/`
       }
       for (const name of names) if (!await canAccessFile({ publicUrl: url }, name)) throw new Error('Android 正式产物不可访问')
-      return { url, version, versionCode, size, sha256 }
+      return { url, version, versionCode, size, sha256, ...sourceInfo }
     } finally {
       await rm(staging, { recursive: true, force: true })
     }
+  }
+}
+
+async function publicAndroidSourceAvailable(archiveUrl) {
+  try {
+    const response = await fetch(archiveUrl, { method: 'HEAD', redirect: 'error', signal: AbortSignal.timeout(15_000) })
+    return response.status === 200 && /^(?:application\/(?:zip|octet-stream))(?:;|$)/i.test(response.headers.get('content-type') || '')
+  } catch {
+    return false
   }
 }

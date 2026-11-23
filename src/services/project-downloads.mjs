@@ -1,5 +1,5 @@
 import { projectAndroidBuild } from './android-project-build.mjs'
-import { androidPublishedFile, androidUpdateManifest } from './android-build-artifacts.mjs'
+import { ANDROID_BRAND, ANDROID_SOURCE, DEFAULT_ANDROID_PUBLIC_SOURCE_REPOSITORY, androidPublishedFile, androidSharedSource, androidSourceRepositoryUrl, androidUpdateManifest } from './android-build-artifacts.mjs'
 
 const aliasPattern = /^(?:[a-z0-9][a-z0-9_-]*-)?latest-x64\.exe$/
 
@@ -45,17 +45,22 @@ export function releasedInstallerUrl(release) {
   } catch { return null }
 }
 
-export function createProjectDownloadService({ findProject, findLatestRelease, findLatestAndroidRelease = async () => null }) {
+export function createProjectDownloadService({ findProject, findLatestRelease, findLatestAndroidRelease = async () => null, findPublishedAndroidRelease = async () => null, androidSourceRepository = DEFAULT_ANDROID_PUBLIC_SOURCE_REPOSITORY }) {
   return {
-    async resolveAndroid(projectId, kind = 'page') {
+    async resolveAndroid(projectId, kind = 'page', buildId = '') {
       if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(projectId)) return null
       const project = await findProject(projectId)
       if (project?.status !== 'enabled') return null
-      const release = await findLatestAndroidRelease(projectId)
+      if (buildId && (!['apk', 'source'].includes(kind) || !/^[A-Za-z0-9_-]{1,64}$/.test(buildId))) return null
+      const release = buildId ? await findPublishedAndroidRelease(projectId, buildId) : await findLatestAndroidRelease(projectId)
       if (kind === 'update') return androidUpdateManifest(release)
       if (androidPublishedFile(release)) {
-        if (kind === 'page') return { signedRelease: true }
-        return androidPublishedFile(release, kind === 'source')
+        const shared = androidSharedSource(release)
+        if (kind === 'page') return { signedRelease: true, buildId: release.buildId,
+          repositoryUrl: shared?.repositoryUrl || androidSourceRepositoryUrl(androidSourceRepository) }
+        if (kind !== 'source') return androidPublishedFile(release)
+        if (shared) return { ...shared, brandUrl: androidPublishedFile(release, ANDROID_BRAND), version: androidUpdateManifest(release)?.version }
+        return release.sourceRevision ? null : androidPublishedFile(release, ANDROID_SOURCE)
       }
       if (kind !== 'page') return null
       if (!Array.isArray(project.menus)) return null

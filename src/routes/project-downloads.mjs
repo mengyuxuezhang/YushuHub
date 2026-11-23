@@ -1,6 +1,21 @@
 import { setNoStoreHeaders } from '../middleware/cache-control.mjs'
 import { isLatestDownloadFileName } from '../services/project-downloads.mjs'
 
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]
+))
+
+function androidSourcePage(source) {
+  const { version, revision, sourceUrl, archiveUrl, licenseUrl, guideUrl, brandUrl } = source
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1"><title>对应版本源码与许可</title>
+    <main><h1>对应版本源码与许可</h1><p>Android ${escapeHtml(version)} · <code>${escapeHtml(revision)}</code></p>
+    <ul><li><a href="${escapeHtml(sourceUrl)}">在 GitHub 查看该提交的源码</a> · <a href="${escapeHtml(archiveUrl)}">下载源码 ZIP</a></li>
+    <li><a href="${escapeHtml(brandUrl)}">下载此安装包的品牌配置与图标</a></li>
+    <li><a href="${escapeHtml(guideUrl)}">构建说明</a> · <a href="${escapeHtml(licenseUrl)}">AGPL-3.0 许可证</a></li></ul>
+    <p>将品牌包解压后，按构建说明使用其中的配置、图标和版本号构建此版本。</p></main></html>`
+}
+
 export function registerProjectDownloadRoutes(app, { downloads }) {
   app.get('/api/client/android-download/:projectId', async (req, res, next) => {
     setNoStoreHeaders(res)
@@ -15,10 +30,13 @@ export function registerProjectDownloadRoutes(app, { downloads }) {
       if (!target) return res.status(404).type('text/plain').send('暂无可下载的 Android 版本')
       if (target.signedRelease) {
         const base = `/api/client/android-download/${encodeURIComponent(req.params.projectId)}`
+        const versionPath = target.buildId ? `/${encodeURIComponent(target.buildId)}` : ''
+        const repositoryLink = target.repositoryUrl
+          ? ` · <a href="${escapeHtml(target.repositoryUrl)}" target="_blank" rel="noopener">GitHub 仓库</a>` : ''
         return res.type('html').send(`<!doctype html><html lang="zh-CN"><meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1"><title>Android 客户端下载</title>
-          <main><h1>Android 客户端下载</h1><p><a href="${base}/apk">下载 arm64 安装包</a></p>
-          <p><a href="${base}/source">下载对应源码与许可证</a></p></main></html>`)
+          <main><h1>Android 客户端下载</h1><p><a href="${base}/apk${versionPath}">下载 arm64 安装包</a></p>
+          <p><small><a href="${base}/source${versionPath}">对应版本源码与许可</a>${repositoryLink}</small></p></main></html>`)
       }
       return res.redirect(302, target)
     } catch (error) { next(error) }
@@ -31,12 +49,13 @@ export function registerProjectDownloadRoutes(app, { downloads }) {
     } catch (error) { next(error) }
   })
   for (const kind of ['apk', 'source']) {
-    app.get(`/api/client/android-download/:projectId/${kind}`, async (req, res, next) => {
+    const route = `/api/client/android-download/:projectId/${kind}`
+    app.get([route, `${route}/:buildId`], async (req, res, next) => {
       setNoStoreHeaders(res)
       try {
-        const url = await downloads.resolveAndroid(req.params.projectId, kind)
+        const url = await downloads.resolveAndroid(req.params.projectId, kind, req.params.buildId)
         if (!url) return res.status(404).type('text/plain').send('暂无可下载的 Android 版本')
-        return res.redirect(302, url)
+        return typeof url === 'string' ? res.redirect(302, url) : res.type('html').send(androidSourcePage(url))
       } catch (error) { next(error) }
     })
   }
