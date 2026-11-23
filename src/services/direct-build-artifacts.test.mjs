@@ -65,14 +65,15 @@ test('agent R2 delegates only object upload and verification in the assigned pre
   const service = makeDirectUploadService({ readGrant: async () => validateUploadGrant(grant, build.projectId, build.id), fetchImpl: objectHead('r2', requests) })
   const plan = await service.plan(center, files)
   assert.equal(plan.uploads[0].headers['if-none-match'], '*')
-  assert.equal(plan.uploads[0].headers['x-amz-security-token'], grant.sessionToken)
+  assert.equal(plan.uploads[0].headers['x-amz-security-token'], undefined)
   const url = new URL(plan.uploads[0].url)
   assert.equal(url.pathname, '/fixture-bucket/' + grant.prefix + '/' + files[0].name)
   assert(url.searchParams.get('X-Amz-SignedHeaders').includes('content-md5'))
-  assert(url.searchParams.get('X-Amz-SignedHeaders').includes('x-amz-security-token'))
+  assert.equal(url.searchParams.get('X-Amz-Security-Token'), grant.sessionToken)
   const location = await service.accept(center, { provider: 'r2', nonce: plan.nonce, files }, names)
   assert.equal(sameBucketBuildPrefix(config, { ...build, ...location }), grant.prefix)
-  assert(requests.every(({ options }) => options.headers['x-amz-security-token'] === grant.sessionToken))
+  assert(requests.every(({ target, options }) => target.searchParams.get('X-Amz-Security-Token') === grant.sessionToken &&
+    options.headers['x-amz-security-token'] === undefined))
 })
 
 test('private shared R2 supplies authenticated download links without a public origin or a legacy-job rewrite', async () => {

@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.9.87",
+    "publishedAt": "2026-11-23T12:08:44Z",
+    "releaseNotes": "修复中央构建机直传代理商 Cloudflare R2 时，临时凭据在预签名请求中的传递方式，恢复桌面和 Android 安装包直传。"
+  },
+  {
     "version": "1.9.86",
     "publishedAt": "2026-11-23T11:40:51Z",
     "releaseNotes": "代理商的 Cloudflare R2 安装包存储新增对 r2.dev 公共开发地址的支持。中央私有 R2 暂存继续使用签名链接。"

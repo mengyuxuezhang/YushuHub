@@ -158,13 +158,13 @@ export function normalizeR2ReleaseConfig(config = {}) {
   return { ...config, provider: 'r2', endpoint, publicBaseUrl, prefix, enabled }
 }
 
-function createR2ObjectSigner({ endpoint, bucket, accessKeyId, secretAccessKey }) {
+function createR2ObjectSigner({ endpoint, bucket, accessKeyId, secretAccessKey, sessionToken }) {
   if (![endpoint, bucket, accessKeyId, secretAccessKey].some(Boolean)) return null
   const url = r2Endpoint(endpoint)
   if (!url || !validR2Bucket(bucket) || !accessKeyId || !secretAccessKey) {
     throw new Error('Cloudflare R2 配置不完整')
   }
-  const client = new AwsClient({ accessKeyId, secretAccessKey, service: 's3', region: 'auto' })
+  const client = new AwsClient({ accessKeyId, secretAccessKey, sessionToken, service: 's3', region: 'auto' })
   return async (key, method, headers = {}) => {
     const parts = key.split('/')
     if (!parts.every(part => PREFIX_PART.test(part))) throw new Error('R2 产物路径无效')
@@ -240,7 +240,6 @@ export function makeDirectUploadService({ readGrant, readR2 = readBuildR2, fetch
       const directory = r2Directory(build.id, nonce)
       const uploads = await Promise.all(files.map(async file => {
         const headers = r2UploadHeaders(file)
-        if (grant?.provider === 'r2') headers['x-amz-security-token'] = grant.sessionToken
         return { name: file.name, headers, url: await signR2(directory, file.name, 'PUT', headers) }
       }))
       return { provider: 'r2', nonce, uploads }
@@ -258,8 +257,7 @@ export function makeDirectUploadService({ readGrant, readR2 = readBuildR2, fetch
       }
       if (receipt.provider === 'r2' && grant?.provider === 'r2' && grant.prefix.endsWith('/' + receipt.nonce)) {
         const sign = delegatedR2Signer(grant)
-        const headers = { 'x-amz-security-token': grant.sessionToken }
-        await Promise.all(files.map(async file => verifyDirectArtifact(await sign(null, file.name, 'HEAD', headers), file, 'r2', fetchImpl, headers)))
+        await Promise.all(files.map(async file => verifyDirectArtifact(await sign(null, file.name, 'HEAD'), file, 'r2', fetchImpl)))
         return { publicUrl: grant.publicUrl, artifactDir: '' }
       }
       const directory = receipt.provider === 'r2' ? r2Directory(build.id, receipt.nonce) : null
