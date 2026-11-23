@@ -1,5 +1,7 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { Agent, request } from 'node:https'
+import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import { AwsClient } from 'aws4fetch'
 import { androidBuildArtifacts, isAndroidBuildArtifact } from './android-build-artifacts.mjs'
@@ -199,11 +201,62 @@ export function readBuildR2(env = process.env) {
   })
 }
 
-export async function putR2ReleaseObject(config, key, { body, headers }, fetchImpl = fetch) {
+function sendR2Write(url, { headers, body, signal, onBytes }) {
+  return new Promise((resolve, reject) => {
+    const upload = request(url, { method: 'PUT', headers, signal, agent: r2VerificationAgent }, async response => {
+      try {
+        const chunks = []
+        let size = 0
+        for await (const chunk of response) {
+          size += chunk.length
+          if (size > 64 * 1024) throw new Error('R2 响应超过大小限制')
+          chunks.push(chunk)
+        }
+        const status = response.statusCode
+        resolve({ status, ok: status >= 200 && status < 300, text: async () => Buffer.concat(chunks).toString('utf8') })
+      } catch (error) {
+        reject(error)
+      }
+    })
+    upload.once('error', reject)
+    if (!body) {
+      upload.end()
+      return
+    }
+    const input = Readable.fromWeb(body.stream())
+    const meter = new Transform({ transform(chunk, _encoding, callback) {
+      onBytes?.(chunk.length)
+      callback(null, chunk)
+    } })
+    pipeline(input, meter, upload, { signal }).catch(reject)
+  })
+}
+
+export async function putR2ReleaseObject(config, key, { body, headers, onBytes }, send = sendR2Write) {
   const sign = createR2ObjectSigner(config)
-  const url = await sign(key, 'PUT', headers)
-  const response = await fetchImpl(url, { method: 'PUT', headers, body, redirect: 'error', signal: AbortSignal.timeout(900_000) })
-    .catch(() => null)
+  const requestHeaders = body ? headers : { 'content-length': '0', ...headers }
+  const url = await sign(key, 'PUT', requestHeaders)
+  // A stalled full upload may have written bytes already. Only retry the
+  // replayable server-side copy, and let the release workflow handle uploads.
+  let response
+  let networkFailure
+  for (let attempt = 1; ; attempt++) {
+    networkFailure = null
+    try {
+      response = await send(url, { method: 'PUT', headers: requestHeaders, body, onBytes, redirect: 'error',
+        signal: AbortSignal.timeout(body ? 900_000 : 60_000) })
+    } catch (error) {
+      networkFailure = error
+      response = null
+    }
+    const retry = networkFailure ? isTransientR2Error(networkFailure) : [408, 429, 500, 502, 503, 504].includes(response?.status)
+    if (body || !retry || attempt === 3) break
+    await delay(attempt * 250)
+  }
+  if (networkFailure) {
+    const reason = isTransientR2Error(networkFailure) ? '网络连接中断或超时' : '网络请求失败'
+    throw new Error('R2 写入失败：' + reason)
+  }
   if (!response?.ok) throw new Error('R2 写入失败' + (response ? ' HTTP ' + response.status : ''))
   if (headers['x-amz-copy-source']) {
     const copyResult = await response.text()

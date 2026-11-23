@@ -4411,7 +4411,7 @@ async function submitBuildToCenter(build, project, user, publicUrls = {}) {
   }
 }
 
-async function resetBuildForRetry(buildId, extraPatch = {}) {
+async function resetBuildForRetry(buildId, extraPatch = {}, options) {
   return updateBuild(buildId, {
     status: 'queued',
     error: '',
@@ -4430,7 +4430,7 @@ async function resetBuildForRetry(buildId, extraPatch = {}) {
     releasedAt: null,
     resetLocalUploadGrant: true,
     ...extraPatch,
-  })
+  }, options)
 }
 
 async function findBuildById(id, connection = null) {
@@ -4454,9 +4454,7 @@ function localizeCenterBuildInBackground(local, remote, config) {
   localizingBuildIds.add(local.id)
   ;(async () => {
     const updateIfActive = async (patch) => {
-      const current = await findBuildById(local.id)
-      if (!current || (current.status !== 'queued' && current.status !== 'running')) return null
-      return updateBuild(local.id, patch)
+      return updateBuild(local.id, patch, { expectedStatus: ['queued', 'running'] })
     }
     try {
       await updateIfActive({
@@ -4562,7 +4560,7 @@ async function performCenterBuildSync({ platformScope = false, ownerUserId = '' 
       if (localizeCenterBuildInBackground({ ...local, ...metadataPatch }, remote, config)) localizationStarted += 1
       continue
     }
-    await updateBuild(local.id, {
+    const synced = await updateBuild(local.id, {
       ...metadataPatch,
       status: remote.status,
       log: remote.log || local.log || '',
@@ -4574,8 +4572,8 @@ async function performCenterBuildSync({ platformScope = false, ownerUserId = '' 
       claimedBy: remote.claimedBy || '',
       startedAt: remote.startedAt || null,
       finishedAt: remote.finishedAt || null,
-    })
-    updated += 1
+    }, { expectedStatus: ['queued', 'running'] })
+    if (synced) updated += 1
   }
   return { configured: true, checked: builds.length, updated, localizationStarted }
 }
@@ -4633,7 +4631,7 @@ async function listBuildsForUser(user, options = {}) {
   return paged ? pageResult(items, total, pagination) : items
 }
 
-async function updateBuild(buildId, patch) {
+async function updateBuild(buildId, patch, { expectedStatus } = {}) {
   const fields = []
   const values = []
   const map = {
@@ -4674,7 +4672,14 @@ async function updateBuild(buildId, patch) {
   }
   if (fields.length === 0) return findBuildById(buildId)
   values.push(buildId)
-  await db().query(`UPDATE ai_builds SET ${fields.join(', ')} WHERE id = ?`, values)
+  let condition = ''
+  if (expectedStatus) {
+    const allowed = [expectedStatus].flat()
+    condition = ` AND status IN (${allowed.map(() => '?').join(', ')})`
+    values.push(...allowed)
+  }
+  const [result] = await db().query(`UPDATE ai_builds SET ${fields.join(', ')} WHERE id = ?${condition}`, values)
+  if (expectedStatus && result.affectedRows === 0) return null
   return findBuildById(buildId)
 }
 
@@ -5882,8 +5887,25 @@ async function uploadArtifactObject(config, filePath, key, onProgress) {
   const size = (await fsp.stat(filePath)).size
   const contentType = ossContentType(path.basename(filePath))
   const body = await fs.openAsBlob(filePath, { type: contentType })
-  await putR2ReleaseObject(config, key, { body, headers: { 'content-type': contentType,
-    'content-length': String(size), 'x-amz-meta-sha256': digest.digest('hex') } })
+  let transferredBytes = 0
+  let lastReportedAt = 0
+  let progressUpdate = Promise.resolve()
+  try {
+    await putR2ReleaseObject(config, key, { body, headers: { 'content-type': contentType,
+      'content-length': String(size), 'x-amz-meta-sha256': digest.digest('hex') },
+      onBytes(bytes) {
+        transferredBytes += bytes
+        const now = Date.now()
+        if (!onProgress || now - lastReportedAt < 1000) return
+        lastReportedAt = now
+        const progress = { fileName: path.basename(filePath), transferredBytes, totalBytes: size,
+          percent: Math.min(99, Math.floor(transferredBytes * 100 / size)), done: false }
+        progressUpdate = progressUpdate.then(() => onProgress(progress)).catch(() => {})
+      },
+    })
+  } finally {
+    await progressUpdate
+  }
   if (onProgress) await onProgress({ fileName: path.basename(filePath), transferredBytes: size, totalBytes: size, percent: 100, done: true })
 }
 
@@ -6018,6 +6040,11 @@ function ossObjectKeyFromPublicUrl(config, publicUrl, fileName) {
 
 async function verifyPublicArtifactUrl(publicUrl, label = '公开访问', name = 'latest.yml') {
   const artifactUrl = buildArtifactUrl(publicUrl, name)
+  const r2Accessible = await probeR2DevelopmentArtifact(artifactUrl)
+  if (r2Accessible !== null) {
+    if (!r2Accessible) throw new Error(`${label}校验失败：请确认 ${name} 可以下载。`)
+    return
+  }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 15 * 1000)
   try {

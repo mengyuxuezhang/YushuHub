@@ -147,6 +147,22 @@ test('R2 public probe retries connection timeouts and bounds the HEAD fallback t
   assert.equal(calls, 1)
 })
 
+test('R2 publishing retries transient object copies without replaying a streamed upload', async () => {
+  let attempts = 0
+  const headers = { 'x-amz-copy-source': '/fixture-bucket/files/installer.exe' }
+  await putR2ReleaseObject(r2, 'files/release.exe', { headers }, async (_url, options) => {
+    attempts++
+    assert.equal(options.headers['content-length'], '0')
+    if (attempts === 1) throw Object.assign(new Error('connect timeout'), { code: 'ETIMEDOUT' })
+    return new Response('<CopyObjectResult></CopyObjectResult>')
+  })
+  assert.equal(attempts, 2)
+  attempts = 0
+  await assert.rejects(putR2ReleaseObject(r2, 'files/release.exe', { body: new Blob(['test']), headers: { 'content-length': '4' } },
+    async () => { attempts++; throw Object.assign(new Error('connect timeout'), { code: 'ETIMEDOUT' }) }), /超时/)
+  assert.equal(attempts, 1)
+})
+
 test('R2 public development URLs support downloads from the bucket origin', () => {
   const publicBaseUrl = 'https://pub-' + 'b'.repeat(32) + '.r2.dev'
   const config = normalizeR2ReleaseConfig({ ...r2, publicBaseUrl: publicBaseUrl + '/' })

@@ -119,7 +119,7 @@ export function registerBuildRoutes(app, deps) {
         return
       }
       const config = await getBuildCenterConfig()
-      if (config.enabled && current.remoteBuildId && current.transferProgress?.phase === 'staging' && current.transferProgress?.status === 'failed') {
+      if (config.enabled && current.remoteBuildId) {
         const remotes = await buildCenterApi('/api/center/builds/status', { buildIds: [current.remoteBuildId] }, config)
         const remote = Array.isArray(remotes) ? remotes.find(item => item.id === current.remoteBuildId) : null
         if (!remote || !['queued', 'running', 'succeeded', 'failed'].includes(remote.status)) throw new Error('无法确认原官方构建状态，请稍后重试')
@@ -131,12 +131,16 @@ export function registerBuildRoutes(app, deps) {
             finishedAt: null,
             transferProgress: { phase: 'staging', status: 'retrying', updatedAt: nowIso() },
             log: `${current.log || ''}[admin] Retrying artifact transfer from the existing remote build\n`,
-          })
-          res.json({ success: true, data: build })
+          }, { expectedStatus: 'failed' })
+          res.json({ success: true, data: build ?? await findBuildById(current.id) })
           return
         }
       }
-      let build = await resetBuildForRetry(req.params.id)
+      let build = await resetBuildForRetry(req.params.id, {}, { expectedStatus: 'failed' })
+      if (!build) {
+        res.json({ success: true, data: await findBuildById(current.id) })
+        return
+      }
       if (config.enabled && current.remoteBuildId) {
         try {
           const publicUrls = resolvePublicUrlsForRequest(req, {
@@ -150,7 +154,7 @@ export function registerBuildRoutes(app, deps) {
             error: '',
             log: `${build.log || ''}[admin] Retried remote build ${remote.id || current.remoteBuildId}\n`,
             remoteBuildId: remote.id || current.remoteBuildId,
-          })
+          }, { expectedStatus: 'queued' }) ?? await findBuildById(current.id)
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
           build = await updateBuild(build.id, {
@@ -158,7 +162,11 @@ export function registerBuildRoutes(app, deps) {
             error: `提交官方构建中心重试失败：${message}`,
             log: `${build.log || ''}[admin] Failed to retry remote build: ${message}\n`,
             finishedAt: nowIso(),
-          })
+          }, { expectedStatus: 'queued' })
+          if (!build) {
+            res.json({ success: true, data: await findBuildById(current.id) })
+            return
+          }
           res.status(400).json({ success: false, error: build.error, data: build })
           return
         }

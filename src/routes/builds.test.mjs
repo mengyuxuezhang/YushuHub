@@ -259,7 +259,8 @@ test('supplier retry refreshes the center brand before requeuing an existing rem
     getBuildCenterConfig: async () => ({ enabled: true }),
     resetBuildForRetry: async () => ({ ...current, status: 'queued', log: '' }),
     prepareBuildCenterBrand: async () => ({ clientApiUrl: 'https://ai.example.com' }),
-    buildCenterApi: async (_path, payload) => {
+    buildCenterApi: async (path, payload) => {
+      if (path.endsWith('/status')) return [{ id: 'remote-build', status: 'failed' }]
       centerPayload = payload
       return { id: 'remote-build', status: 'queued' }
     },
@@ -313,6 +314,31 @@ test('artifact retry preserves the failed record when the remote status cannot b
   await handler({ params: { id: 'local-build' }, user: { id: 'owner', role: 'admin' } }, responseRecorder(), value => { error = value })
   assert.match(error.message, /无法确认原官方构建状态/)
   assert.equal(writes, 0)
+})
+
+test('retry of a locally failed but already received build does not replace a concurrent success', async () => {
+  const current = { id: 'local-build', projectId: 'demo', status: 'failed', remoteBuildId: 'remote-build',
+    transferProgress: { phase: 'staging', status: 'completed' } }
+  const completed = { ...current, status: 'succeeded' }
+  let reads = 0
+  const handler = postHandler('/api/builds/:id/retry', {
+    findBuildById: async () => reads++ === 0 ? current : completed,
+    findProjectById: async () => ({ id: 'demo', ownerUserId: 'owner' }),
+    getBuildCenterConfig: async () => ({ enabled: true }),
+    resetBuildForRetry: async () => assert.fail('must not retry the completed remote build'),
+    buildCenterApi: async route => {
+      assert.equal(route, '/api/center/builds/status')
+      return [{ id: 'remote-build', status: 'succeeded', publicUrl: 'https://build.example.test/staging/', files: ['android-arm64.apk'] }]
+    },
+    updateBuild: async (_id, patch, guard) => {
+      assert.equal(patch.transferProgress.status, 'retrying')
+      assert.equal(guard.expectedStatus, 'failed')
+      return null
+    },
+  })
+  const res = responseRecorder()
+  await handler({ params: { id: current.id }, user: { id: 'owner', role: 'admin' } }, res, error => { throw error })
+  assert.equal(res.body.data.status, 'succeeded')
 })
 
 test('artifact retry does not report success after the official artifacts were already removed', async () => {
