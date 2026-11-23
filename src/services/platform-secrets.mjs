@@ -29,6 +29,27 @@ export function withEffectiveBuildCenterSettings(settings, environment = {}) {
   }
 }
 
+export function resolveBuildCenterSettingsUpdate(input, existing, environment, normalize) {
+  const read = (key) => String((Object.hasOwn(input, key) ? input[key] : existing[key]) || '').trim()
+  const url = read('buildCenterUrl').replace(/\/$/, '')
+  const supplierId = read('buildCenterSupplierId')
+  const submittedToken = String(input.buildCenterToken || '').trim()
+  const previous = { url: existing.buildCenterUrl, supplierId: existing.buildCenterSupplierId, token: existing.buildCenterToken }
+  if (url === previous.url && supplierId === previous.supplierId && !submittedToken) return previous
+  if (!url && !supplierId && !submittedToken) return { url: '', supplierId: '', token: '' }
+
+  const token = submittedToken || previous.token
+  const effective = normalize({
+    url: url || environment.url,
+    supplierId: supplierId || environment.supplierId,
+    token: token || environment.token,
+  })
+  if (!effective.enabled) {
+    throw new Error(effective.url ? '请填写构建中心的供应商 ID 和 Token，或将官方构建中心留空' : '请填写官方构建中心 URL')
+  }
+  return { url: url ? effective.url : '', supplierId: supplierId ? effective.supplierId : '', token }
+}
+
 const PUBLIC_PLATFORM_SETTING_KEYS = [
   'systemName',
   'systemSubtitle',

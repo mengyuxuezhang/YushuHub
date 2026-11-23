@@ -13,7 +13,11 @@ defineEmits<{ close: []; save: []; testSmtp: []; 'update:smtpTestEmail': [value:
       <section class="form-section"><h3>平台品牌</h3><div class="form-grid-v2"><label><span>系统名称</span><input v-model.trim="form.systemName" /></label><label><span>系统副标题</span><input v-model.trim="form.systemSubtitle" /></label><label><span>主色</span><input v-model="form.primaryColor" type="color" /></label><label><span>Logo 文本</span><input v-model.trim="form.logoText" /></label></div></section>
       <section class="form-section">
         <h3>构建与存储</h3>
-        <label><span>官方构建中心</span><input v-model.trim="form.buildCenterUrl" /></label>
+        <label><span>官方构建中心</span><input v-model.trim="form.buildCenterUrl" :placeholder="form.effectiveBuildCenterUrl || 'https://center.okpa.cn'" /></label>
+        <div v-if="form.buildCenterRequiresCredentials" class="form-grid-v2">
+          <label><span>供应商 ID（Supplier ID）</span><input v-model.trim="form.buildCenterSupplierId" :placeholder="form.effectiveBuildCenterSupplierId || '请输入供应商 ID'" /></label>
+          <label><span>构建中心 Token</span><input v-model="form.buildCenterToken" type="password" autocomplete="new-password" :placeholder="form.buildCenterTokenConfigured ? '已配置，留空保持不变' : '请输入 Token'" /></label>
+        </div>
       </section>
       <section class="form-section artifact-storage-section">
         <div><h3>安装包存储</h3><p>选择构建产物保存位置；已有安装包不会因切换存储方式而迁移。</p></div>

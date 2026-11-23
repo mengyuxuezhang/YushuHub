@@ -156,7 +156,7 @@ import { ModelServiceV2Sync } from '../../src/services/model-service-v2-sync.mjs
 import { assertSupplierBuildQuota, normalizeSupplierProjectIds, planSupplierProjectReservation } from '../../src/services/supplier-quotas.mjs'
 import { normalizeAndroidSourceVersion, parseBuildTarget } from '../../src/services/build-target.mjs'
 import { configuredManagedWorkerIds, filterRemoteWorkers, higherPriorityWorkerIds, isDelegatedBuildRecord, isIdleCompatibleWorker, isManagedWorkerId, isWorkerDisabled, parseWorkerPriority } from '../../src/services/worker-scheduling.mjs'
-import { preserveConfiguredSecret, withEffectiveBuildCenterSettings } from '../../src/services/platform-secrets.mjs'
+import { preserveConfiguredSecret, resolveBuildCenterSettingsUpdate, withEffectiveBuildCenterSettings } from '../../src/services/platform-secrets.mjs'
 import { buildListSearch } from '../../src/services/list-search.mjs'
 import { canManageBuiltinRoleTemplates } from '../../src/services/role-template-lifecycle.mjs'
 import { remoteBuildMetadataPatch } from '../../src/services/build-record-sync.mjs'
@@ -1398,6 +1398,7 @@ function sanitizePlatformSettings(settings, options = {}) {
     delete safe.buildCenterToken
     delete safe.buildCenterConfigured
     delete safe.buildCenterConfigSource
+    delete safe.buildCenterRequiresCredentials
     delete safe.effectiveBuildCenterUrl
     delete safe.effectiveBuildCenterSupplierId
     delete safe.artifactStorageMode
@@ -4748,11 +4749,12 @@ async function getPlatformSettings(userId = 'platform') {
 }
 
 async function getPlatformSettingsForDisplay(userId = 'platform') {
-  return withEffectiveBuildCenterSettings(await getPlatformSettings(userId), {
+  const settings = withEffectiveBuildCenterSettings(await getPlatformSettings(userId), {
     url: BUILD_CENTER_URL,
     supplierId: BUILD_CENTER_SUPPLIER_ID,
     token: BUILD_CENTER_TOKEN,
   })
+  return { ...settings, buildCenterRequiresCredentials: (process.env.AI_AUTHORIZATION_MODE || 'center') !== 'center' }
 }
 
 async function getConfiguredSelfUpdateManifestUrl() {
@@ -4782,9 +4784,11 @@ async function savePlatformSettings(userId, input) {
   const id = String(userId || '').trim()
   if (!id) throw new Error('账号不存在')
   const existing = await getPlatformSettings(id)
-  const rawBuildCenterUrl = String(input.buildCenterUrl || '').trim().replace(/\/$/, '')
-  const rawBuildCenterToken = String(input.buildCenterToken || '').trim()
-  const rawBuildCenterSupplierId = String(input.buildCenterSupplierId || '').trim()
+  const buildCenterConfig = resolveBuildCenterSettingsUpdate(input, existing, {
+    url: BUILD_CENTER_URL,
+    supplierId: BUILD_CENTER_SUPPLIER_ID,
+    token: BUILD_CENTER_TOKEN,
+  }, normalizeBuildCenterConfig)
   const modelGatewayBaseUrl = normalizeHttpUrl(input.modelGatewayBaseUrl || defaultPlatformSettings.modelGatewayBaseUrl)
   const modelUsageBaseUrl = normalizeHttpUrl(input.modelUsageBaseUrl || defaultPlatformSettings.modelUsageBaseUrl)
   const modelGatewayKey = preserveConfiguredSecret(input.modelGatewayKey, existing.modelGatewayKey, Boolean(modelGatewayBaseUrl))
@@ -4818,19 +4822,6 @@ async function savePlatformSettings(userId, input) {
   if (hasSmtpInput) {
     if (!smtpHost || !smtpPort || !smtpUser || !smtpPass || !smtpFromEmail) throw new Error('邮件服务的 SMTP Host、端口、账号、密码和发件邮箱必须填写完整')
     normalizeEmail(smtpFromEmail)
-  }
-  const buildCenterUrl = normalizeSecureBuildCenterUrl(rawBuildCenterUrl)
-  const buildCenterSupplierId = rawBuildCenterSupplierId
-  const buildCenterToken = rawBuildCenterToken || (buildCenterUrl && buildCenterSupplierId ? existing.buildCenterToken : '')
-  const hasBuildCenterInput = Boolean(buildCenterUrl || buildCenterToken || buildCenterSupplierId)
-  let buildCenterConfig = { url: '', token: '', supplierId: '' }
-  if (hasBuildCenterInput) {
-    buildCenterConfig = normalizeBuildCenterConfig({
-      url: buildCenterUrl,
-      token: buildCenterToken,
-      supplierId: buildCenterSupplierId,
-    })
-    if (!buildCenterConfig.enabled) throw new Error('官方构建中心 URL、Supplier ID 和 Token 必须填写完整')
   }
   const settings = normalizePlatformSettings({
     system_name: input.systemName,
