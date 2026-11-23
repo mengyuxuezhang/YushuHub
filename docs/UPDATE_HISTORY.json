@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.9.86",
+    "publishedAt": "2026-11-23T11:40:51Z",
+    "releaseNotes": "代理商的 Cloudflare R2 安装包存储新增对 r2.dev 公共开发地址的支持。中央私有 R2 暂存继续使用签名链接。"
+  },
+  {
     "version": "1.9.85",
     "publishedAt": "2026-11-23T10:02:15Z",
     "releaseNotes": "修复 Cloudflare R2 和阿里云 OSS 自动压缩 JSON 时，中央误判直传构建产物校验失败的问题。"
