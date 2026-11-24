@@ -11,6 +11,14 @@ export interface CostGroup {
   images: string | null
   imageCalls: number
 }
+export interface CostMember {
+  userId: string
+  username: string
+  displayName: string
+  amount: string | null
+  calls: number
+  known: number
+}
 export interface CostCall {
   id: string
   requestId: string
@@ -32,6 +40,7 @@ export interface Department {
 }
 const base = '/api/reports/vendor-cost/'
 export const costGroups = (query: URLSearchParams) => api<CostGroup[]>(base + 'overview?' + query)
+export const costMembers = (query: URLSearchParams) => api<CostMember[]>(base + 'members?' + query)
 export const costCalls = (query: URLSearchParams) => api<CostCall[]>(base + 'calls?' + query)
 export const departments = () => api<Department[]>('/api/cost-departments')
 export const updateDepartments = (body: {

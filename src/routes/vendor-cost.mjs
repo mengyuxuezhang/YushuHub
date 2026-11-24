@@ -15,12 +15,12 @@ export function registerVendorCostRoutes(app) {
       next(e)
     }
   }
-  for (const method of ['overview', 'calls'])
+  for (const method of ['overview', 'calls', 'members'])
     app.get(
       '/api/reports/vendor-cost/' + method,
       requireAuth,
       read,
-      handler((req) => readVendorCosts(db(), req.user, req.query, method === 'calls')),
+      handler((req) => readVendorCosts(db(), req.user, req.query, method)),
     )
   const base = '/api/cost-departments'
   app.get(

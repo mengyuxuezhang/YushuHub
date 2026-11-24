@@ -170,6 +170,14 @@ test(
       keys = ['vendor_cost.view']
       const rows = (await (await report('calls')).json()).data
       const groups = (await (await report('overview')).json()).data
+      const members = (
+        await (await report('members', '&department=' + encodeURIComponent(org.id + '/' + id))).json()
+      ).data
+      assert.equal(members.length, 1)
+      assert.equal(members[0].userId, 'alice')
+      assert.equal(Number(members[0].amount), 3)
+      assert.equal(Number(members[0].calls), 2)
+      assert.equal((await report('members')).status, 400)
       assert.equal(rows.length, 4)
       assert.equal(
         groups.reduce((s, g) => s + Number(g.known), 0),
@@ -305,8 +313,8 @@ test(
       pool = null
       await initDatabase(options)
       const [upgraded] = await pool.query('SELECT cost_department_id FROM ai_end_users')
-      assert.equal(upgraded.length,2)
-      assert.ok(upgraded.every(user=>user.cost_department_id==='default'))
+      assert.equal(upgraded.length, 2)
+      assert.ok(upgraded.every((user) => user.cost_department_id === 'default'))
     } finally {
       if (server) await new Promise((r) => server.close(r))
       if (pool) await pool.end()

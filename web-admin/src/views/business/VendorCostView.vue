@@ -1,6 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { costGroups, costCalls, type CostCall, type CostGroup } from '@/api/vendor-cost'
+import { computed, nextTick, ref, watch } from 'vue'
+import {
+  costGroups,
+  costCalls,
+  costMembers,
+  type CostMember,
+  type CostCall,
+  type CostGroup,
+} from '@/api/vendor-cost'
 import { toUserMessage } from '@/api/client'
 
 const month = ref(new Date(Date.now() + 28800000).toISOString().slice(0, 7))
@@ -10,6 +17,7 @@ const source = ref(''),
   page = ref(1)
 const groups = ref<CostGroup[]>([]),
   calls = ref<CostCall[]>([]),
+  members = ref<CostMember[]>([]),
   error = ref(''),
   busy = ref(false)
 const sources: Record<string, string> = { desktop: '电脑端', android: '安卓端', admin: '后台', unknown: '未知' }
@@ -37,6 +45,16 @@ watch(
   },
   { flush: 'sync' },
 )
+const dashboard = ref<HTMLElement | null>(null)
+let scrollToMembers = false
+function openDepartment(key: string) {
+  if (department.value === key) {
+    dashboard.value?.scrollIntoView({ block: 'start' })
+    return
+  }
+  scrollToMembers = true
+  department.value = key
+}
 let revision = 0
 async function load() {
   const request = ++revision
@@ -44,20 +62,32 @@ async function load() {
   error.value = ''
   const q = new URLSearchParams({ month: month.value, source: source.value, type: type.value })
   try {
-    const [summary, detail] = await Promise.all([
+    const departmentQuery = new URLSearchParams(q)
+    departmentQuery.set('department', department.value)
+    const [summary, detail, breakdown] = await Promise.all([
       costGroups(q),
+
       costCalls(
         new URLSearchParams({ ...Object.fromEntries(q), department: department.value, page: String(page.value) }),
       ),
+      department.value ? costMembers(departmentQuery) : Promise.resolve([]),
     ])
     if (request === revision) {
       groups.value = summary
       calls.value = detail
+      members.value = breakdown
     }
   } catch (e) {
     if (request === revision) error.value = toUserMessage(e)
   } finally {
-    if (request === revision) busy.value = false
+    if (request === revision) {
+      busy.value = false
+      if (scrollToMembers) {
+        scrollToMembers = false
+        await nextTick()
+        dashboard.value?.scrollIntoView({ block: 'start' })
+      }
+    }
   }
 }
 watch([month, source, type, department, page], load, { immediate: true })
@@ -106,7 +136,7 @@ const money = (n: number | string) =>
   })
 </script>
 <template>
-  <section class="management-page cost-page">
+  <section ref="dashboard" class="management-page cost-page">
     <header class="page-heading">
       <div>
         <h1>成本看板</h1>
@@ -154,6 +184,35 @@ const money = (n: number | string) =>
           <small>待核算调用</small><strong>{{ total.calls - total.known }} 笔</strong>
         </div>
       </div>
+      <div v-if="department" class="panel-card cost-section">
+        <h2>{{ rank.find((d) => d.key === department)?.name }} · 成员成本排行</h2>
+        <div class="data-table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>成员</th>
+                <th>可核算成本</th>
+                <th>调用次数</th>
+                <th>待核算</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="member in members" :key="member.userId">
+                <td>
+                  <strong>{{ member.displayName || member.username }}</strong
+                  ><small v-if="member.displayName" class="cell-note">{{ member.username }}</small>
+                </td>
+                <td>
+                  <strong>{{ member.amount == null ? '待核算' : money(member.amount) }}</strong>
+                </td>
+                <td>{{ member.calls }}</td>
+                <td>{{ member.calls - member.known }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-if="!members.length">暂无成员消费记录</p>
+        </div>
+      </div>
       <div v-if="total.calls" class="panel-card cost-section">
         <h2>每日成本趋势</h2>
         <div class="cost-bars">
@@ -180,7 +239,7 @@ const money = (n: number | string) =>
           <tbody>
             <tr v-for="d in rank" :key="d.key">
               <td>
-                <button class="text-button" @click="department = d.key">{{ d.org }} · {{ d.name }}</button>
+                <button class="text-button" @click="openDepartment(d.key)">{{ d.org }} · {{ d.name }}</button>
               </td>
               <td>{{ d.known ? money(d.amount) : '待核算' }}</td>
               <td>{{ d.known }} / {{ d.calls }}</td>
@@ -229,6 +288,8 @@ const money = (n: number | string) =>
 <style scoped>
 .cost-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  scroll-margin-top: 84px;
   gap: 16px;
 }
 .cost-filters {

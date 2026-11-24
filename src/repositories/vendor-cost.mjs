@@ -46,7 +46,7 @@ function costFacts(actor, q) {
       params.push(q[key])
     }
   }
-  const sql = `SELECT * FROM (SELECT l.id,l.request_id AS requestId,u.username,u.display_name AS displayName,
+  const sql = `SELECT * FROM (SELECT l.id,l.request_id AS requestId,u.id AS userId,u.username,u.display_name AS displayName,
     DATE_FORMAT(DATE_ADD('1970-01-01',INTERVAL (UNIX_TIMESTAMP(${usedAt})+28800) SECOND),'%Y-%m-%d %H:%i:%s') AS usedAt,
     CONCAT(${org},'/',COALESCE(l.cost_department_id,'history')) AS departmentKey,
     CASE WHEN l.cost_department_id IS NULL THEN '历史未记录' WHEN l.cost_department_id='default' THEN '默认部门' ELSE d.name END AS departmentName,
@@ -78,11 +78,22 @@ function costFacts(actor, q) {
 
 const totals =
   "COUNT(*) AS calls,COUNT(amount) AS known,SUM(amount) AS amount,SUM(CASE WHEN kind='image' THEN images END) AS images,COUNT(CASE WHEN kind='image' THEN 1 END) AS imageCalls"
-export async function readVendorCosts(pool, actor, input, detail) {
+export async function readVendorCosts(pool, actor, input, view) {
   const q = costQuery(input)
   const { sql, params } = costFacts(actor, q)
   const from = ' FROM (' + sql + ') f'
-  if (detail) {
+  if (view === 'members') {
+    if (!q.department) throw reportError('请选择部门')
+    const [rows] = await pool.query(
+      'SELECT userId,username,displayName,' +
+        totals +
+        from +
+        ' GROUP BY userId,username,displayName ORDER BY amount DESC,calls DESC,userId',
+      params,
+    )
+    return rows
+  }
+  if (view === 'calls') {
     const [rows] = await pool.query('SELECT *' + from + ' ORDER BY usedAt DESC,id LIMIT 20 OFFSET ?', [
       ...params,
       (q.page - 1) * 20,

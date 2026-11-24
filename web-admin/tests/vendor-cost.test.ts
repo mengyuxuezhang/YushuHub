@@ -1,7 +1,7 @@
 import { createApp, nextTick } from 'vue'
 import VendorCostView from '@/views/business/VendorCostView.vue'
 import * as costs from '@/api/vendor-cost'
-vi.mock('@/api/vendor-cost', () => ({ costCalls: vi.fn(), costGroups: vi.fn() }))
+vi.mock('@/api/vendor-cost', () => ({ costCalls: vi.fn(), costGroups: vi.fn(), costMembers: vi.fn() }))
 const row = {
   day: '2026-11-03',
   departmentKey: 'a/dept',
@@ -35,8 +35,13 @@ describe('成本看板', () => {
       app = createApp(VendorCostView)
     app.mount(host)
     await vi.waitFor(() => expect(host.querySelector('tbody button')).toBeTruthy())
+    vi.mocked(costs.costMembers).mockResolvedValue([
+      { userId: 'alice', username: 'alice', displayName: '张宁', amount: '48.25', calls: 3, known: 2 },
+    ])
     ;(host.querySelector('tbody button') as HTMLButtonElement).click()
     await nextTick()
+    await vi.waitFor(() => expect(host.textContent).toContain('¥48.25'))
+    expect(host.textContent).toContain('张宁')
     expect(vi.mocked(costs.costCalls).mock.lastCall?.[0].get('department')).toBe('a/dept')
     app.unmount()
   })
