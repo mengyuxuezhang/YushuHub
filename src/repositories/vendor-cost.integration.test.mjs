@@ -183,7 +183,10 @@ test(
         fetch(base + 'reports/vendor-cost/' + method + '?month=2026-11' + filters)
       assert.equal((await report('overview')).status, 403)
       keys = ['vendor_cost.view']
-      const rows = (await (await report('calls')).json()).data
+      const callsPage = (await (await report('calls')).json()).data
+      const rows = callsPage.items
+      assert.equal(callsPage.total, 4)
+      assert.equal(callsPage.pageSize, 20)
       const groups = (await (await report('overview')).json()).data
       const members = (
         await (await report('members', '&department=' + encodeURIComponent(org.id + '/' + id))).json()
@@ -234,8 +237,43 @@ test(
           )
         ).json()
       ).data
-      assert.equal(image.length, 1)
-      assert.equal(Number(image[0].images), 3)
+      assert.equal(image.items.length, 1)
+      assert.equal(Number(image.items[0].images), 3)
+      const rangeResponse = await report('calls', '&startDate=2026-11-01&endDate=2026-11-01&pageSize=10&page=3')
+      const range = (await rangeResponse.json()).data
+      assert.equal(range.page, 1)
+      assert.equal(range.pageSize, 10)
+      assert.deepEqual(
+        range.items.map((item) => item.id),
+        ['first'],
+      )
+      assert.equal((await report('calls', '&startDate=2026-11-01')).status, 400)
+      const reconcile = (id, body) =>
+        fetch(base + 'reports/vendor-cost/calls/' + id + '/reconcile', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+      const patch = { cost: '0', evidence: '厂商账单 2026-11-001' }
+      assert.equal((await reconcile('old', patch)).status, 403)
+      keys = ['vendor_cost.view', 'credits.manage']
+      assert.equal((await reconcile('foreign', patch)).status, 404)
+      assert.equal((await reconcile('repeat', patch)).status, 404)
+      assert.equal((await reconcile('old', { cost: '0' })).status, 400)
+      assert.equal((await reconcile('old', patch)).status, 200)
+      assert.equal((await reconcile('old', patch)).status, 409)
+      const reconciled = (await (await report('calls')).json()).data.items.find((call) => call.id === 'old')
+      assert.equal(Number(reconciled.amount), 0)
+      assert.equal(Number(reconciled.margin), 4)
+      assert.equal(reconciled.costEvidence, patch.evidence)
+      const pending = (await (await report('calls', '&pending=1')).json()).data
+      assert.ok(!pending.items.some((call) => call.id === 'old'))
+      const [[audit]] = await pool.query(
+        "SELECT actor_id,evidence FROM ai_vendor_cost_reconciliations WHERE ledger_id='old'",
+      )
+      assert.equal(audit.actor_id, actor.id)
+      assert.equal(audit.evidence, patch.evidence)
+      keys = ['vendor_cost.view']
       assert.equal((await save({ id, disabled: true })).status, 403)
       keys = ['end_users.manage']
       assert.equal((await save({ id, disabled: true })).status, 200)

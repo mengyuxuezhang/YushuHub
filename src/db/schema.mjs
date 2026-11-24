@@ -1642,6 +1642,12 @@ export async function initDatabase(options = {}) {
   }
   await ensureColumn('ai_credit_ledger','vendor_cost','JSON NULL')
   await ensureColumn('ai_credit_ledger','sale_cny','DECIMAL(30,12) NULL')
+  await pool.query(`CREATE TABLE IF NOT EXISTS ai_vendor_cost_reconciliations (
+    ledger_id VARCHAR(64) NOT NULL, field ENUM('cost','sales') NOT NULL, amount DECIMAL(30,12) NOT NULL,
+    evidence VARCHAR(500) NOT NULL, actor_id VARCHAR(64) NOT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (ledger_id,field)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
   await ensureColumn('ai_credit_ledger','cost_used_at','DATETIME(3) NULL')
   await ensureIndex('ai_credit_ledger','idx_ledger_cost_month','ADD INDEX idx_ledger_cost_month (change_type,cost_used_at)')
   await ensureColumn('ai_credit_ledger','call_kind','VARCHAR(24) NULL')

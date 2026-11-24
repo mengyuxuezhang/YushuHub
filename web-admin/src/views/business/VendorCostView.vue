@@ -9,12 +9,30 @@ import {
   type CostGroup,
 } from '@/api/vendor-cost'
 import { toUserMessage } from '@/api/client'
+import VendorCostCalls from '@/components/business/VendorCostCalls.vue'
+import VendorCostPeriod from '@/components/business/VendorCostPeriod.vue'
+import { datePreset } from '@/utils/user-usage'
 
-const month = ref(new Date(Date.now() + 28800000).toISOString().slice(0, 7))
+const range = ref(datePreset('month'))
+const dayInMs = 86400000
 const source = ref(''),
   type = ref(''),
   department = ref(''),
   page = ref(1)
+const pageSize = ref(20),
+  pending = ref(false),
+  callTotal = ref(0),
+  totalPages = ref(0),
+  callsBusy = ref(false),
+  callsError = ref('')
+function setPageSize(value: number) {
+  pageSize.value = value
+  page.value = 1
+}
+function setPending(value: boolean) {
+  pending.value = value
+  page.value = 1
+}
 const groups = ref<CostGroup[]>([]),
   calls = ref<CostCall[]>([]),
   members = ref<CostMember[]>([]),
@@ -31,7 +49,7 @@ const kinds: Record<string, string> = {
   other: '其他',
 }
 watch(
-  [month, source, type],
+  [range, source, type],
   () => {
     department.value = ''
     page.value = 1
@@ -56,25 +74,46 @@ function openDepartment(key: string) {
   department.value = key
 }
 let revision = 0
-async function load() {
+function reportQuery() {
+  return new URLSearchParams({ ...range.value, source: source.value, type: type.value })
+}
+let callRevision = 0
+async function loadCalls() {
+  const request = ++callRevision
+  callsBusy.value = true
+  callsError.value = ''
+  const q = reportQuery()
+  q.set('department', department.value)
+  q.set('page', String(page.value))
+  q.set('pageSize', String(pageSize.value))
+  if (pending.value) q.set('pending', '1')
+  try {
+    const result = await costCalls(q)
+    if (request !== callRevision) return
+    calls.value = result.items
+    callTotal.value = result.total
+    totalPages.value = result.totalPages
+    if (page.value !== result.page) page.value = result.page
+  } catch (error) {
+    if (request === callRevision) callsError.value = toUserMessage(error)
+  } finally {
+    if (request === callRevision) callsBusy.value = false
+  }
+}
+async function loadSummary() {
   const request = ++revision
   busy.value = true
   error.value = ''
-  const q = new URLSearchParams({ month: month.value, source: source.value, type: type.value })
+  const q = reportQuery()
   try {
     const departmentQuery = new URLSearchParams(q)
     departmentQuery.set('department', department.value)
-    const [summary, detail, breakdown] = await Promise.all([
+    const [summary, breakdown] = await Promise.all([
       costGroups(q),
-
-      costCalls(
-        new URLSearchParams({ ...Object.fromEntries(q), department: department.value, page: String(page.value) }),
-      ),
       department.value ? costMembers(departmentQuery) : Promise.resolve([]),
     ])
     if (request === revision) {
       groups.value = summary
-      calls.value = detail
       members.value = breakdown
     }
   } catch (e) {
@@ -90,7 +129,11 @@ async function load() {
     }
   }
 }
-watch([month, source, type, department, page], load, { immediate: true })
+function load() {
+  return Promise.all([loadSummary(), loadCalls()])
+}
+watch([range, source, type, department], loadSummary, { immediate: true })
+watch([range, source, type, department, page, pageSize, pending], loadCalls, { immediate: true })
 type Total = {
   calls: number
   known: number
@@ -147,10 +190,20 @@ const rank = computed(() => {
     .sort((a, b) => b.amount - a.amount)
 })
 const trend = computed(() => {
-  const days = new Date(Number(month.value.slice(0, 4)), Number(month.value.slice(5)), 0).getDate()
-  return Array.from({ length: days }, (_, i) => {
-    const day = String(i + 1).padStart(2, '0')
-    return { day, ...sum(visible.value.filter((g) => g.day === month.value + '-' + day)) }
+  const from = Date.parse(range.value.startDate),
+    to = Date.parse(range.value.endDate)
+  const days = (to - from) / dayInMs + 1
+  const step = days > 45 ? 7 : 1
+  return Array.from({ length: Math.ceil(days / step) }, (_, index) => {
+    const start = from + index * step * dayInMs
+    const startKey = new Date(start).toISOString().slice(0, 10)
+    const endKey = new Date(Math.min(start + (step - 1) * dayInMs, to)).toISOString().slice(0, 10)
+    return {
+      key: startKey,
+      day: startKey.slice(5),
+      label: step === 1 ? startKey : startKey + ' 至 ' + endKey,
+      ...sum(visible.value.filter((g) => g.day >= startKey && g.day <= endKey)),
+    }
   })
 })
 const peak = computed(() => Math.max(...trend.value.map((d) => d.amount), 1e-12))
@@ -172,7 +225,7 @@ const coveredMoney = (value: number | string | null, known?: number) =>
         <h1>成本看板</h1>
         <p>消费销售额按调用时的售价和用量计算，充值实收见支付中心。毛利仅汇总售价与成本均已核算的调用。</p>
       </div>
-      <label>账期（北京时间） <input v-model="month" type="month" required /></label>
+      <VendorCostPeriod v-model="range" />
     </header>
     <nav class="cost-filters">
       <label
@@ -202,8 +255,8 @@ const coveredMoney = (value: number | string | null, known?: number) =>
     <template v-else
       ><div class="cost-stats">
         <div class="panel-card">
-          <small>当月可核算厂商成本（元）</small
-          ><strong>{{ !total.calls ? '本月暂无调用' : total.known ? money(total.amount) : '暂无法核算' }}</strong>
+          <small>可核算厂商成本（元）</small
+          ><strong>{{ !total.calls ? '本期暂无调用' : total.known ? money(total.amount) : '暂无法核算' }}</strong>
         </div>
         <div class="panel-card">
           <small>可核算消费销售额</small
@@ -277,13 +330,13 @@ const coveredMoney = (value: number | string | null, known?: number) =>
         </div>
       </div>
       <div v-if="total.calls" class="panel-card cost-section">
-        <h2>每日成本趋势</h2>
+        <h2>成本趋势</h2>
         <div class="cost-bars">
           <div
             v-for="d in trend"
-            :key="d.day"
+            :key="d.key"
             tabindex="0"
-            :title="d.day + '日 · ' + (d.known ? money(d.amount) : d.calls ? '待核算' : '无调用')"
+            :title="d.label + ' · ' + (d.known ? money(d.amount) : d.calls ? '待核算' : '无调用')"
           >
             <i :style="{ height: (d.amount / peak) * 85 + 1 + 'px' }"></i><small>{{ d.day }}</small>
           </div>
@@ -331,48 +384,23 @@ const coveredMoney = (value: number | string | null, known?: number) =>
           </table>
         </div>
       </div>
-      <div class="panel-card cost-section">
-        <h2>逐笔调用</h2>
-        <p v-if="total.imageCalls">
-          生图 {{ total.imageCalls }} 次 · 可确认出图 {{ total.images ?? '未记录' }} 张
-        </p>
-        <div class="data-table-scroll">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>发生时间（北京时间）</th>
-                <th>用户 / 部门</th>
-                <th>终端</th>
-                <th>调用类型</th>
-                <th>厂商成本</th>
-                <th>消费销售额</th>
-                <th>消耗积分</th>
-                <th>消费毛利</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="c in calls" :key="c.id">
-                <td>
-                  {{ c.usedAt }}<small class="cell-note">{{ c.requestId || c.id }}</small>
-                </td>
-                <td>{{ c.displayName || c.username }} · {{ c.departmentName }}</td>
-                <td>{{ sources[c.source] || '未知' }}</td>
-                <td>{{ kinds[c.kind] }} {{ c.kind === 'image' && c.images != null ? c.images + ' 张' : '' }}</td>
-                <td>{{ coveredMoney(c.amount) }}</td>
-                <td>{{ coveredMoney(c.sales) }}</td>
-                <td>{{ points(c.points) }}</td>
-                <td :class="{ 'negative-margin': Number(c.margin) < 0 }">{{ coveredMoney(c.margin) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <nav v-if="total.calls > 20" class="cost-filters">
-          <button :disabled="page === 1" @click="page--">上一页</button>{{ page }} /
-          {{ Math.ceil(total.calls / 20)
-          }}<button :disabled="page * 20 >= total.calls" @click="page++">下一页</button>
-        </nav>
-      </div></template
-    >
+      <VendorCostCalls
+        :calls="calls"
+        :total="total"
+        :page="page"
+        :page-size="pageSize"
+        :call-total="callTotal"
+        :total-pages="totalPages"
+        :pending="pending"
+        :loading="callsBusy"
+        :error="callsError"
+        @page="page = $event"
+        @size="setPageSize"
+        @pending="setPending"
+        @updated="load"
+        @reload="loadCalls"
+      />
+    </template>
   </section>
 </template>
 <style scoped>
@@ -382,6 +410,7 @@ const coveredMoney = (value: number | string | null, known?: number) =>
   scroll-margin-top: 84px;
   gap: 16px;
 }
+.billing-period,
 .cost-filters {
   display: flex;
   flex-wrap: wrap;

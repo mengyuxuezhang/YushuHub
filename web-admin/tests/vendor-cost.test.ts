@@ -1,4 +1,5 @@
 import { createApp, nextTick } from 'vue'
+import { createPinia } from 'pinia'
 import VendorCostView from '@/views/business/VendorCostView.vue'
 import * as costs from '@/api/vendor-cost'
 vi.mock('@/api/vendor-cost', () => ({ costCalls: vi.fn(), costGroups: vi.fn(), costMembers: vi.fn() }))
@@ -20,25 +21,25 @@ const row = {
 }
 describe('成本看板', () => {
   it.each([
-    [[], '本月暂无调用'],
+    [[], '本期暂无调用'],
     [[{ ...row, known: 0, amount: null }], '暂无法核算'],
     [[row], '¥0.00'],
     [[{ ...row, amount: '0.00000004' }], '¥0.00000004'],
   ] as const)('renders the amount according to cost coverage', async (groups, expected) => {
     vi.mocked(costs.costGroups).mockResolvedValue([...groups])
-    vi.mocked(costs.costCalls).mockResolvedValue([])
+    vi.mocked(costs.costCalls).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, totalPages: 0 })
     const host = document.createElement('div'),
       app = createApp(VendorCostView)
-    app.mount(host)
+    app.use(createPinia()).mount(host)
     await vi.waitFor(() => expect(host.textContent).toContain(expected))
     app.unmount()
   })
   it('opens calls for the selected department', async () => {
     vi.mocked(costs.costGroups).mockResolvedValue([row])
-    vi.mocked(costs.costCalls).mockResolvedValue([])
+    vi.mocked(costs.costCalls).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, totalPages: 0 })
     const host = document.createElement('div'),
       app = createApp(VendorCostView)
-    app.mount(host)
+    app.use(createPinia()).mount(host)
     await vi.waitFor(() => expect(host.querySelector('tbody button')).toBeTruthy())
     vi.mocked(costs.costMembers).mockResolvedValue([
       {

@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { PageResult } from '@/types/pagination'
 
 export interface CostTotals {
   sales: string | null
@@ -39,6 +40,8 @@ export interface CostCall {
   sales: string | null
   points: string
   margin: string | null
+  costEvidence?: string
+  salesEvidence?: string
   images: number | null
 }
 export interface Department {
@@ -51,7 +54,12 @@ export interface Department {
 const base = '/api/reports/vendor-cost/'
 export const costGroups = (query: URLSearchParams) => api<CostGroup[]>(base + 'overview?' + query)
 export const costMembers = (query: URLSearchParams) => api<CostMember[]>(base + 'members?' + query)
-export const costCalls = (query: URLSearchParams) => api<CostCall[]>(base + 'calls?' + query)
+export const costCalls = (query: URLSearchParams) => api<PageResult<CostCall>>(base + 'calls?' + query)
+export const reconcileCostCall = (id: string, input: { cost?: string; sales?: string; evidence: string }) =>
+  api<boolean>(base + 'calls/' + encodeURIComponent(id) + '/reconcile', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
 export const departments = () => api<Department[]>('/api/cost-departments')
 export const updateDepartments = (body: {
   organizationId: string

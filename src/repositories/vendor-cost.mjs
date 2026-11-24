@@ -1,12 +1,27 @@
 import { eventMeter } from './user-usage-report.mjs'
-import { beijingDate, REPORT_TYPES, reportError } from '../services/user-usage-report.mjs'
+import { beijingDate, REPORT_TYPES, normalizeReportQuery, reportError } from '../services/user-usage-report.mjs'
 
 export function costQuery(input = {}) {
   const month = String(input.month ?? beijingDate().slice(0, 7))
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw reportError('月份无效')
-  const start = Date.parse(month + '-01T00:00:00+08:00') / 1000
+  let start = Date.parse(month + '-01T00:00:00+08:00') / 1000
   const next = new Date(month + '-01T00:00:00Z')
   next.setUTCMonth(next.getUTCMonth() + 1)
+  let end = next.getTime() / 1000 - 28800
+  if (input.startDate !== undefined || input.endDate !== undefined) {
+    if (
+      typeof input.startDate !== 'string' ||
+      !input.startDate ||
+      typeof input.endDate !== 'string' ||
+      !input.endDate
+    )
+      throw reportError('请选择开始和结束日期')
+    const range = normalizeReportQuery({ startDate: input.startDate, endDate: input.endDate })
+    start = Date.parse(range.start.replace(' ', 'T') + '+08:00') / 1000
+    end = Date.parse(range.end.replace(' ', 'T') + '+08:00') / 1000
+  }
+  const pageSize = Number(input.pageSize ?? 20)
+  if (![10, 20, 50, 100].includes(pageSize)) throw reportError('每页条数无效')
   const page = Number(input.page ?? 1)
   if (!Number.isSafeInteger(page) || page < 1 || page > 1000000) throw reportError('页码无效')
   if (input.source && !['desktop', 'android', 'admin', 'unknown'].includes(input.source))
@@ -14,7 +29,9 @@ export function costQuery(input = {}) {
   if (input.type && !REPORT_TYPES.includes(input.type)) throw reportError('调用类型无效')
   return {
     start,
-    end: next.getTime() / 1000 - 28800,
+    end,
+    pageSize,
+    pending: input.pending === '1',
     page,
     department: String(input.department || ''),
     source: input.source || '',
@@ -46,6 +63,7 @@ function costFacts(actor, q) {
       params.push(q[key])
     }
   }
+  if (q.pending) filters.push('(amount IS NULL OR sales IS NULL)')
   const sql = `SELECT * FROM (SELECT l.id,l.request_id AS requestId,u.id AS userId,u.username,u.display_name AS displayName,
     DATE_FORMAT(DATE_ADD('1970-01-01',INTERVAL (UNIX_TIMESTAMP(${usedAt})+28800) SECOND),'%Y-%m-%d %H:%i:%s') AS usedAt,
     CONCAT(${org},'/',COALESCE(l.cost_department_id,'history')) AS departmentKey,
@@ -94,11 +112,26 @@ export async function readVendorCosts(pool, actor, input, view) {
     return rows
   }
   if (view === 'calls') {
+    const [[count]] = await pool.query('SELECT COUNT(*) AS total' + from, params)
+    const total = Number(count.total)
+    const totalPages = Math.ceil(total / q.pageSize)
+    const page = Math.min(q.page, Math.max(1, totalPages))
     const [rows] = await pool.query(
-      'SELECT *,sales-amount AS margin' + from + ' ORDER BY usedAt DESC,id LIMIT 20 OFFSET ?',
-      [...params, (q.page - 1) * 20],
+      'SELECT *,sales-amount AS margin' + from + ' ORDER BY usedAt DESC,id LIMIT ? OFFSET ?',
+      [...params, q.pageSize, (page - 1) * q.pageSize],
     )
-    return rows
+    if (rows.length) {
+      const [audit] = await pool.query(
+        'SELECT ledger_id,field,evidence FROM ai_vendor_cost_reconciliations WHERE ledger_id IN (?)',
+        [rows.map((row) => row.id)],
+      )
+      const byLedger = new Map(rows.map((row) => [row.id, row]))
+      for (const item of audit) {
+        const row = byLedger.get(item.ledger_id)
+        row[item.field === 'cost' ? 'costEvidence' : 'salesEvidence'] = item.evidence
+      }
+    }
+    return { items: rows, total, page, pageSize: q.pageSize, totalPages }
   }
   // Aggregate once by day and department; the same rows drive every subtotal.
   const [groups] = await pool.query(
@@ -109,4 +142,54 @@ export async function readVendorCosts(pool, actor, input, view) {
     params,
   )
   return groups
+}
+
+export async function reconcileVendorCall(pool, actor, id, input = {}) {
+  const evidence = typeof input.evidence === 'string' ? input.evidence.trim() : ''
+  if (!evidence || evidence.length > 500) throw reportError('请填写核算依据（最多 500 字）')
+  const entries = [
+    ['cost', input.cost],
+    ['sales', input.sales],
+  ].filter(([, value]) => value !== undefined)
+  if (
+    !entries.length ||
+    entries.some(([, value]) => typeof value !== 'string' || !/^\d{1,18}(?:\.\d{1,12})?$/.test(value))
+  ) {
+    throw reportError('至少填写一项有效人民币金额，最多 12 位小数')
+  }
+  const scope = organizationScope(actor, "COALESCE(NULLIF(l.organization_id,''),u.organization_id)")
+  const conn = await pool.getConnection()
+  try {
+    await conn.beginTransaction()
+    const [[row]] = await conn.query(
+      `SELECT l.vendor_cost,l.sale_cny FROM ai_credit_ledger l JOIN ai_end_users u ON u.id=l.user_id
+      WHERE l.id=? AND ${scope.sql} AND l.change_type='consume' AND l.deduct_status IN ('succeeded','missing_usage')
+      AND (l.request_id='' OR NOT EXISTS (SELECT 1 FROM ai_credit_ledger prior WHERE prior.user_id=l.user_id
+        AND prior.request_id=l.request_id AND prior.change_type='consume' AND prior.deduct_status IN ('succeeded','missing_usage') AND prior.id<l.id))
+      FOR UPDATE`,
+      [id, ...scope.params],
+    )
+    if (!row) throw reportError('调用记录不存在', 404)
+    for (const [field, value] of entries) {
+      if (field === 'cost' ? row.vendor_cost != null : row.sale_cny != null)
+        throw reportError('该金额已经核算，请刷新后重试', 409)
+      await conn.query(
+        'INSERT INTO ai_vendor_cost_reconciliations (ledger_id,field,amount,evidence,actor_id) VALUES (?,?,?,?,?)',
+        [id, field, value, evidence, actor.id],
+      )
+      if (field === 'cost')
+        await conn.query('UPDATE ai_credit_ledger SET vendor_cost=? WHERE id=?', [
+          JSON.stringify({ cny: value, amounts: { CNY: value }, rates: { CNY: 1 }, source: 'manual' }),
+          id,
+        ])
+      else await conn.query('UPDATE ai_credit_ledger SET sale_cny=? WHERE id=?', [value, id])
+    }
+    await conn.commit()
+    return true
+  } catch (error) {
+    await conn.rollback()
+    throw error
+  } finally {
+    conn.release()
+  }
 }

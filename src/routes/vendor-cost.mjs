@@ -1,7 +1,7 @@
 import { listDepartments, updateDepartments } from '../repositories/cost-departments.mjs'
 import { db } from '../db/pool.mjs'
 import { requireAuth, requirePermission } from '../middleware/auth.mjs'
-import { readVendorCosts } from '../repositories/vendor-cost.mjs'
+import { readVendorCosts, reconcileVendorCall } from '../repositories/vendor-cost.mjs'
 
 export function registerVendorCostRoutes(app) {
   const read = requirePermission('vendor_cost.view', '成本看板')
@@ -22,6 +22,13 @@ export function registerVendorCostRoutes(app) {
       read,
       handler((req) => readVendorCosts(db(), req.user, req.query, method)),
     )
+  app.post(
+    '/api/reports/vendor-cost/calls/:id/reconcile',
+    requireAuth,
+    read,
+    requirePermission('credits.manage', '补录调用账单'),
+    handler((req) => reconcileVendorCall(db(), req.user, req.params.id, req.body)),
+  )
   const base = '/api/cost-departments'
   app.get(
     base,
