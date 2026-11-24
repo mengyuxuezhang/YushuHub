@@ -68,3 +68,17 @@ export async function claimWorkerBuild(database, { buildId, projectId, workerId,
     connection.release()
   }
 }
+
+export async function failUnacknowledgedWorkerBuild(database, workerId) {
+  // An explicit idle heartbeat can arrive shortly after a claim response was
+  // lost. Give the worker time to start and report its build before recovery.
+  await database.query(
+    `UPDATE ai_builds
+     SET status = 'failed', error = ?, finished_at = CURRENT_TIMESTAMP(3),
+         log = RIGHT(CONCAT(COALESCE(log, ''), ?), 120000)
+     WHERE claimed_by = ? AND status = 'running' AND remote_build_id IS NULL
+       AND TIMESTAMPDIFF(SECOND, GREATEST(started_at, updated_at), CURRENT_TIMESTAMP(3)) > 120`,
+    ['构建机已恢复空闲，原构建已中断，请重试构建',
+      '[center] Worker reported idle; interrupted build can be retried\n', workerId],
+  )
+}

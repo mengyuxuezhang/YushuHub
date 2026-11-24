@@ -200,6 +200,35 @@ test('worker heartbeat ignores builders outside the retained allowlist', async (
   assert.equal(queried, false)
 })
 
+test('worker heartbeat releases old interrupted claims only when the worker explicitly reports idle', async () => {
+  const writes = []
+  setPool({
+    query: async (sql, params) => {
+      if (sql.startsWith('UPDATE')) {
+        writes.push({ sql, params })
+        return [{ affectedRows: 1 }]
+      }
+      return [[]]
+    },
+  })
+  try {
+    const workerId = 'local-windows-v3'
+    const handler = postHandler('/api/worker/heartbeat', { touchWorker: async (_id, patch) => patch })
+    for (const currentBuildId of ['running-build', undefined, '']) {
+      const res = responseRecorder()
+      await handler({ body: { workerId, currentBuildId } }, res)
+      assert.equal(res.body.success, true)
+      assert.equal(res.body.data.currentBuildId, currentBuildId || '')
+      assert.equal(writes.length, currentBuildId === '' ? 1 : 0)
+    }
+    assert.match(writes[0].sql, /claimed_by = \? AND status = 'running' AND remote_build_id IS NULL/)
+    assert.match(writes[0].sql, /GREATEST\(started_at, updated_at\).* > 120/)
+    assert.equal(writes[0].params.at(-1), workerId)
+  } finally {
+    setPool(null)
+  }
+})
+
 test('platform publish route rejects a supplier delegated build', async () => {
   let started = false
   const handler = publishHandler({

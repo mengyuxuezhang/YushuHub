@@ -21,6 +21,7 @@ import { resolvePublicUrlsForRequest } from '../utils/public-url.mjs'
 import { annotateWorkerSourceStatus, isManagedWorkerId, resolveWorkerHeartbeatBuildId } from '../services/worker-scheduling.mjs'
 import { buildStatusColumns, compactBuildStatus } from '../services/build-status-view.mjs'
 import { privateUploadField, validateUploadGrant } from '../services/direct-build-artifacts.mjs'
+import { failUnacknowledgedWorkerBuild } from '../repositories/worker-build-queue.mjs'
 
 export function isCenterDelegatedBuild(build) {
   return Boolean(String(build?.centerSupplierId || '').trim())
@@ -482,6 +483,7 @@ export function registerBuildRoutes(app, deps) {
         return
       }
       const reportedBuildId = String(req.body?.currentBuildId || '').trim()
+      if (req.body?.currentBuildId === '') await failUnacknowledgedWorkerBuild(db(), workerId)
       const [runningRows] = reportedBuildId ? [[]] : await db().query(
         "SELECT id FROM ai_builds WHERE claimed_by = ? AND status = 'running' ORDER BY started_at DESC LIMIT 1",
         [workerId],
