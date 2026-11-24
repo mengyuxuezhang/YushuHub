@@ -81,7 +81,8 @@ function formatDate(value:any){
         <table class="data-table business-data-table end-user-table">
           <colgroup>
             <col class="end-user-col-user" />
-            <col class="end-user-col-source" /><col />
+            <col class="end-user-col-source" />
+            <col class="end-user-col-department" />
             <col class="end-user-col-points" />
             <col class="end-user-col-membership" />
             <col class="end-user-col-times" />
@@ -91,7 +92,8 @@ function formatDate(value:any){
           <thead>
             <tr>
               <th>用户</th>
-              <th>来源组织</th><th>部门</th>
+              <th>来源组织</th>
+              <th>部门</th>
               <th>积分余额</th>
               <th>会员权益</th>
               <th>注册 / 活跃</th>
@@ -118,12 +120,13 @@ function formatDate(value:any){
                 }}</small>
               </td>
               <td>
-                {{ user.departmentName }}
-              </td><td>
-                <span class="metric-number">{{
-                  user.creditBalance ?? 0
-                }}</span
-                ><small class="cell-note">可用积分</small>
+                <span class="end-user-department" :title="user.departmentName">{{ user.departmentName }}</span>
+              </td>
+              <td>
+                <span class="metric-number" :title="String(user.creditBalance ?? 0)">
+                  {{ user.creditBalance ?? 0 }}
+                </span>
+                <small class="cell-note">可用积分</small>
               </td>
               <td>
                 <span class="soft-tag"
