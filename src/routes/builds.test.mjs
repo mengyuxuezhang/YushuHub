@@ -42,6 +42,33 @@ function responseRecorder() {
   }
 }
 
+test('worker logs and completion acknowledge status without returning the full build', async () => {
+  let build = { id: 'build-1', claimedBy: 'worker-1', status: 'running', target: 'android',
+    brand: { logoUrl: 'data:image/png;base64,' + 'a'.repeat(2_000_000) } }
+  let updates = 0
+  const deps = {
+    findBuildById: async () => build,
+    appendBuildLog: async (_id, chunk) => (build = { ...build, log: chunk }),
+    updateBuild: async (_id, patch) => { updates++; return (build = { ...build, ...patch }) },
+    touchWorker: async () => {},
+  }
+  const log = postHandler('/api/worker/builds/:id/log', deps)
+  const complete = postHandler('/api/worker/builds/:id/complete', deps)
+  const request = { params: { id: build.id }, headers: {}, body: { workerId: build.claimedBy, chunk: 'build log' } }
+  const res = responseRecorder()
+  await log(request, res)
+  assert.deepEqual(res.body, { success: true, data: { id: build.id, status: 'running' } })
+  assert.equal(build.log, 'build log')
+
+  const files = ['android-build-1-arm64.apk', 'android-build-1-brand.zip', 'android-build-1-update.json']
+  await complete({ ...request, body: { workerId: build.claimedBy, status: 'succeeded', files } }, res)
+  assert.deepEqual(res.body, { success: true, data: { id: build.id, status: 'succeeded' } })
+  assert.deepEqual(build.files, files)
+  await complete({ ...request, body: { workerId: build.claimedBy, status: 'failed', error: 'response timeout' } }, res)
+  assert.deepEqual(res.body, { success: true, data: { id: build.id, status: 'succeeded' } })
+  assert.equal(updates, 1)
+})
+
 test('desktop and Android push use separate release actions; old desktop callers remain compatible', async () => {
   const calls = []
   const handler = publishHandler({

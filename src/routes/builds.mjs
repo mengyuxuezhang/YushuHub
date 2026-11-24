@@ -513,7 +513,8 @@ export function registerBuildRoutes(app, deps) {
       }
       const build = await appendBuildLog(req.params.id, String(req.body?.chunk || ''))
       await touchWorker(workerId, { status: 'online', currentBuildId: req.params.id })
-      res.json({ success: true, data: build })
+      // Workers only need acknowledgement. A build can embed multi-megabyte brand assets.
+      res.json({ success: true, data: { id: current.id, status: build?.status ?? current.status } })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
     }
@@ -539,7 +540,7 @@ export function registerBuildRoutes(app, deps) {
       const status = req.body?.status === 'succeeded' && !invalidArtifacts ? 'succeeded' : 'failed'
       // A lost response can be retried by the same Worker without publishing again.
       if (current.status === 'succeeded') {
-        res.json({ success: true, data: current })
+        res.json({ success: true, data: { id: current.id, status: current.status } })
         return
       }
       if (req.body?.directUpload && (status !== 'succeeded' || current.status !== 'running' || !directBuildUploads)) {
@@ -558,7 +559,7 @@ export function registerBuildRoutes(app, deps) {
       })
       if (req.body?.log) await appendBuildLog(req.params.id, String(req.body.log))
       await touchWorker(workerId, { status: 'online', currentBuildId: '', completed: true })
-      res.json({ success: true, data: build })
+      res.json({ success: true, data: { id: build.id, status: build.status } })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
     }
