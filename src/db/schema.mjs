@@ -1641,6 +1641,7 @@ export async function initDatabase(options = {}) {
     await ensureColumn(table,'cost_department_id','VARCHAR(64) NULL')
   }
   await ensureColumn('ai_credit_ledger','vendor_cost','JSON NULL')
+  await ensureColumn('ai_credit_ledger','sale_cny','DECIMAL(30,12) NULL')
   await ensureColumn('ai_credit_ledger','cost_used_at','DATETIME(3) NULL')
   await ensureIndex('ai_credit_ledger','idx_ledger_cost_month','ADD INDEX idx_ledger_cost_month (change_type,cost_used_at)')
   await ensureColumn('ai_credit_ledger','call_kind','VARCHAR(24) NULL')

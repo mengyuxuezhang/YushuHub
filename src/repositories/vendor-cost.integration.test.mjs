@@ -7,7 +7,13 @@ import { initDatabase } from '../db/schema.mjs'
 import { setPool } from '../db/pool.mjs'
 import { setAuthDependencies } from '../middleware/auth.mjs'
 import { registerVendorCostRoutes } from '../routes/vendor-cost.mjs'
-import { migrateVendorCosts, historicalTaskCost, settledCost, directCallCost } from '../services/vendor-cost.mjs'
+import {
+  migrateVendorCosts,
+  historicalTaskCost,
+  settledCost,
+  settledSale,
+  directCallCost,
+} from '../services/vendor-cost.mjs'
 import { quotePricing, usageEvent } from '../services/compound-pricing.mjs'
 import { ModelOperationRepository } from './model-operations.mjs'
 import { VoiceOperationRepository } from './voice-operations.mjs'
@@ -47,6 +53,15 @@ test('vendor costs use recorded rates and price, including free-to-user calls an
   assert.equal(
     directCallCost({ ...ctx, pricingPlan: tokenPlan }, { compoundQuote: tokenQuote }, { prompt_tokens: 1 }).cny,
     0.0000007,
+  )
+  const salePlan = { ...plan, components: [{ ...plan.components[0], metadata: { salePriceCny: 25 } }] }
+  assert.equal(settledSale(quotePricing(salePlan, events, rates)), 25)
+  assert.equal(settledSale(quote), null)
+  assert.equal(
+    settledSale(
+      quotePricing({ ...plan, components: [{ ...plan.components[0], salePriceCny: 0 }] }, events, rates),
+    ),
+    0,
   )
   assert.equal(quote.points, 0)
   assert.equal(settledCost(quote, rates).cny, 14)
@@ -178,6 +193,24 @@ test(
       assert.equal(Number(members[0].amount), 3)
       assert.equal(Number(members[0].calls), 2)
       assert.equal((await report('members')).status, 400)
+      await pool.query("UPDATE ai_credit_ledger SET sale_cny=5,points_delta=-30 WHERE id='image'")
+      await pool.query("UPDATE ai_credit_ledger SET sale_cny=4,points_delta=-20 WHERE id='old'")
+      const [financial] = (
+        await (await report('members', '&department=' + encodeURIComponent(org.id + '/' + id))).json()
+      ).data
+      assert.equal(Number(financial.points), 30)
+      assert.equal(Number(financial.sales), 5)
+      assert.equal(Number(financial.margin), 2)
+      assert.equal(Number(financial.marginKnown), 1)
+      const financeGroups = (await (await report('overview')).json()).data
+      assert.equal(
+        financeGroups.reduce((total, g) => total + Number(g.sales), 0),
+        9,
+      )
+      assert.equal(
+        financeGroups.reduce((total, g) => total + Number(g.margin), 0),
+        2,
+      )
       assert.equal(rows.length, 4)
       assert.equal(
         groups.reduce((s, g) => s + Number(g.known), 0),
@@ -249,6 +282,7 @@ test(
       await save({ id: 'newteam', userIds: ['alice'] })
       const firstQuote = settledCost(quotePricing(plan, events, rates), rates)
       const finish = {
+        saleCny: 25,
         status: 'succeeded',
         points: 0,
         vendorCost: firstQuote,
@@ -260,7 +294,7 @@ test(
       await voiceOps.finish(endUser, voice.operation.id, finish)
       await voiceOps.finish(endUser, voice.operation.id, finish)
       const [settled] = await pool.query(
-        'SELECT request_id,vendor_cost,cost_department_id,cost_used_at FROM ai_credit_ledger WHERE request_id IN (?)',
+        'SELECT request_id,vendor_cost,cost_department_id,cost_used_at,sale_cny FROM ai_credit_ledger WHERE request_id IN (?)',
         [[model.operation.id, voice.operation.id]],
       )
       assert.equal(settled.length, 2)
@@ -271,6 +305,7 @@ test(
           14,
         )
         assert.ok(item.cost_used_at)
+        assert.equal(Number(item.sale_cny), 25)
       }
       const nextPlan = { ...plan, components: [{ ...plan.components[0], costAmount: 3 }] }
       const later = await modelOps.reserve(endUser, {

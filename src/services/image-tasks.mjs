@@ -1,4 +1,4 @@
-import { settledCost } from './vendor-cost.mjs'
+import { settledCost, settledSale } from './vendor-cost.mjs'
 import { selectImageSpec, outputImageSpec } from './image-model-specs.mjs'
 import { assertImagePlan, imageBillingEvents } from './image-task-billing.mjs'
 import { createHash } from 'node:crypto'
@@ -114,7 +114,7 @@ export class ImageTaskService {
       const usage = imageBillingEvents(snapshot.plan, context.imageConfig, actualSpec, payload.usage)
       const final = quotePricing(snapshot.plan, usage, snapshot.exchangeRates)
       if (final.points > estimate.points) throw fail('图片实际计费超过预占，请核对原任务', 409, 'IMAGE_TASK_OUTCOME_UNKNOWN')
-      outcome = { status: 'succeeded', points: final.points, usage, vendorCost: settledCost(final, snapshot.exchangeRates), costSnapshot: final.costByCurrency, result: {
+      outcome = { status: 'succeeded', points: final.points, usage, vendorCost: settledCost(final, snapshot.exchangeRates), saleCny: settledSale(final), costSnapshot: final.costByCurrency, result: {
         ...data, requestId: id, providerId: context.provider.id, providerName: context.provider.name,
         billing: { billingType: 'compound_v2', tierCounts: {}, generatedImages: data.images.length, points: final.points },
       } }

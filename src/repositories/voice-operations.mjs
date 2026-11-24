@@ -66,7 +66,7 @@ export class VoiceOperationRepository {
     })
   }
 
-  async finish(user, id, { status, points = 0, result = null, vendorCost = null, errorCode = '' }) {
+  async finish(user, id, { status, points = 0, result = null, vendorCost = null, saleCny = null, errorCode = '' }) {
     if (!['succeeded', 'failed', 'outcome_unknown'].includes(status) || !Number.isFinite(points) || points < 0) throw failure('VOICE_INPUT_INVALID', '任务结果无效', 400)
     return this.transaction(async connection => {
       await connection.query('SELECT id FROM ai_end_users WHERE id=? AND organization_id=? FOR UPDATE', [user.id, user.organizationId])
@@ -82,9 +82,9 @@ export class VoiceOperationRepository {
       if (status === 'succeeded') {
         const [[balance]] = await connection.query('SELECT credit_balance FROM ai_end_users WHERE id=?', [user.id])
         await connection.query(`INSERT INTO ai_credit_ledger
-          (id,user_id,organization_id,change_type,points_delta,balance_after,request_id,billing_type,deduct_status,note,client_source,cost_department_id,vendor_cost,cost_used_at)
-          VALUES (?,?,?,'consume',?,?,?,'voice','succeeded',?,?,?,?,?)`,
-        [randomUUID(), user.id, user.organizationId, -settled, balance.credit_balance, id, `语音服务：${row.operation_type}`, normalizeLedgerSource(row.client_source), row.cost_department_id ?? null, vendorCost ? JSON.stringify(vendorCost) : null, row.created_at ?? null])
+          (id,user_id,organization_id,change_type,points_delta,balance_after,request_id,billing_type,deduct_status,note,client_source,cost_department_id,vendor_cost,cost_used_at,sale_cny)
+          VALUES (?,?,?,'consume',?,?,?,'voice','succeeded',?,?,?,?,?,?)`,
+        [randomUUID(), user.id, user.organizationId, -settled, balance.credit_balance, id, `语音服务：${row.operation_type}`, normalizeLedgerSource(row.client_source), row.cost_department_id ?? null, vendorCost ? JSON.stringify(vendorCost) : null, row.created_at ?? null, saleCny])
       }
       await connection.query(`UPDATE ai_voice_operations SET status=?,points_settled=?,points_reserved=0,
         result_json=?,error_code=?,completed_at=CURRENT_TIMESTAMP(3) WHERE id=?`, [status, settled, result === null ? null : JSON.stringify(result), errorCode, id])

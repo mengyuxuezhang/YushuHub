@@ -28,7 +28,11 @@ export function normalizePricingComponent(input = {}) {
   const currency = String(input.costCurrency || 'CNY').trim().toUpperCase()
   if (!/^[A-Z]{3}$/.test(currency)) throw new Error('成本币种无效')
   const rounding = ['none', 'ceil', 'floor', 'nearest'].includes(input.rounding) ? input.rounding : 'none'
+  const salePriceCny = input.metadata?.salePriceCny ?? input.salePriceCny
+  // Older repository rows expose a synthesized top-level zero without a saved quote.
+  const hasSalePrice = input.metadata ? input.metadata.salePriceCny != null : input.salePriceCny != null
   return Object.freeze({
+    salePriceCny: hasSalePrice && Number.isFinite(salePriceCny) && salePriceCny >= 0 ? salePriceCny : null,
     id: String(input.id || ''), meter, phase,
     unitSize: finite(input.unitSize ?? 1, '计费单位', Number.EPSILON),
     minimumUnits: finite(input.minimumUnits ?? 0, '最低计费量'),
@@ -118,7 +122,7 @@ export function quotePricing(planInput, eventsInput, exchangeRates = { CNY: 1 })
     points = rounded(points + salePoints)
     costByCurrency[component.costCurrency] = rounded((costByCurrency[component.costCurrency] || 0) + costAmount)
     costCny = rounded(costCny + costAmount * rate)
-    lines.push(Object.freeze({ componentId: component.id, meter: event.meter, phase: event.phase, quantity: event.quantity, units, unitSize: component.unitSize, unitCost: component.costAmount, salePoints, costAmount, costCurrency: component.costCurrency, dimensions: event.dimensions }))
+    lines.push(Object.freeze({ componentId: component.id, meter: event.meter, phase: event.phase, quantity: event.quantity, units, unitSize: component.unitSize, unitCost: component.costAmount, unitSaleCny: component.salePriceCny, salePoints, costAmount, costCurrency: component.costCurrency, dimensions: event.dimensions }))
   }
   return Object.freeze({ planId: plan.id, planVersion: plan.version, points, costCny, costByCurrency: Object.freeze(costByCurrency), lines: Object.freeze(lines) })
 }

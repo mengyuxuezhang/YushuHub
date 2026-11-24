@@ -10,6 +10,11 @@ const row = {
   calls: 1,
   known: 1,
   amount: '0',
+  sales: null,
+  salesKnown: 0,
+  points: '0',
+  margin: null,
+  marginKnown: 0,
   images: null,
   imageCalls: 0,
 }
@@ -36,12 +41,26 @@ describe('成本看板', () => {
     app.mount(host)
     await vi.waitFor(() => expect(host.querySelector('tbody button')).toBeTruthy())
     vi.mocked(costs.costMembers).mockResolvedValue([
-      { userId: 'alice', username: 'alice', displayName: '张宁', amount: '48.25', calls: 3, known: 2 },
+      {
+        userId: 'alice',
+        username: 'alice',
+        displayName: '张宁',
+        amount: '48.25',
+        sales: '60',
+        salesKnown: 2,
+        points: '1200',
+        margin: '11.75',
+        marginKnown: 2,
+        calls: 3,
+        known: 2,
+      },
     ])
     ;(host.querySelector('tbody button') as HTMLButtonElement).click()
     await nextTick()
     await vi.waitFor(() => expect(host.textContent).toContain('¥48.25'))
     expect(host.textContent).toContain('张宁')
+    expect(host.textContent).toContain('¥11.75')
+    expect(host.textContent).toContain('1,200')
     expect(vi.mocked(costs.costCalls).mock.lastCall?.[0].get('department')).toBe('a/dept')
     app.unmount()
   })

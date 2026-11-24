@@ -1,6 +1,13 @@
 import { api } from './client'
 
-export interface CostGroup {
+export interface CostTotals {
+  sales: string | null
+  salesKnown: number
+  points: string
+  margin: string | null
+  marginKnown: number
+}
+export interface CostGroup extends CostTotals {
   day: string
   departmentKey: string
   departmentName: string
@@ -11,7 +18,7 @@ export interface CostGroup {
   images: string | null
   imageCalls: number
 }
-export interface CostMember {
+export interface CostMember extends CostTotals {
   userId: string
   username: string
   displayName: string
@@ -29,6 +36,9 @@ export interface CostCall {
   kind: string
   source: string
   amount: string | null
+  sales: string | null
+  points: string
+  margin: string | null
   images: number | null
 }
 export interface Department {

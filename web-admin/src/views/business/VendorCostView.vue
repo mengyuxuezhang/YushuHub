@@ -91,17 +91,44 @@ async function load() {
   }
 }
 watch([month, source, type, department, page], load, { immediate: true })
-type Total = { calls: number; known: number; amount: number; imageCalls: number; images: number | null }
+type Total = {
+  calls: number
+  known: number
+  amount: number
+  imageCalls: number
+  images: number | null
+  sales: number
+  salesKnown: number
+  margin: number
+  marginKnown: number
+  points: number
+}
 function sum(rows: CostGroup[]): Total {
   return rows.reduce<Total>(
     (a, g) => ({
       calls: a.calls + Number(g.calls),
       known: a.known + Number(g.known),
       amount: a.amount + Number(g.amount),
+      sales: a.sales + Number(g.sales ?? 0),
+      salesKnown: a.salesKnown + Number(g.salesKnown ?? 0),
+      points: a.points + Number(g.points ?? 0),
+      margin: a.margin + Number(g.margin ?? 0),
+      marginKnown: a.marginKnown + Number(g.marginKnown ?? 0),
       imageCalls: a.imageCalls + Number(g.imageCalls),
       images: g.images == null ? a.images : (a.images ?? 0) + Number(g.images),
     }),
-    { calls: 0, known: 0, amount: 0, imageCalls: 0, images: null },
+    {
+      calls: 0,
+      known: 0,
+      amount: 0,
+      imageCalls: 0,
+      images: null,
+      sales: 0,
+      salesKnown: 0,
+      margin: 0,
+      marginKnown: 0,
+      points: 0,
+    },
   )
 }
 const visible = computed(() =>
@@ -134,13 +161,16 @@ const money = (n: number | string) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 12,
   })
+const points = (n: number | string) => Number(n ?? 0).toLocaleString('zh-CN', { maximumFractionDigits: 6 })
+const coveredMoney = (value: number | string | null, known?: number) =>
+  value == null || known === 0 ? '待核算' : money(value)
 </script>
 <template>
   <section ref="dashboard" class="management-page cost-page">
     <header class="page-heading">
       <div>
         <h1>成本看板</h1>
-        <p>按调用时的厂商报价与实际用量核算，金额以人民币展示。</p>
+        <p>消费销售额按调用时的售价和用量计算，充值实收见支付中心。毛利仅汇总售价与成本均已核算的调用。</p>
       </div>
       <label>账期（北京时间） <input v-model="month" type="month" required /></label>
     </header>
@@ -176,24 +206,42 @@ const money = (n: number | string) =>
           ><strong>{{ !total.calls ? '本月暂无调用' : total.known ? money(total.amount) : '暂无法核算' }}</strong>
         </div>
         <div class="panel-card">
+          <small>可核算消费销售额</small
+          ><strong>{{ total.calls ? coveredMoney(total.sales, total.salesKnown) : '—' }}</strong
+          ><small>{{ total.salesKnown }} / {{ total.calls }} 笔已核算</small>
+        </div>
+        <div class="panel-card">
+          <small>消耗积分</small><strong>{{ points(total.points) }}</strong
+          ><small>调用实扣</small>
+        </div>
+        <div class="panel-card">
+          <small>可核算消费毛利</small
+          ><strong :class="{ 'negative-margin': total.margin < 0 }">{{
+            total.calls ? coveredMoney(total.margin, total.marginKnown) : '—'
+          }}</strong
+          ><small>{{ total.marginKnown }} / {{ total.calls }} 笔已核算</small>
+        </div>
+        <div class="panel-card">
           <small>成本覆盖率</small
           ><strong>{{ total.calls ? ((total.known / total.calls) * 100).toFixed(1) + '%' : '—' }}</strong
           ><small>{{ total.known }} / {{ total.calls }} 次调用</small>
         </div>
         <div class="panel-card">
-          <small>待核算调用</small><strong>{{ total.calls - total.known }} 笔</strong>
+          <small>成本待核算调用</small><strong>{{ total.calls - total.known }} 笔</strong>
         </div>
       </div>
       <div v-if="department" class="panel-card cost-section">
-        <h2>{{ rank.find((d) => d.key === department)?.name }} · 成员成本排行</h2>
+        <h2>{{ rank.find((d) => d.key === department)?.name }} · 成员消费明细</h2>
         <div class="data-table-scroll">
           <table class="data-table">
             <thead>
               <tr>
                 <th>成员</th>
-                <th>可核算成本</th>
+                <th>厂商成本</th>
+                <th>消费销售额</th>
+                <th>消耗积分</th>
+                <th>消费毛利</th>
                 <th>调用次数</th>
-                <th>待核算</th>
               </tr>
             </thead>
             <tbody>
@@ -203,10 +251,25 @@ const money = (n: number | string) =>
                   ><small v-if="member.displayName" class="cell-note">{{ member.username }}</small>
                 </td>
                 <td>
-                  <strong>{{ member.amount == null ? '待核算' : money(member.amount) }}</strong>
+                  <strong>{{ coveredMoney(member.amount) }}</strong>
+                  <small v-if="member.known < member.calls" class="cell-note"
+                    >{{ member.known }}/{{ member.calls }} 已核算</small
+                  >
+                </td>
+                <td>
+                  {{ coveredMoney(member.sales)
+                  }}<small v-if="member.salesKnown < member.calls" class="cell-note"
+                    >{{ member.salesKnown }}/{{ member.calls }} 已核算</small
+                  >
+                </td>
+                <td>{{ points(member.points) }}</td>
+                <td :class="{ 'negative-margin': Number(member.margin) < 0 }">
+                  {{ coveredMoney(member.margin)
+                  }}<small v-if="member.marginKnown < member.calls" class="cell-note"
+                    >{{ member.marginKnown }}/{{ member.calls }} 已核算</small
+                  >
                 </td>
                 <td>{{ member.calls }}</td>
-                <td>{{ member.calls - member.known }}</td>
               </tr>
             </tbody>
           </table>
@@ -227,25 +290,46 @@ const money = (n: number | string) =>
         </div>
       </div>
       <div class="panel-card cost-section">
-        <h2>部门成本排行</h2>
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>部门</th>
-              <th>可核算成本</th>
-              <th>已核算 / 总调用</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="d in rank" :key="d.key">
-              <td>
-                <button class="text-button" @click="openDepartment(d.key)">{{ d.org }} · {{ d.name }}</button>
-              </td>
-              <td>{{ d.known ? money(d.amount) : '待核算' }}</td>
-              <td>{{ d.known }} / {{ d.calls }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <h2>部门消费排行</h2>
+        <div class="data-table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>部门</th>
+                <th>厂商成本</th>
+                <th>消费销售额</th>
+                <th>消耗积分</th>
+                <th>消费毛利</th>
+                <th>调用次数</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="d in rank" :key="d.key">
+                <td>
+                  <button class="text-button" @click="openDepartment(d.key)">{{ d.org }} · {{ d.name }}</button>
+                </td>
+                <td>
+                  {{ coveredMoney(d.amount, d.known)
+                  }}<small v-if="d.known < d.calls" class="cell-note">{{ d.known }}/{{ d.calls }} 已核算</small>
+                </td>
+                <td>
+                  {{ coveredMoney(d.sales, d.salesKnown)
+                  }}<small v-if="d.salesKnown < d.calls" class="cell-note"
+                    >{{ d.salesKnown }}/{{ d.calls }} 已核算</small
+                  >
+                </td>
+                <td>{{ points(d.points) }}</td>
+                <td :class="{ 'negative-margin': d.margin < 0 }">
+                  {{ coveredMoney(d.margin, d.marginKnown)
+                  }}<small v-if="d.marginKnown < d.calls" class="cell-note"
+                    >{{ d.marginKnown }}/{{ d.calls }} 已核算</small
+                  >
+                </td>
+                <td>{{ d.calls }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <div class="panel-card cost-section">
         <h2>逐笔调用</h2>
@@ -261,6 +345,9 @@ const money = (n: number | string) =>
                 <th>终端</th>
                 <th>调用类型</th>
                 <th>厂商成本</th>
+                <th>消费销售额</th>
+                <th>消耗积分</th>
+                <th>消费毛利</th>
               </tr>
             </thead>
             <tbody>
@@ -271,7 +358,10 @@ const money = (n: number | string) =>
                 <td>{{ c.displayName || c.username }} · {{ c.departmentName }}</td>
                 <td>{{ sources[c.source] || '未知' }}</td>
                 <td>{{ kinds[c.kind] }} {{ c.kind === 'image' && c.images != null ? c.images + ' 张' : '' }}</td>
-                <td>{{ c.amount == null ? '待核算' : money(c.amount) }}</td>
+                <td>{{ coveredMoney(c.amount) }}</td>
+                <td>{{ coveredMoney(c.sales) }}</td>
+                <td>{{ points(c.points) }}</td>
+                <td :class="{ 'negative-margin': Number(c.margin) < 0 }">{{ coveredMoney(c.margin) }}</td>
               </tr>
             </tbody>
           </table>
@@ -308,12 +398,15 @@ const money = (n: number | string) =>
 }
 .cost-stats {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(152px, 1fr));
   gap: 14px;
 }
 .cost-stats > div,
 .cost-section {
   padding: 18px;
+}
+.negative-margin {
+  color: #b42318;
 }
 .cost-stats strong {
   display: block;

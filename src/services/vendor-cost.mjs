@@ -3,21 +3,39 @@ import { quotePricing } from './compound-pricing.mjs'
 // The old points-based migration and seeded voice components carried placeholder CNY zeros.
 const placeholder = (id, price) => Number(price) === 0 && /^(pc-[0-9a-f]{40}$|system-pc-minimax-)/.test(id || '')
 
-export function directCallCost(context, billing, usage) {
-  if (!context.pricingPlan) return null
+function hasDirectUsage(lines, usage, priceKey) {
   const present = (...keys) =>
     keys.some((key) => typeof usage?.[key] === 'number' && Number.isFinite(usage[key]) && usage[key] >= 0)
-  const lines = billing.compoundQuote.lines
-  const needsInput = lines.some(line => line.meter === 'input_tokens' && line.unitCost > 0)
-  const needsOutput = lines.some(line => line.meter === 'output_tokens' && line.unitCost > 0)
-  const splitCache = lines.some(line => line.meter === 'cached_tokens' && (line.unitCost > 0 || needsInput))
-  const knownCache = present('cached_tokens','cachedTokens','prompt_cache_hit_tokens','cache_read_input_tokens')
-    || [usage?.prompt_tokens_details?.cached_tokens,usage?.input_tokens_details?.cached_tokens]
-      .some(value => Number.isFinite(value) && value >= 0)
-  if (needsInput && !present('input_tokens','prompt_tokens','promptTokens')) return null
-  if (needsOutput && !present('output_tokens','completion_tokens','completionTokens')) return null
-  if (splitCache && !knownCache) return null
-  return settledCost(billing.compoundQuote, context.pricingRates)
+  const needsInput = lines.some((line) => line.meter === 'input_tokens' && line[priceKey] > 0)
+  const needsOutput = lines.some((line) => line.meter === 'output_tokens' && line[priceKey] > 0)
+  const splitCache = lines.some((line) => line.meter === 'cached_tokens' && (line[priceKey] > 0 || needsInput))
+  const knownCache =
+    present('cached_tokens', 'cachedTokens', 'prompt_cache_hit_tokens', 'cache_read_input_tokens') ||
+    [usage?.prompt_tokens_details?.cached_tokens, usage?.input_tokens_details?.cached_tokens].some(
+      (value) => Number.isFinite(value) && value >= 0,
+    )
+  return (
+    (!needsInput || present('input_tokens', 'prompt_tokens', 'promptTokens')) &&
+    (!needsOutput || present('output_tokens', 'completion_tokens', 'completionTokens')) &&
+    (!splitCache || knownCache)
+  )
+}
+
+export function directCallCost(context, billing, usage) {
+  const quote = billing.compoundQuote
+  return context.pricingPlan && hasDirectUsage(quote.lines, usage, 'unitCost')
+    ? settledCost(quote, context.pricingRates)
+    : null
+}
+
+export function directCallSale(context, billing, usage) {
+  const quote = billing.compoundQuote
+  return context.pricingPlan && hasDirectUsage(quote.lines, usage, 'unitSaleCny') ? settledSale(quote) : null
+}
+
+export function settledSale(quote) {
+  if (!quote?.lines?.length || quote.lines.some((line) => line.unitSaleCny == null)) return null
+  return Number(quote.lines.reduce((total, line) => total + line.units * line.unitSaleCny, 0).toFixed(12))
 }
 
 export function settledCost(quote, rates = {}) {

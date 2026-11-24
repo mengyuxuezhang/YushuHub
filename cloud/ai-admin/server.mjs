@@ -1,5 +1,5 @@
 import { registerVendorCostRoutes } from '../../src/routes/vendor-cost.mjs'
-import { directCallCost } from '../../src/services/vendor-cost.mjs'
+import { directCallCost, directCallSale } from '../../src/services/vendor-cost.mjs'
 import { normalizeLedgerSource } from '../../src/services/credit-ledger-source.mjs'
 import { createAuthorizationOnboarding } from '../../src/services/authorization/onboarding.mjs'
 import { registerAuthorizationOnboardingRoutes } from '../../src/routes/authorization-onboarding.mjs'
@@ -3053,8 +3053,8 @@ async function appendCreditLedger(conn, userId, input = {}) {
     `INSERT INTO ai_credit_ledger (
       id, user_id, change_type, points_delta, balance_after, cost_usd, upstream_log_id, upstream_quota,
       provider_id, provider_name, provider_key_id, provider_key_preview, pricing_rule_id, billing_type, deduct_status,
-      model_name, prompt_tokens, completion_tokens, total_tokens, note, request_id, raw_usage_json, client_source, organization_id, cost_department_id, vendor_cost, call_kind, cost_used_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FROM_UNIXTIME(?))`,
+      model_name, prompt_tokens, completion_tokens, total_tokens, note, request_id, raw_usage_json, client_source, organization_id, cost_department_id, vendor_cost, call_kind, cost_used_at, sale_cny
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FROM_UNIXTIME(?), ?)`,
     [
       crypto.randomUUID(),
       userId,
@@ -3079,7 +3079,7 @@ async function appendCreditLedger(conn, userId, input = {}) {
       String(input.requestId || '').slice(0, 80),
       input.rawUsage ? JSON.stringify(input.rawUsage) : null,
       normalizeLedgerSource(input.clientSource), input.organizationId || '', input.departmentId || null,
-      input.vendorCost ? JSON.stringify(input.vendorCost) : null, input.callKind || null, input.costStartedAt ? input.costStartedAt/1000 : null,
+      input.vendorCost ? JSON.stringify(input.vendorCost) : null, input.callKind || null, input.costStartedAt ? input.costStartedAt/1000 : null, input.saleCny ?? null,
     ],
   )
   return balanceAfter
@@ -3728,6 +3728,7 @@ async function deductCreditsForLocalUsage(userId, context, usage, requestId = ''
       costStartedAt: context.costStartedAt, departmentId: context.departmentId, organizationId: context.organizationId,
       callKind: context.model.modelType === 'image' ? 'image' : context.model.modelType === 'search' ? 'search' : 'text',
       vendorCost: directCallCost(context,billing,usage),
+      saleCny: directCallSale(context,billing,usage),
     })
     await conn.commit()
   } catch (err) {

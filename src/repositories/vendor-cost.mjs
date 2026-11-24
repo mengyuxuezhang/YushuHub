@@ -57,7 +57,7 @@ function costFacts(actor, q) {
       WHEN lm.model_type='image' THEN 'image' WHEN m.task_type IN ('speech_recognition','speech_synthesis') OR l.billing_type='voice' THEN 'audio'
       WHEN m.task_type IN ('embedding','rerank') THEN 'vector' WHEN m.task_type='video_generation' THEN 'video'
       WHEN m.task_type='chat' OR l.billing_type IN ('per_token','per_request') OR l.total_tokens>0 THEN 'text' ELSE 'other' END) AS kind,
-    CAST(JSON_UNQUOTE(JSON_EXTRACT(l.vendor_cost,'$.cny')) AS DECIMAL(30,12)) AS amount,
+    CAST(JSON_UNQUOTE(JSON_EXTRACT(l.vendor_cost,'$.cny')) AS DECIMAL(30,12)) AS amount, l.sale_cny AS sales, GREATEST(0,-l.points_delta) AS points,
     CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(m.result_json,'$.billing.generatedImages')),JSON_UNQUOTE(JSON_EXTRACT(m.result_json,'$.usage.generated_images')),
       JSON_UNQUOTE(JSON_EXTRACT(l.raw_usage_json,'$.generatedImages')),JSON_UNQUOTE(JSON_EXTRACT(l.raw_usage_json,'$.generated_images')),
       CASE WHEN JSON_TYPE(l.raw_usage_json)='ARRAY' THEN ${eventMeter('l.raw_usage_json', 'image')} END) AS UNSIGNED) AS images
@@ -77,7 +77,7 @@ function costFacts(actor, q) {
 }
 
 const totals =
-  "COUNT(*) AS calls,COUNT(amount) AS known,SUM(amount) AS amount,SUM(CASE WHEN kind='image' THEN images END) AS images,COUNT(CASE WHEN kind='image' THEN 1 END) AS imageCalls"
+  "COUNT(*) AS calls,COUNT(amount) AS known,SUM(amount) AS amount,SUM(sales) AS sales,COUNT(sales) AS salesKnown,SUM(points) AS points,SUM(sales-amount) AS margin,COUNT(sales-amount) AS marginKnown,SUM(CASE WHEN kind='image' THEN images END) AS images,COUNT(CASE WHEN kind='image' THEN 1 END) AS imageCalls"
 export async function readVendorCosts(pool, actor, input, view) {
   const q = costQuery(input)
   const { sql, params } = costFacts(actor, q)
@@ -94,10 +94,10 @@ export async function readVendorCosts(pool, actor, input, view) {
     return rows
   }
   if (view === 'calls') {
-    const [rows] = await pool.query('SELECT *' + from + ' ORDER BY usedAt DESC,id LIMIT 20 OFFSET ?', [
-      ...params,
-      (q.page - 1) * 20,
-    ])
+    const [rows] = await pool.query(
+      'SELECT *,sales-amount AS margin' + from + ' ORDER BY usedAt DESC,id LIMIT 20 OFFSET ?',
+      [...params, (q.page - 1) * 20],
+    )
     return rows
   }
   // Aggregate once by day and department; the same rows drive every subtotal.

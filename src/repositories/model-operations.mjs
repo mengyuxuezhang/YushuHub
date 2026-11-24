@@ -85,9 +85,9 @@ export class ModelOperationRepository {
       if (input.status === 'succeeded') {
         const [[balance]] = await connection.query('SELECT credit_balance FROM ai_end_users WHERE id=?', [user.id])
         await connection.query(`INSERT INTO ai_credit_ledger
-          (id,user_id,organization_id,change_type,points_delta,balance_after,request_id,billing_type,deduct_status,note,raw_usage_json,client_source,cost_department_id,vendor_cost,cost_used_at)
-          VALUES (?,?,?,'consume',?,?,?,'compound_v2','succeeded',?,?,?,?,?,?)`, [randomUUID(), user.id, user.organizationId, -finalPoints,
-          balance.credit_balance, id, `模型任务：${row.task_type}`, safeJson(input.usage || []), normalizeLedgerSource(row.client_source), row.cost_department_id ?? null, safeJson(input.vendorCost), row.created_at ?? null])
+          (id,user_id,organization_id,change_type,points_delta,balance_after,request_id,billing_type,deduct_status,note,raw_usage_json,client_source,cost_department_id,vendor_cost,cost_used_at,sale_cny)
+          VALUES (?,?,?,'consume',?,?,?,'compound_v2','succeeded',?,?,?,?,?,?,?)`, [randomUUID(), user.id, user.organizationId, -finalPoints,
+          balance.credit_balance, id, `模型任务：${row.task_type}`, safeJson(input.usage || []), normalizeLedgerSource(row.client_source), row.cost_department_id ?? null, safeJson(input.vendorCost), row.created_at ?? null, input.saleCny ?? null])
       }
       await connection.query(`UPDATE ai_model_operations SET status=?,points_settled=?,points_reserved=0,usage_json=?,result_json=?,cost_snapshot_json=?,
         error_kind=?,error_code=?,completed_at=CURRENT_TIMESTAMP(3) WHERE id=?`, [input.status, finalPoints, safeJson(input.usage || []), safeJson(input.result),
