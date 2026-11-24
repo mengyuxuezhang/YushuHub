@@ -1634,9 +1634,21 @@ export async function initDatabase(options = {}) {
   await ensureColumn('ai_credit_ledger', 'deduct_status', 'VARCHAR(32) NOT NULL DEFAULT "succeeded" AFTER billing_type')
   await pool.query(`CREATE TABLE IF NOT EXISTS ai_cost_departments (
     id VARCHAR(64) PRIMARY KEY, organization_id VARCHAR(64) NOT NULL, name VARCHAR(80) NOT NULL,
-    enabled TINYINT NOT NULL DEFAULT 1, UNIQUE KEY uq_cost_department_name (organization_id,name)
+    enabled TINYINT NOT NULL DEFAULT 1, deleted_at DATETIME(3) NULL,
+    active_name_key TINYINT GENERATED ALWAYS AS (IF(deleted_at IS NULL,1,NULL)) STORED,
+    UNIQUE KEY uq_cost_department_live_name (organization_id,name,active_name_key)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
   await ensureColumn('ai_cost_departments','description',"VARCHAR(500) NOT NULL DEFAULT ''")
+  await ensureColumn('ai_cost_departments', 'deleted_at', 'DATETIME(3) NULL')
+  await ensureColumn('ai_cost_departments', 'active_name_key', 'TINYINT GENERATED ALWAYS AS (IF(deleted_at IS NULL,1,NULL)) STORED')
+  await ensureIndex('ai_cost_departments', 'uq_cost_department_live_name', 'ADD UNIQUE INDEX uq_cost_department_live_name (organization_id,name,active_name_key)')
+  const [oldDepartmentNameIndex] = await pool.query(`SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA=? AND TABLE_NAME='ai_cost_departments' AND INDEX_NAME='uq_cost_department_name' LIMIT 1`, [DB_NAME])
+  if (oldDepartmentNameIndex.length) {
+    await pool.query('ALTER TABLE ai_cost_departments DROP INDEX uq_cost_department_name').catch(error => {
+      if (error.code !== 'ER_CANT_DROP_FIELD_OR_KEY') throw error
+    })
+  }
   await ensureColumn('ai_end_users','cost_department_id',"VARCHAR(64) NOT NULL DEFAULT 'default'")
   for (const table of ['ai_credit_ledger','ai_model_operations','ai_voice_operations']) {
     await ensureColumn(table,'cost_department_id','VARCHAR(64) NULL')

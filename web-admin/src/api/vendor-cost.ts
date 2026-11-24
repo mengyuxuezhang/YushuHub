@@ -68,6 +68,7 @@ export const updateDepartments = (body: {
   id?: string
   name?: string
   disabled?: boolean
+  deleted?: boolean
   description?: string
   fromDepartmentId?: string
   userIds?: string[]

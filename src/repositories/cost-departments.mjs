@@ -8,7 +8,7 @@ export async function listDepartments(pool, actor) {
   const [rows] = await pool.query(
     `SELECT o.id AS organizationId,o.name AS organizationName,d.id,d.name,d.description,d.enabled,
         (SELECT COUNT(*) FROM ai_end_users u WHERE u.organization_id=o.id AND u.cost_department_id=d.id) AS memberCount
-      FROM ai_organizations o JOIN ai_cost_departments d ON d.organization_id=o.id WHERE ${scope.sql}
+      FROM ai_organizations o JOIN ai_cost_departments d ON d.organization_id=o.id AND d.deleted_at IS NULL WHERE ${scope.sql}
       UNION ALL
       SELECT o.id,o.name,'default','默认部门','',1,
         (SELECT COUNT(*) FROM ai_end_users u WHERE u.organization_id=o.id AND u.cost_department_id='default')
@@ -31,7 +31,7 @@ export async function listDepartmentMembers(pool, actor, query) {
   if (!organization) throw reportError('组织不可操作', 403)
   if (departmentId !== 'default') {
     const [[department]] = await pool.query(
-      'SELECT id FROM ai_cost_departments WHERE organization_id=? AND id=?',
+      'SELECT id FROM ai_cost_departments WHERE organization_id=? AND id=? AND deleted_at IS NULL',
       [organizationId, departmentId],
     )
     if (!department) throw reportError('部门不存在', 404)
@@ -57,7 +57,7 @@ export async function listDepartmentMembers(pool, actor, query) {
 }
 
 export async function updateDepartments(pool, actor, input) {
-  const { organizationId, id, name, description, disabled, userIds, fromDepartmentId } = input || {}
+  const { organizationId, id, name, description, disabled, deleted, userIds, fromDepartmentId } = input || {}
   if (
     typeof organizationId !== 'string' ||
     !organizationId ||
@@ -65,6 +65,8 @@ export async function updateDepartments(pool, actor, input) {
     (id !== undefined && (typeof id !== 'string' || !id || id.length > 64))
   )
     throw reportError('无效的组织或部门')
+  if (deleted === true && (!id || userIds !== undefined || disabled !== undefined))
+    throw reportError('请选择要删除的部门')
   const scope = organizationScope(actor, 'id')
   const conn = await pool.getConnection()
   try {
@@ -77,7 +79,7 @@ export async function updateDepartments(pool, actor, input) {
     if (id === 'default' && userIds === undefined) throw reportError('默认部门由系统管理')
     if (id && id !== 'default') {
       const [[dep]] = await conn.query(
-        'SELECT id,enabled FROM ai_cost_departments WHERE id=? AND organization_id=? FOR UPDATE',
+        'SELECT id,enabled FROM ai_cost_departments WHERE id=? AND organization_id=? AND deleted_at IS NULL FOR UPDATE',
         [id, org.id],
       )
       if (!dep) throw reportError('部门不存在', 404)
@@ -104,6 +106,16 @@ export async function updateDepartments(pool, actor, input) {
         org.id,
         userIds,
       ])
+    } else if (deleted === true) {
+      const [[member]] = await conn.query(
+        'SELECT id FROM ai_end_users WHERE organization_id=? AND cost_department_id=? LIMIT 1 FOR UPDATE',
+        [org.id, id],
+      )
+      if (member) throw reportError('请先转移部门成员，再删除部门', 409)
+      await conn.query(
+        'UPDATE ai_cost_departments SET enabled=0,deleted_at=CURRENT_TIMESTAMP(3) WHERE id=? AND organization_id=?',
+        [id, org.id],
+      )
     } else if (disabled === false && id) {
       await conn.query('UPDATE ai_cost_departments SET enabled=1 WHERE id=? AND organization_id=?', [id, org.id])
     } else if (disabled === true && id) {

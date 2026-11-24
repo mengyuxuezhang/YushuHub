@@ -106,6 +106,28 @@ async function toggle(d: Department) {
     saving.value = false
   }
 }
+async function removeDepartment(d: Department) {
+  if (saving.value || Number(d.memberCount) > 0) return
+  const accepted = await feedback.confirm({
+    title: '删除部门？',
+    message: `删除后，「${d.name}」将从部门管理和分配选项中移除，历史账单仍保留原部门名称。`,
+    confirmText: '删除部门',
+    tone: 'danger',
+  })
+  if (!accepted || saving.value) return
+  saving.value = true
+  error.value = ''
+  try {
+    await updateDepartments({ organizationId: d.organizationId, id: d.id, deleted: true })
+    if (editor.value?.id === d.id) editor.value = null
+    feedback.notify('部门已删除', 'success')
+    await refresh()
+  } catch (e) {
+    error.value = toUserMessage(e)
+  } finally {
+    saving.value = false
+  }
+}
 </script>
 
 <template>
@@ -193,6 +215,14 @@ async function toggle(d: Department) {
                       @click="toggle(d)"
                     >
                       {{ d.enabled ? '停用' : '恢复' }}
+                    </button>
+                    <button
+                      class="text-button danger"
+                      :disabled="saving || Number(d.memberCount) > 0"
+                      :title="Number(d.memberCount) > 0 ? '请先转移部门成员' : undefined"
+                      @click="removeDepartment(d)"
+                    >
+                      删除
                     </button>
                   </template>
                 </div>

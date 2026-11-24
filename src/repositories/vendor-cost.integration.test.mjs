@@ -298,7 +298,11 @@ test(
       assert.equal(audit.evidence, patch.evidence)
       keys = ['vendor_cost.view']
       assert.equal((await save({ id, disabled: true })).status, 403)
+      assert.equal((await save({ id, deleted: true })).status, 403)
       keys = ['end_users.manage']
+      assert.equal((await save({ id: 'default', deleted: true })).status, 400)
+      assert.equal((await save({ id, deleted: true, organizationId: 'foreign' })).status, 403)
+      assert.equal((await save({ id, deleted: true })).status, 409)
       assert.equal((await save({ id, disabled: true })).status, 200)
       const [[moved]] = await pool.query("SELECT cost_department_id FROM ai_end_users WHERE id='alice'")
       assert.equal(moved.cost_department_id, 'default')
@@ -307,6 +311,26 @@ test(
       const restored = (await (await fetch(base + 'cost-departments')).json()).data.find((row) => row.id === id)
       assert.equal(restored.enabled, 1)
       assert.equal(Number(restored.memberCount), 0)
+      assert.equal((await save({ id, deleted: true })).status, 200)
+      assert.equal((await memberRequest(id)).status, 404)
+      assert.equal((await save({ id, disabled: false })).status, 404)
+      assert.equal((await save({ id, userIds: ['alice'] })).status, 404)
+      assert.equal((await save({ name: restored.name })).status, 200)
+      const replacement = (await (await fetch(base + 'cost-departments')).json()).data.find(
+        (row) => row.name === restored.name,
+      )
+      assert.notEqual(replacement.id, id)
+      keys = ['vendor_cost.view']
+      const archived = (
+        await (await report('calls', '&department=' + encodeURIComponent(org.id + '/' + id))).json()
+      ).data.items
+      assert.ok(archived.length)
+      assert.ok(archived.every((row) => row.departmentName === restored.name))
+      const empty = (
+        await (await report('calls', '&department=' + encodeURIComponent(org.id + '/' + replacement.id))).json()
+      ).data.items
+      assert.equal(empty.length, 0)
+      keys = ['end_users.manage']
       // Run the actual reserve/finish paths, move the user while both jobs are running,
       // then replay settlement to verify that the ledger keeps one row per invocation.
       await pool.query(
