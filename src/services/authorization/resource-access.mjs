@@ -1,3 +1,10 @@
+// Existing deployment licenses convey cost reporting through the credits capability.
+export function billingReportCapabilities(capabilities = []) {
+  if (capabilities.some(c=>c.key==='vendor_cost.view')) return capabilities
+  const billing=capabilities.find(c=>c.key==='credits.manage')
+  return billing ? [...capabilities,{...billing,key:'vendor_cost.view'}] : capabilities
+}
+
 export function permissionCapabilityKey(key) {
   return key === 'plugin_market.manage' ? 'curated_skills.distribute' : key
 }

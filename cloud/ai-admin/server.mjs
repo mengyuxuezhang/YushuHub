@@ -1,3 +1,5 @@
+import { registerVendorCostRoutes } from '../../src/routes/vendor-cost.mjs'
+import { directCallCost } from '../../src/services/vendor-cost.mjs'
 import { normalizeLedgerSource } from '../../src/services/credit-ledger-source.mjs'
 import { createAuthorizationOnboarding } from '../../src/services/authorization/onboarding.mjs'
 import { registerAuthorizationOnboardingRoutes } from '../../src/routes/authorization-onboarding.mjs'
@@ -1107,6 +1109,8 @@ function normalizeEndUser(row) {
     email: row.email || '',
     displayName: row.display_name,
     status: row.status,
+    departmentId: row.cost_department_id || 'default',
+    ...(row.department_name || row.cost_department_id === 'default' ? { departmentName: row.department_name || '默认部门' } : {}),
     organizationId: row.organization_id || '',
     sourceSupplierId: row.source_supplier_id || '',
     sourceAgentId: row.source_agent_id || '',
@@ -2519,7 +2523,7 @@ async function loginEndUser(input = {}) {
 async function listEndUsersForAdmin(user, query = {}) {
   const ownerUserId = user.organizationContext?.legacyOwnerUserId || user.id
   const accessibleIds = (user.organizationContext?.accessibleOrganizationIds || [user.organizationContext?.organizationId]).filter((id) => id && id !== '*')
-  let sql = `SELECT u.*,
+  let sql = `SELECT u.*, (SELECT name FROM ai_cost_departments WHERE id=u.cost_department_id AND organization_id=u.organization_id) AS department_name,
     (SELECT COUNT(*) FROM ai_end_user_model_access a WHERE a.user_id = u.id) AS allowed_model_count,
     m.id AS membership_id,
     m.card_id AS membership_card_id,
@@ -2552,6 +2556,7 @@ async function listEndUsersForAdmin(user, query = {}) {
     params.push(...accessibleIds, ownerUserId, ownerUserId)
   }
   const status = String(query.status || '').trim()
+  if (query.departmentId) { where.push('u.cost_department_id=?'); params.push(String(query.departmentId)) }
   const search = buildListSearch(query, {
     user: ['u.username', 'u.display_name', 'u.email'],
     userId: ['u.id'],
@@ -3048,8 +3053,8 @@ async function appendCreditLedger(conn, userId, input = {}) {
     `INSERT INTO ai_credit_ledger (
       id, user_id, change_type, points_delta, balance_after, cost_usd, upstream_log_id, upstream_quota,
       provider_id, provider_name, provider_key_id, provider_key_preview, pricing_rule_id, billing_type, deduct_status,
-      model_name, prompt_tokens, completion_tokens, total_tokens, note, request_id, raw_usage_json, client_source
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      model_name, prompt_tokens, completion_tokens, total_tokens, note, request_id, raw_usage_json, client_source, organization_id, cost_department_id, vendor_cost, call_kind, cost_used_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FROM_UNIXTIME(?))`,
     [
       crypto.randomUUID(),
       userId,
@@ -3073,7 +3078,8 @@ async function appendCreditLedger(conn, userId, input = {}) {
       String(input.note || '').slice(0, 255),
       String(input.requestId || '').slice(0, 80),
       input.rawUsage ? JSON.stringify(input.rawUsage) : null,
-      normalizeLedgerSource(input.clientSource),
+      normalizeLedgerSource(input.clientSource), input.organizationId || '', input.departmentId || null,
+      input.vendorCost ? JSON.stringify(input.vendorCost) : null, input.callKind || null, input.costStartedAt ? input.costStartedAt/1000 : null,
     ],
   )
   return balanceAfter
@@ -3719,6 +3725,9 @@ async function deductCreditsForLocalUsage(userId, context, usage, requestId = ''
       requestId,
       clientSource: options.clientSource,
       rawUsage: usage || {},
+      costStartedAt: context.costStartedAt, departmentId: context.departmentId, organizationId: context.organizationId,
+      callKind: context.model.modelType === 'image' ? 'image' : context.model.modelType === 'search' ? 'search' : 'text',
+      vendorCost: directCallCost(context,billing,usage),
     })
     await conn.commit()
   } catch (err) {
@@ -6996,6 +7005,7 @@ registerUserRoutes(app, {
   deleteUserGroup,
 })
 
+registerVendorCostRoutes(app)
 registerUserUsageReportRoutes(app)
 registerAdminBusinessRoutes(app, {
   listCenterSuppliers,

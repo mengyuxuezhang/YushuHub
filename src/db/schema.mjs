@@ -4,6 +4,7 @@ import { consolidatePricingPlans } from '../services/pricing-current-plan-migrat
 import crypto from 'node:crypto'
 import mysql from 'mysql2/promise'
 import { databasePoolLimit } from './pool.mjs'
+import { migrateVendorCosts } from '../services/vendor-cost.mjs'
 import { migrateUserUsagePermissions } from '../services/user-usage-permissions.mjs'
 
 let pool
@@ -1631,6 +1632,18 @@ export async function initDatabase(options = {}) {
   await ensureColumn('ai_credit_ledger', 'pricing_rule_id', 'VARCHAR(64) NOT NULL DEFAULT "" AFTER provider_key_preview')
   await ensureColumn('ai_credit_ledger', 'billing_type', 'VARCHAR(32) NOT NULL DEFAULT "" AFTER pricing_rule_id')
   await ensureColumn('ai_credit_ledger', 'deduct_status', 'VARCHAR(32) NOT NULL DEFAULT "succeeded" AFTER billing_type')
+  await pool.query(`CREATE TABLE IF NOT EXISTS ai_cost_departments (
+    id VARCHAR(64) PRIMARY KEY, organization_id VARCHAR(64) NOT NULL, name VARCHAR(80) NOT NULL,
+    enabled TINYINT NOT NULL DEFAULT 1, UNIQUE KEY uq_cost_department_name (organization_id,name)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+  await ensureColumn('ai_end_users','cost_department_id',"VARCHAR(64) NOT NULL DEFAULT 'default'")
+  for (const table of ['ai_credit_ledger','ai_model_operations','ai_voice_operations']) {
+    await ensureColumn(table,'cost_department_id','VARCHAR(64) NULL')
+  }
+  await ensureColumn('ai_credit_ledger','vendor_cost','JSON NULL')
+  await ensureColumn('ai_credit_ledger','cost_used_at','DATETIME(3) NULL')
+  await ensureIndex('ai_credit_ledger','idx_ledger_cost_month','ADD INDEX idx_ledger_cost_month (change_type,cost_used_at)')
+  await ensureColumn('ai_credit_ledger','call_kind','VARCHAR(24) NULL')
   await ensureColumn('ai_credit_ledger', 'client_source', "VARCHAR(16) NOT NULL DEFAULT 'unknown'")
   await ensureColumn('ai_model_operations', 'client_source', "VARCHAR(16) NOT NULL DEFAULT 'unknown'")
   await ensureColumn('ai_voice_operations', 'client_source', "VARCHAR(16) NOT NULL DEFAULT 'unknown'")
@@ -2056,6 +2069,7 @@ export async function initDatabase(options = {}) {
   const rootOrganizationId = await seedOrganizationCompatibility({ centerMode, supplierId, permissionKeys })
   await seedClientNoticeCapabilities()
   await migrateUserUsagePermissions(pool)
+  await migrateVendorCosts(pool)
   await backfillOrganizationOwnership(rootOrganizationId)
   await seedAccountFreeMembershipCards()
   return pool

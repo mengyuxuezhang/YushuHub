@@ -91,6 +91,7 @@ export const LOCAL_PERMISSION_CATALOG = [
     permissions: [
       { key: 'client_notices.view', name: '查看消息推送', description: '查看当前数据范围内的通知草稿和发送历史。', role: 'admin_or_agent' },
       { key: 'client_notices.publish', name: '发送消息推送', description: '创建、编辑、发送和撤回当前数据范围内的通知。', role: 'admin_or_agent' },
+      { key: 'vendor_cost.view', name: '查看成本看板', description: '查看所属数据范围的厂商成本。', role: 'admin_or_agent' },
       { key: 'user_usage.view', name: '查看使用报表', description: '查看授权用户的模型使用与积分消耗。', role: 'admin_or_agent' },
       { key: 'user_usage.export', name: '导出使用报表', description: '导出授权用户的使用报表 CSV。', role: 'admin_or_agent' },
       { key: 'end_users.manage', name: '终端用户管理', description: '查看终端注册用户并维护状态、密码、模型授权和积分。', role: 'admin_or_agent' },
@@ -144,7 +145,7 @@ export const DEFAULT_ROLE_TEMPLATES = [
       'client_notices.publish',
       'memberships.manage',
       'payments.manage',
-      'credits.manage', 'user_usage.view', 'user_usage.export',
+      'credits.manage', 'vendor_cost.view', 'user_usage.view', 'user_usage.export',
       'redeem_codes.manage',
       'curated_skills.view',
       'curated_skills.manage',
@@ -184,7 +185,7 @@ export const DEFAULT_ROLE_TEMPLATES = [
     description: '运营人员，维护终端用户、积分、兑换码和项目发布流程。',
     baseRole: 'admin',
     sortOrder: 30,
-    permissionKeys: ['organizations.view', 'personal_features.use', 'projects.manage', 'builds.create', 'builds.publish', 'client_notices.view', 'client_notices.publish', 'end_users.manage', 'memberships.manage', 'payments.manage', 'credits.manage', 'user_usage.view', 'user_usage.export', 'redeem_codes.manage', 'account_security.manage'],
+    permissionKeys: ['organizations.view', 'personal_features.use', 'projects.manage', 'builds.create', 'builds.publish', 'client_notices.view', 'client_notices.publish', 'end_users.manage', 'memberships.manage', 'payments.manage', 'credits.manage', 'vendor_cost.view', 'user_usage.view', 'user_usage.export', 'redeem_codes.manage', 'account_security.manage'],
   },
   {
     id: 'finance',
@@ -192,7 +193,7 @@ export const DEFAULT_ROLE_TEMPLATES = [
     description: '财务人员，查看积分流水并管理会员卡和兑换码。',
     baseRole: 'admin',
     sortOrder: 40,
-    permissionKeys: ['organizations.view', 'personal_features.use', 'memberships.manage', 'payments.manage', 'credits.manage', 'user_usage.view', 'user_usage.export', 'redeem_codes.manage', 'account_security.manage'],
+    permissionKeys: ['organizations.view', 'personal_features.use', 'memberships.manage', 'payments.manage', 'credits.manage', 'vendor_cost.view', 'user_usage.view', 'user_usage.export', 'redeem_codes.manage', 'account_security.manage'],
   },
   {
     id: 'technical',

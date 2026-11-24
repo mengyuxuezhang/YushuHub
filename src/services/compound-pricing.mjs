@@ -118,7 +118,7 @@ export function quotePricing(planInput, eventsInput, exchangeRates = { CNY: 1 })
     points = rounded(points + salePoints)
     costByCurrency[component.costCurrency] = rounded((costByCurrency[component.costCurrency] || 0) + costAmount)
     costCny = rounded(costCny + costAmount * rate)
-    lines.push(Object.freeze({ componentId: component.id, meter: event.meter, phase: event.phase, quantity: event.quantity, units, salePoints, costAmount, costCurrency: component.costCurrency, dimensions: event.dimensions }))
+    lines.push(Object.freeze({ componentId: component.id, meter: event.meter, phase: event.phase, quantity: event.quantity, units, unitSize: component.unitSize, unitCost: component.costAmount, salePoints, costAmount, costCurrency: component.costCurrency, dimensions: event.dimensions }))
   }
   return Object.freeze({ planId: plan.id, planVersion: plan.version, points, costCny, costByCurrency: Object.freeze(costByCurrency), lines: Object.freeze(lines) })
 }

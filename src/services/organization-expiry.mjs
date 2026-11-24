@@ -25,7 +25,7 @@ export function filterOrganizationPermissions(keys, context, now = Date.now()) {
   if (context.organizationStatus !== 'enabled' || context.memberStatus !== 'enabled' || organizationAuthorizationExpired(context, now)) {
     const remediation = new Set(['organizations.view', 'platform_settings.manage', 'authorization.view', 'account_security.manage', 'diagnostics.view'])
     if (context.organizationStatus === 'enabled' && context.memberStatus === 'enabled' && organizationAuthorizationExpired(context, now)) {
-      for (const key of ['payments.manage', 'credits.manage', 'memberships.manage', 'end_users.manage', 'user_usage.view', 'user_usage.export']) remediation.add(key)
+      for (const key of ['payments.manage', 'credits.manage', 'memberships.manage', 'end_users.manage', 'vendor_cost.view', 'user_usage.view', 'user_usage.export']) remediation.add(key)
     }
     effective = effective.filter(key => remediation.has(key))
   }

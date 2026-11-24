@@ -172,6 +172,7 @@ export const navigationSections: NavigationSection[] = [
   {
     title: "业务运营",
     items: [
+      { path: "/vendor-cost", title: "成本看板", subtitle: "厂商成本、部门分布与调用明细", icon: CreditCard, permissions: ["vendor_cost.view"], phase: "P7" },
       { path: "/user-usage", title: "用户使用报表", subtitle: "用户用量、模型分布与消耗趋势", icon: Bell, permissions: ["user_usage.view"], phase: "P7" },
       { path: "/notices", title: "消息推送", subtitle: "通知、公告和活动", icon: Bell, permissions: ["client_notices.view"], phase: "P7" },
       {

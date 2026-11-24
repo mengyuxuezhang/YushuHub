@@ -1,3 +1,4 @@
+import { settledCost } from './vendor-cost.mjs'
 import { createHash } from 'node:crypto'
 import { publicInvocationError } from './model-invoke/errors.mjs'
 import { quotePricing } from './compound-pricing.mjs'
@@ -61,7 +62,7 @@ export class ModelTaskService {
       if (final.points > Number(operation.points_reserved)) return this.operations.finish(user, operation.id, {
         status: 'outcome_unknown', errorKind: 'outcome_unknown', errorCode: 'MODEL_TASK_USAGE_EXCEEDED_RESERVATION',
       })
-      return this.operations.finish(user, operation.id, { status: 'succeeded', points: final.points, usage: outcome.usage, result: outcome.result, costSnapshot: final.costByCurrency })
+      return this.operations.finish(user, operation.id, { status: 'succeeded', points: final.points, usage: outcome.usage, result: outcome.result, vendorCost: settledCost(final, estimate.snapshot.exchangeRates), costSnapshot: final.costByCurrency })
     } catch (error) {
       const info = publicInvocationError(error)
       return this.operations.finish(user, operation.id, { status: invoked && info.outcomeUnknown ? 'outcome_unknown' : 'failed', errorKind: info.kind, errorCode: info.code })
@@ -85,7 +86,7 @@ export class ModelTaskService {
       if (final.points > Number(operation.points_reserved)) return this.operations.finish(user, operation.id, {
         status: 'outcome_unknown', errorKind: 'outcome_unknown', errorCode: 'MODEL_TASK_USAGE_EXCEEDED_RESERVATION',
       })
-      return this.operations.finish(user, operation.id, { status: 'succeeded', points: final.points, usage: outcome.usage, result: outcome.result, costSnapshot: final.costByCurrency })
+      return this.operations.finish(user, operation.id, { status: 'succeeded', points: final.points, usage: outcome.usage, result: outcome.result, vendorCost: settledCost(final, snapshot.exchangeRates), costSnapshot: final.costByCurrency })
     } catch (error) {
       const info = publicInvocationError(error)
       if (!invoked || info.retryable || ['authentication', 'quota_exhausted', 'rate_limited'].includes(info.kind)) throw error

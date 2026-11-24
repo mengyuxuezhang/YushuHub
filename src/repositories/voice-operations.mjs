@@ -28,7 +28,7 @@ export class VoiceOperationRepository {
     if (!user.id || !user.organizationId || !['clone', 'preview', 'activate', 'synthesize', 'delete'].includes(operation) || !/^[a-zA-Z0-9_-]{8,128}$/.test(idempotencyKey || '') || !Number.isFinite(points) || points < 0 || !/^[a-f0-9]{64}$/.test(fingerprint || '')) throw failure('VOICE_INPUT_INVALID', '请求参数无效', 400)
     return this.transaction(async connection => {
       // Serialize reservations with all other balance mutations on the user row.
-      const [[account]] = await connection.query("SELECT credit_balance FROM ai_end_users WHERE id=? AND organization_id=? AND status='enabled' FOR UPDATE", [user.id, user.organizationId])
+      const [[account]] = await connection.query("SELECT credit_balance,cost_department_id FROM ai_end_users WHERE id=? AND organization_id=? AND status='enabled' FOR UPDATE", [user.id, user.organizationId])
       if (!account) throw failure('VOICE_AUTH_REQUIRED', '账号不可用', 403)
       const [[existing]] = await connection.query('SELECT * FROM ai_voice_operations WHERE user_id=? AND operation_type=? AND idempotency_key=? FOR UPDATE', [user.id, operation, idempotencyKey])
       if (existing) {
@@ -49,8 +49,8 @@ export class VoiceOperationRepository {
       }
       await connection.query('UPDATE ai_end_users SET credit_balance=credit_balance-? WHERE id=?', [points, user.id])
       await connection.query(`INSERT INTO ai_voice_operations
-        (id,organization_id,user_id,voice_id,operation_type,idempotency_key,input_fingerprint,points_reserved,client_source)
-        VALUES (?,?,?,?,?,?,?,?,?)`, [id, user.organizationId, user.id, voiceId, operation, idempotencyKey, fingerprint, points, normalizeLedgerSource(user.ledgerClientSource)])
+        (id,organization_id,user_id,voice_id,operation_type,idempotency_key,input_fingerprint,points_reserved,client_source,cost_department_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`, [id, user.organizationId, user.id, voiceId, operation, idempotencyKey, fingerprint, points, normalizeLedgerSource(user.ledgerClientSource), account.cost_department_id || 'default'])
       const [[row]] = await connection.query('SELECT * FROM ai_voice_operations WHERE id=?', [id])
       return { created: true, operation: row }
     })
@@ -66,7 +66,7 @@ export class VoiceOperationRepository {
     })
   }
 
-  async finish(user, id, { status, points = 0, result = null, errorCode = '' }) {
+  async finish(user, id, { status, points = 0, result = null, vendorCost = null, errorCode = '' }) {
     if (!['succeeded', 'failed', 'outcome_unknown'].includes(status) || !Number.isFinite(points) || points < 0) throw failure('VOICE_INPUT_INVALID', '任务结果无效', 400)
     return this.transaction(async connection => {
       await connection.query('SELECT id FROM ai_end_users WHERE id=? AND organization_id=? FOR UPDATE', [user.id, user.organizationId])
@@ -82,9 +82,9 @@ export class VoiceOperationRepository {
       if (status === 'succeeded') {
         const [[balance]] = await connection.query('SELECT credit_balance FROM ai_end_users WHERE id=?', [user.id])
         await connection.query(`INSERT INTO ai_credit_ledger
-          (id,user_id,organization_id,change_type,points_delta,balance_after,request_id,billing_type,deduct_status,note,client_source)
-          VALUES (?,?,?,'consume',?,?,?,'voice','succeeded',?,?)`,
-        [randomUUID(), user.id, user.organizationId, -settled, balance.credit_balance, id, `语音服务：${row.operation_type}`, normalizeLedgerSource(row.client_source)])
+          (id,user_id,organization_id,change_type,points_delta,balance_after,request_id,billing_type,deduct_status,note,client_source,cost_department_id,vendor_cost,cost_used_at)
+          VALUES (?,?,?,'consume',?,?,?,'voice','succeeded',?,?,?,?,?)`,
+        [randomUUID(), user.id, user.organizationId, -settled, balance.credit_balance, id, `语音服务：${row.operation_type}`, normalizeLedgerSource(row.client_source), row.cost_department_id ?? null, vendorCost ? JSON.stringify(vendorCost) : null, row.created_at ?? null])
       }
       await connection.query(`UPDATE ai_voice_operations SET status=?,points_settled=?,points_reserved=0,
         result_json=?,error_code=?,completed_at=CURRENT_TIMESTAMP(3) WHERE id=?`, [status, settled, result === null ? null : JSON.stringify(result), errorCode, id])

@@ -25,6 +25,16 @@ export async function migrateUserUsagePermissions(pool) {
           ORDER BY enabled DESC,transferable DESC LIMIT 1`, [key,organization.id])
       }
     }
+    const [costGrant] = await connection.query("INSERT IGNORE INTO ai_feature_migrations (migration_key) VALUES ('vendor-cost-permissions-v1')")
+    if (costGrant.affectedRows) {
+      await connection.query(`INSERT IGNORE INTO ai_role_template_permissions (template_id,permission_key)
+        SELECT p.template_id,'vendor_cost.view' FROM ai_role_template_permissions p JOIN ai_role_templates t ON t.id=p.template_id
+        WHERE t.system_builtin=1 AND p.permission_key='credits.manage'`)
+      await connection.query(`INSERT IGNORE INTO ai_organization_capabilities
+        (organization_id,capability_key,enabled,transferable,limit_value,granted_by_organization_id,granted_by_user_id)
+        SELECT organization_id,'vendor_cost.view',enabled,transferable,0,granted_by_organization_id,'system-migration'
+        FROM ai_organization_capabilities WHERE capability_key='credits.manage'`)
+    }
     await connection.commit()
   } catch (error) { await connection.rollback(); throw error }
   finally { connection.release() }

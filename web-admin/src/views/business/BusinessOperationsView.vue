@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref, computed, watch } from "vue";
+import CostDepartments from "@/components/business/CostDepartments.vue";
 import { RouterLink } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import {CreditCard,Plus,RefreshCw} from "@lucide/vue";
@@ -14,6 +16,10 @@ import {formatUnitPriceCny,membershipUnitPriceCny} from "@/utils/pricing-points"
 const auth = useAuthStore();
 const props = defineProps<{ section: BusinessSection }>();
 const b = useBusinessOperations(props.section);
+const checked = ref<string[]>([]);
+const selectedUsers = computed(() => b.rows.value.filter(user=>checked.value.includes(user.id)));
+watch(b.rows,()=>{checked.value=[]});
+function filterDepartment(id:string){b.departmentFilter.value=id;b.page.value=1;b.load()}
 const meta = {
   "end-users": ["终端用户", "个人账号、登录状态、会员权益、模型授权和积分操作"],
   memberships: ["会员卡", "会员权益、价格和模型可用范围"],
@@ -67,6 +73,7 @@ function formatDate(value:any){
       <button :class="{ active: b.activeTab.value === 'primary' }" @click="b.activeTab.value = 'primary'">支付配置</button>
       <button :class="{ active: b.activeTab.value === 'orders' }" @click="b.activeTab.value = 'orders'">支付订单</button>
     </nav>
+    <CostDepartments v-if="section==='end-users'" :selected="selectedUsers" :filter="b.departmentFilter.value" @filter="filterDepartment" @changed="b.load" />
     <BusinessSearchToolbar :section="section" :title="meta[0]" :b="b" />
 
     <div v-if="section === 'end-users'" class="table-panel panel-card">
@@ -74,7 +81,7 @@ function formatDate(value:any){
         <table class="data-table business-data-table end-user-table">
           <colgroup>
             <col class="end-user-col-user" />
-            <col class="end-user-col-source" />
+            <col class="end-user-col-source" /><col />
             <col class="end-user-col-points" />
             <col class="end-user-col-membership" />
             <col class="end-user-col-times" />
@@ -84,7 +91,7 @@ function formatDate(value:any){
           <thead>
             <tr>
               <th>用户</th>
-              <th>来源组织</th>
+              <th>来源组织</th><th>部门</th>
               <th>积分余额</th>
               <th>会员权益</th>
               <th>注册 / 活跃</th>
@@ -96,7 +103,7 @@ function formatDate(value:any){
             <tr v-for="user in b.filtered.value" :key="user.id">
               <td>
                 <div class="entity-cell">
-                  <span class="entity-avatar">{{ initials(user) }}</span>
+                  <input v-model="checked" type="checkbox" :value="user.id" :aria-label="'选择用户 '+user.username"><span class="entity-avatar">{{ initials(user) }}</span>
                   <div>
                     <strong>{{ user.displayName || user.username }}</strong
                     ><span>{{ user.username }}</span
@@ -111,6 +118,8 @@ function formatDate(value:any){
                 }}</small>
               </td>
               <td>
+                {{ user.departmentName }}
+              </td><td>
                 <span class="metric-number">{{
                   user.creditBalance ?? 0
                 }}</span

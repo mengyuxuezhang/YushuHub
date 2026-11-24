@@ -27,6 +27,7 @@ export function useBusinessOperations(section: BusinessSection) {
     clientSourceFilter = ref("all"),
     activeTab = ref("primary"),
     errorMessage = ref("");
+  const departmentFilter = ref("");
   const page = ref(1), pageSize = ref(20), total = ref(0), totalPages = ref(1);
   const modelAccessOpen = ref(false),
     modelAccessLoading = ref(false),
@@ -78,6 +79,7 @@ export function useBusinessOperations(section: BusinessSection) {
         provider: providerFilter.value,
         changeType: changeTypeFilter.value,
         clientSource: clientSourceFilter.value,
+        departmentId: departmentFilter.value,
       };
       if (section === "end-users") applyPage(await api.listEndUsers(query));
       if (section === "memberships")
@@ -457,7 +459,7 @@ export function useBusinessOperations(section: BusinessSection) {
   }
   onMounted(load);
   return {
-    rows,
+    rows, departmentFilter,
     secondaryRows,
     options,
     filtered,

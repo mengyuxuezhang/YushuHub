@@ -1,10 +1,11 @@
+import { billingReportCapabilities } from './authorization/resource-access.mjs'
 import { organizationExpiryState, organizationAuthorizationExpired } from './organization-expiry.mjs'
 import { RETIRED_CAPABILITIES } from './authorization/packages.mjs'
 export function normalizeDataScope(value, fallback = 'self') { return value === 'platform' ? 'platform' : fallback === 'platform' ? 'platform' : 'self' }
 export function resolveEffectiveCapabilities(own = [], licensed = null) {
   const enabled = own.filter(c => c.enabled && !RETIRED_CAPABILITIES.has(c.key))
   if (!licensed) return enabled
-  const allowed = licensed.filter(c => c.enabled && !RETIRED_CAPABILITIES.has(c.key)), keys = new Set(allowed.map(c => c.key))
+  const allowed = billingReportCapabilities(licensed).filter(c => c.enabled && !RETIRED_CAPABILITIES.has(c.key)), keys = new Set(allowed.map(c => c.key))
   return enabled.some(c => c.key === '*') ? allowed : enabled.filter(c => keys.has(c.key))
 }
 export const hasOrganizationCapability = (context, key) => !RETIRED_CAPABILITIES.has(key) && Boolean(context?.capabilityKeys?.includes('*') || context?.capabilityKeys?.includes(key))

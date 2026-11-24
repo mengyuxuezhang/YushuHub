@@ -15,7 +15,7 @@ export function reportUserScope(actor, alias = 'u') {
 // MySQL 5.7 compatibility: usage events have a finite set of meters and phases.
 // Oversized legacy payloads are explicitly unknown, never silently truncated.
 const digits = Array.from({ length: 10 }, (_, n) => `SELECT ${n} AS n`).join(' UNION ALL ')
-function eventMeter(json, meter) {
+export function eventMeter(json, meter) {
   return `(CASE WHEN JSON_TYPE(${json})='ARRAY' AND JSON_LENGTH(${json})<=100 THEN
     (SELECT CASE WHEN SUM(JSON_TYPE(JSON_EXTRACT(${json}, CONCAT('$[', n.n+t.n*10, '].quantity'))) NOT IN ('INTEGER','DOUBLE','DECIMAL') OR JSON_EXTRACT(${json}, CONCAT('$[', n.n+t.n*10, '].quantity')) IS NULL OR CAST(JSON_UNQUOTE(JSON_EXTRACT(${json}, CONCAT('$[', n.n+t.n*10, '].quantity'))) AS DECIMAL(24,6))<0)>0 THEN NULL
      ELSE SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(${json}, CONCAT('$[', n.n + t.n*10, '].quantity'))) AS DECIMAL(24,6))) END

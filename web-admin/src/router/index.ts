@@ -53,7 +53,7 @@ export const router = createRouter({
           path: item.path.slice(1),
           name: item.path.slice(1).replaceAll("/", "-"),
           component:
-            item.path === "/authorization" ? AuthorizationView : item.path === "/user-usage" ? UserUsageView : item.path === "/markets/agents"
+            item.path === "/authorization" ? AuthorizationView : item.path === "/vendor-cost" ? () => import("@/views/business/VendorCostView.vue") : item.path === "/user-usage" ? UserUsageView : item.path === "/markets/agents"
               ? AgentMarketView
               : item.path === "/markets/plugins"
                 ? () => import("@/views/markets/PluginMarketView.vue")

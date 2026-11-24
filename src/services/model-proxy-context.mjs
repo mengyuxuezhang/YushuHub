@@ -51,7 +51,7 @@ export function createModelProxyContextResolver(deps) {
     const rule = effectiveGatewayPricingRule(legacy, plan)
     if (!rule) throw new Error(`模型 ${model.modelId} 未配置启用中的计费方案`)
     await markUsed(db(), key.id, keys.length > 1)
-    return { provider, model, key: { id: key.id, apiKey: String(key.api_key), keyPreview: key.key_preview || previewSecret(key.api_key) },
+    return { costStartedAt: Date.now(), organizationId, departmentId: endUser?.departmentId || 'default', provider, model, key: { id: key.id, apiKey: String(key.api_key), keyPreview: key.key_preview || previewSecret(key.api_key) },
       pricingRule: rule, pricingPlan: plan, pricingRates: Object.fromEntries(rates.map(item => [item.currency, item.cnyRate])), endpointPath: provider.endpointPath }
   }
 }

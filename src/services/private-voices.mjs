@@ -1,3 +1,4 @@
+import { settledCost } from './vendor-cost.mjs'
 import { createHash, randomUUID } from 'node:crypto'
 import { assertVoiceOwnership, voicePrice } from './model-capabilities.mjs'
 import { inspectVoiceAudio } from './voice-audio.mjs'
@@ -12,12 +13,13 @@ const publicSystemVoice = row => ({ id: row.id, modelId: row.provider_model_id, 
 const systemVoiceId = (accountId, modelId, providerVoiceId) => `sys-${createHash('sha256').update(`${accountId}:${modelId}:${providerVoiceId}`).digest('hex').slice(0, 40)}`
 const validId = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{8,128}$/.test(value)
 export const publicVoiceOperation = row => ({ id: row.id, voiceId: row.voice_id, operation: row.operation_type, status: row.status, reservedPoints: Number(row.points_reserved), settledPoints: Number(row.points_settled), errorCode: row.error_code || '', ...publicVoiceSpeech(row) })
-function voiceCharge(context, operation, characters = 0) {
-  if (!context.pricingPlan) return voicePrice(context.pricing, operation, characters)
+function voiceQuote(context, operation, characters = 0) {
+  if (!context.pricingPlan) return {points:voicePrice(context.pricing, operation, characters),vendorCost:null}
   const event = operation === 'activate'
     ? usageEvent('resource_activation', 1, { phase: 'activation' })
     : usageEvent('billable_characters', characters, { phase: operation === 'clone' ? 'preview' : 'usage' })
-  return quotePricing(context.pricingPlan, [event], { CNY: 1, ...context.pricingRates }).points
+  const quote = quotePricing(context.pricingPlan, [event], { CNY: 1, ...context.pricingRates })
+  return {points:quote.points,vendorCost:settledCost(quote, context.pricingRates)}
 }
 
 export class PrivateVoiceService {
@@ -71,7 +73,7 @@ export class PrivateVoiceService {
     input = { ...input, text: input.text.trim() }
     const context = await this.contexts.resolve(user, input.modelId)
     const characters = miniMaxBillableCharacters(input.text)
-    const points = voiceCharge(context, 'clone', characters)
+    const {points,vendorCost} = voiceQuote(context, 'clone', characters)
     const previewRate = context.pricingPlan ? voicePricingSummary(context.pricingPlan).preview : null
     const maximumPoints = previewRate == null ? points : voicePreviewReservation(input.text, previewRate)
     if (input.confirmedPoints !== maximumPoints) throw failure('VOICE_PRICE_CHANGED', '试听价格已更新，请刷新音色列表后重新确认；按汉字双字符上限预留，按实际字符结算')
@@ -105,7 +107,7 @@ export class PrivateVoiceService {
       upstreamCompleted = true
       await this.artifacts.save(operation.voice_id, await context.adapter.previewAudio(result.previewUrl))
       await this.pool.query("UPDATE ai_private_voices SET status='preview_ready',expires_at=DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 7 DAY) WHERE id=?", [operation.voice_id])
-      return publicVoiceOperation(await this.operations.finish(user, operation.id, { status: 'succeeded', points, result: { characters, reservedPoints: maximumPoints } }))
+      return publicVoiceOperation(await this.operations.finish(user, operation.id, { status: 'succeeded', points, vendorCost, result: { characters, reservedPoints: maximumPoints } }))
     } catch (error) {
       const status = upstreamCompleted || error.outcomeUnknown ? 'outcome_unknown' : 'failed'
       outcomeUnknown = status === 'outcome_unknown'
@@ -125,7 +127,7 @@ export class PrivateVoiceService {
     if (!validId(input.idempotencyKey) || !validId(input.voiceId) || !Number.isFinite(input.confirmedPoints)) throw failure('VOICE_INPUT_INVALID', '请求参数无效', 400)
     const voice = await this.voice(user, input.voiceId)
     const context = await this.contexts.resolve(user, voice.provider_model_id, voice.upstream_account_id)
-    const points = voiceCharge(context, 'activate')
+    const {points,vendorCost} = voiceQuote(context, 'activate')
     if (input.confirmedPoints !== points) throw failure('VOICE_PRICE_CHANGED', '启用价格已更新，请重新确认')
     const reserved = await this.operations.reserve(user, { operation: 'activate', idempotencyKey: input.idempotencyKey, voiceId: voice.id, points, fingerprint: fingerprint({ voiceId: voice.id }) })
     if (!reserved.created) return publicVoiceOperation(reserved.operation)
@@ -139,7 +141,7 @@ export class PrivateVoiceService {
       invoked = true
       await context.adapter.invoke(context.connection, { model: context.upstreamModel, voiceId: voice.provider_voice_id, text: '你好，这个声音已准备好为你讲述新的故事。' })
       await this.pool.query("UPDATE ai_private_voices SET status='active',activated_at=CURRENT_TIMESTAMP(3),expires_at=NULL WHERE id=?", [voice.id])
-      return publicVoiceOperation(await this.operations.finish(user, op.id, { status: 'succeeded', points }))
+      return publicVoiceOperation(await this.operations.finish(user, op.id, { status: 'succeeded', points, vendorCost }))
     } catch (error) {
       const unknown = error.outcomeUnknown === true || (invoked && error.outcomeUnknown === undefined)
       const status = unknown ? 'outcome_unknown' : 'failed'
@@ -161,7 +163,7 @@ export class PrivateVoiceService {
     // System voices bind to a model and upstream account, without a provider_id column.
     // resolve() verifies that the bound account belongs to the selected model's provider.
     if (context.accountId !== voice.upstream_account_id || (selected.category === 'private' && context.providerId !== voice.provider_id)) throw failure('VOICE_ACCOUNT_MISMATCH', '音色不属于所选模型的服务商')
-    const points = voiceCharge(context, 'synthesize', miniMaxBillableCharacters(input.text))
+    const {points} = voiceQuote(context, 'synthesize', miniMaxBillableCharacters(input.text))
     const reserved = await this.operations.reserve(user, { operation: 'synthesize', idempotencyKey: input.idempotencyKey, voiceId: voice.id, voiceCategory: selected.category, points,
       fingerprint: fingerprint({ voiceId: voice.id, modelId: input.modelId, text: input.text, speed: input.speed ?? 1, ...(input.includeTimings ? { includeTimings: true } : {}), ...(input.timingGranularity === 'word' ? { timingGranularity: 'word' } : {}) }) })
     const op = reserved.operation
@@ -172,7 +174,7 @@ export class PrivateVoiceService {
       const audio = await context.adapter.invoke(context.connection, { model: context.upstreamModel, voiceId: voice.provider_voice_id, text: input.text, speed: input.speed ?? 1, ...(input.includeTimings ? { includeTimings: true, timingGranularity: input.timingGranularity ?? 'sentence' } : {}) })
       completed = true
       await this.artifacts.save(op.id, audio.bytes)
-      return publicVoiceOperation(await this.operations.finish(user, op.id, { status: 'succeeded', points: voiceCharge(context, 'synthesize', audio.characters),
+      return publicVoiceOperation(await this.operations.finish(user, op.id, { status: 'succeeded', ...voiceQuote(context, 'synthesize', audio.characters),
         result: { artifactId: op.id, characters: audio.characters, durationSec: audio.durationSec, mimeType: 'audio/mpeg',
           ...(input.includeTimings ? { audioSha256: createHash('sha256').update(audio.bytes).digest('hex'), timingStatus: audio.timingStatus ?? 'unavailable', boundaries: audio.boundaries ?? [],
             ...(['missing', 'unsupported_host', 'download_failed', 'too_large', 'invalid'].includes(audio.timingUnavailableReason) ? { timingUnavailableReason: audio.timingUnavailableReason } : {}) } : {}) } }))
