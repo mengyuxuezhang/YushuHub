@@ -4,7 +4,10 @@ import { buildArtifactLinks, buildFileUrl, buildPublicUrl, primaryBuildArtifact 
 import { diagnosticsFilename, formatDiagnosticsReport } from '@/utils/diagnostics-export'
 import { projectVersionState } from '@/utils/project-version'
 import { buildClientModeLabel, buildExecutionLabel, buildReleaseLabel } from '@/utils/build-records'
-import { deliverySearchValues } from '@/composables/delivery/useDeliverySystem'
+import { deliverySearchValues, useDeliverySystem } from '@/composables/delivery/useDeliverySystem'
+import BuildTable from '@/components/delivery/BuildTable.vue'
+import { createPinia } from 'pinia'
+import { createApp, h, nextTick } from 'vue'
 
 const ok = (data: unknown) => Promise.resolve(new Response(JSON.stringify({ success: true, data }), { status: 200, headers: { 'content-type': 'application/json' } }))
 
@@ -77,6 +80,43 @@ describe('delivery and system API contracts', () => {
     expect(buildExecutionLabel({ status: 'queued' })).toBe('排队中')
     expect(buildExecutionLabel({ status: 'running' })).toBe('构建中')
     expect(buildExecutionLabel({ status: 'running', transferProgress: { phase: 'staging' } })).toBe('同步产物中')
+  })
+
+  it('shows immediate retry feedback and submits the same build only once', async () => {
+    let build = { id: 'build-a', status: 'failed', error: '传输超时' }
+    let finishRetry!: (response: Response) => void
+    const retryResponse = new Promise<Response>(resolve => { finishRetry = resolve })
+    const request = vi.spyOn(globalThis, 'fetch').mockImplementation(url =>
+      String(url).endsWith('/retry')
+        ? retryResponse
+        : ok({ items: [build], page: 1, pageSize: 20, total: 1, totalPages: 1 }),
+    )
+    const host = document.createElement('div')
+    const app = createApp({
+      setup() {
+        const d = useDeliverySystem('builds')
+        return () => h(BuildTable, { d })
+      },
+    }).use(createPinia())
+    app.mount(host)
+    const retryButton = () => Array.from(host.querySelectorAll('button')).find(button => button.textContent?.includes('重试'))
+    try {
+      await vi.waitFor(() => expect(retryButton()?.disabled).toBe(false))
+      retryButton()?.click()
+      retryButton()?.click()
+      await nextTick()
+      expect(retryButton()?.textContent).toContain('正在重试…')
+      expect(retryButton()?.disabled).toBe(true)
+      expect(request.mock.calls.filter(([url]) => String(url).endsWith('/retry'))).toHaveLength(1)
+      build = { ...build, status: 'queued', error: '' }
+      finishRetry(await ok(build))
+      await vi.waitFor(() => {
+        expect(host.textContent).toContain('排队中')
+        expect(retryButton()).toBeUndefined()
+      })
+    } finally {
+      app.unmount()
+    }
   })
 
   it('keeps settings secrets and passwords in request bodies', async () => {

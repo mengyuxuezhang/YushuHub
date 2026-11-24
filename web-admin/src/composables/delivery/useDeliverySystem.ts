@@ -50,6 +50,7 @@ export function useDeliverySystem(section: DeliverySection) {
     accounts = ref<any[]>([]),
     projectBuilds = ref<Record<string, any>>({}),
     buildSubmittingIds = ref<string[]>([]),
+    retryingBuildIds = reactive(new Set<string>()),
     projectEditing = ref(false),
     buildLogOpen = ref(false),
     selectedBuild = ref<any | null>(null);
@@ -249,6 +250,7 @@ export function useDeliverySystem(section: DeliverySection) {
   }
   function buildStage(build: any) {
     if (build?.status === "queued") return "等待构建机领取任务";
+    if (build?.status === "running" && build.transferProgress?.status === "retrying") return "正在重新接收测试包";
     if (build?.status === "running") return build?.transferProgress?.currentFile || "正在编译并生成安装包";
     if (build?.status === "succeeded") return "构建完成，可下载测试包";
     if (build?.status === "failed") return "构建失败，请查看日志";
@@ -261,6 +263,25 @@ export function useDeliverySystem(section: DeliverySection) {
   async function submitSearch() { appliedSearch.value = search.value.trim(); appliedSearchField.value = searchField.value; page.value = 1; if (section === "builds") await load(); }
   async function resetSearch() { search.value = ""; searchField.value = "all"; appliedSearch.value = ""; appliedSearchField.value = "all"; statusFilter.value = "all"; page.value = 1; if (section === "builds") await load(); }
   async function buildAction(x: any, action: "retry" | "finish" | "publish" | "publishAndroid") {
+    if (action === "retry") {
+      if (retryingBuildIds.has(x.id)) return;
+      retryingBuildIds.add(x.id);
+      try {
+        const build = await api.retryBuild(x.id);
+        if (build) {
+          const current = rows.value.find(row => row.id === build.id);
+          if (current) Object.assign(current, build);
+          if (build.status === "failed") feedback.notify(build.error || "构建任务重试失败", "error");
+          else feedback.notify("重试已提交", "success");
+        }
+      } catch (e) {
+        feedback.notify(toUserMessage(e), "error");
+      } finally {
+        retryingBuildIds.delete(x.id);
+        void load(true);
+      }
+      return;
+    }
     if (action === "publish" || action === "publishAndroid") {
       const platform = action === 'publishAndroid' ? '安卓版' : '桌面端';
       const ok = await feedback.confirm({
@@ -272,7 +293,6 @@ export function useDeliverySystem(section: DeliverySection) {
       if (!ok) return;
     }
     try {
-      if (action === "retry") await api.retryBuild(x.id);
       if (action === "finish") await api.finishBuild(x.id);
       if (action === "publish" || action === "publishAndroid") await api.publishBuild(x.id, action === 'publishAndroid' ? 'android' : 'desktop');
       await load();
@@ -449,6 +469,7 @@ export function useDeliverySystem(section: DeliverySection) {
     submitSearch,
     resetSearch,
     buildAction,
+    isBuildRetrying: (id: string) => retryingBuildIds.has(id),
     editSettings,
     saveSettings,
     testSmtp,
