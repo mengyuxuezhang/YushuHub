@@ -1636,6 +1636,7 @@ export async function initDatabase(options = {}) {
     id VARCHAR(64) PRIMARY KEY, organization_id VARCHAR(64) NOT NULL, name VARCHAR(80) NOT NULL,
     enabled TINYINT NOT NULL DEFAULT 1, UNIQUE KEY uq_cost_department_name (organization_id,name)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+  await ensureColumn('ai_cost_departments','description',"VARCHAR(500) NOT NULL DEFAULT ''")
   await ensureColumn('ai_end_users','cost_department_id',"VARCHAR(64) NOT NULL DEFAULT 'default'")
   for (const table of ['ai_credit_ledger','ai_model_operations','ai_voice_operations']) {
     await ensureColumn(table,'cost_department_id','VARCHAR(64) NULL')
@@ -2078,6 +2079,7 @@ export async function initDatabase(options = {}) {
   await migrateUserUsagePermissions(pool)
   await migrateVendorCosts(pool)
   await backfillOrganizationOwnership(rootOrganizationId)
+  await ensureIndex('ai_end_users','idx_end_users_cost_department','ADD INDEX idx_end_users_cost_department (organization_id,cost_department_id)')
   await seedAccountFreeMembershipCards()
   return pool
 }

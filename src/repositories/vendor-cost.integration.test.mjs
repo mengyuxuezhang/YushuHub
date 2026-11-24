@@ -139,11 +139,34 @@ test(
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ organizationId: org.id, ...body }),
         })
-      assert.equal((await save({ name: '设计部' })).status, 200)
+      assert.equal((await save({ name: '设计部', description: '负责演示设计' })).status, 200)
+      assert.equal((await save({ name: '设计部' })).status, 409)
       const [departments] = await pool.query('SELECT id FROM ai_cost_departments')
       const id = departments[0].id
       assert.equal((await save({ id, userIds: ['alice', 'bob'] })).status, 403)
+      const memberRequest = (departmentId, params = {}) =>
+        fetch(
+          base +
+            'cost-departments/members?' +
+            new URLSearchParams({ organizationId: org.id, departmentId, ...params }),
+        )
+      const initial = (await (await memberRequest(id, { outside: '1', search: 'alice' })).json()).data
+      assert.equal(initial.total, 1)
+      assert.equal(initial.items[0].departmentId, 'default')
+      assert.equal((await memberRequest('default', { organizationId: 'foreign' })).status, 403)
       assert.equal((await save({ id, userIds: ['alice'] })).status, 200)
+      assert.equal((await save({ id: 'default', userIds: ['alice'], fromDepartmentId: 'stale' })).status, 409)
+      const memberPage = (await (await memberRequest(id, { search: 'alice', pageSize: '10' })).json()).data
+      assert.deepEqual(
+        memberPage.items.map((row) => row.id),
+        ['alice'],
+      )
+      assert.equal((await save({ id, name: '产品设计部', description: '改名说明' })).status, 200)
+      const summary = (await (await fetch(base + 'cost-departments')).json()).data
+      assert.equal(summary.length, 2)
+      assert.equal(Number(summary.find((row) => row.id === id).memberCount), 1)
+      assert.equal(summary.find((row) => row.id === id).description, '改名说明')
+      assert.equal((await save({ id: 'default', name: '重命名' })).status, 400)
       async function call(
         key,
         who,
@@ -279,6 +302,11 @@ test(
       assert.equal((await save({ id, disabled: true })).status, 200)
       const [[moved]] = await pool.query("SELECT cost_department_id FROM ai_end_users WHERE id='alice'")
       assert.equal(moved.cost_department_id, 'default')
+      assert.equal((await save({ id, userIds: ['alice'] })).status, 409)
+      assert.equal((await save({ id, disabled: false })).status, 200)
+      const restored = (await (await fetch(base + 'cost-departments')).json()).data.find((row) => row.id === id)
+      assert.equal(restored.enabled, 1)
+      assert.equal(Number(restored.memberCount), 0)
       // Run the actual reserve/finish paths, move the user while both jobs are running,
       // then replay settlement to verify that the ledger keeps one row per invocation.
       await pool.query(
@@ -381,7 +409,9 @@ test(
       )
       assert.equal(historical.cost_department_id, null)
       // Simulate old registered users with no department column prior to the upgrade.
-      await pool.query('ALTER TABLE ai_end_users DROP COLUMN cost_department_id')
+      await pool.query(
+        'ALTER TABLE ai_end_users DROP INDEX idx_end_users_cost_department, DROP COLUMN cost_department_id',
+      )
       await pool.end()
       pool = null
       await initDatabase(options)

@@ -45,8 +45,10 @@ export interface CostCall {
   images: number | null
 }
 export interface Department {
-  id: string | null
-  name: string | null
+  id: string
+  name: string
+  description: string
+  memberCount: number
   enabled: number
   organizationId: string
   organizationName: string
@@ -66,5 +68,18 @@ export const updateDepartments = (body: {
   id?: string
   name?: string
   disabled?: boolean
+  description?: string
+  fromDepartmentId?: string
   userIds?: string[]
 }) => api<boolean>('/api/cost-departments', { method: 'POST', body: JSON.stringify(body) })
+
+export interface DepartmentMember {
+  id: string
+  username: string
+  displayName: string
+  status: string
+  departmentId: string
+  departmentName: string
+}
+export const departmentMembers = (query: URLSearchParams) =>
+  api<PageResult<DepartmentMember>>('/api/cost-departments/members?' + query)

@@ -1,4 +1,4 @@
-import { listDepartments, updateDepartments } from '../repositories/cost-departments.mjs'
+import { listDepartments, listDepartmentMembers, updateDepartments } from '../repositories/cost-departments.mjs'
 import { db } from '../db/pool.mjs'
 import { requireAuth, requirePermission } from '../middleware/auth.mjs'
 import { readVendorCosts, reconcileVendorCall } from '../repositories/vendor-cost.mjs'
@@ -35,6 +35,12 @@ export function registerVendorCostRoutes(app) {
     requireAuth,
     manage,
     handler((req) => listDepartments(db(), req.user)),
+  )
+  app.get(
+    base + '/members',
+    requireAuth,
+    manage,
+    handler((req) => listDepartmentMembers(db(), req.user, req.query)),
   )
   app.post(
     base,
