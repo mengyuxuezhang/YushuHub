@@ -53,7 +53,6 @@ export function registerBuildRoutes(app, deps) {
     listWorkers,
     claimNextBuild,
     projectToBrand,
-    applyProjectReleaseFeedUrl,
     getSourceVersionInfo,
     touchWorker,
     appendBuildLog,
@@ -447,7 +446,7 @@ export function registerBuildRoutes(app, deps) {
       }
 
       const brand = claimed.brand || projectToBrand(project)
-      if (!claimed.brand || !brand.updateUrl) await applyProjectReleaseFeedUrl(brand, project.id)
+      if (!brand.updateUrl) brand.updateUrl = projectToBrand(project).updateUrl
       if (!brand.releaseNotes || !Array.isArray(brand.releaseHistory)) {
         const sourceVersions = await getSourceVersionInfo()
         const sourceInfo = claimed.target === 'android' ? sourceVersions.android : sourceVersions

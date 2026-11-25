@@ -1,5 +1,13 @@
 import { setNoStoreHeaders } from '../middleware/cache-control.mjs'
-import { isLatestDownloadFileName } from '../services/project-downloads.mjs'
+import { DESKTOP_UPDATE_PATH, isDesktopUpdateFileName, isLatestDownloadFileName } from '../services/project-downloads.mjs'
+
+export function desktopUpdatePaths(legacyPath) {
+  const paths = [DESKTOP_UPDATE_PATH, '/agent/ai']
+  if (typeof legacyPath === 'string' && /^\/[-\w]+(?:\/[-\w]+)*\/?$/.test(legacyPath)) {
+    paths.push(legacyPath.replace(/\/$/, ''))
+  }
+  return [...new Set(paths)]
+}
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]
@@ -16,7 +24,7 @@ function androidSourcePage(source) {
     <p>将品牌包解压后，按构建说明使用其中的配置、图标和版本号构建此版本。</p></main></html>`
 }
 
-export function registerProjectDownloadRoutes(app, { downloads }) {
+export function registerProjectDownloadRoutes(app, { downloads, desktopPaths = desktopUpdatePaths() }) {
   app.get('/api/client/android-download/:projectId', async (req, res, next) => {
     setNoStoreHeaders(res)
     try {
@@ -59,13 +67,21 @@ export function registerProjectDownloadRoutes(app, { downloads }) {
       } catch (error) { next(error) }
     })
   }
-  // Register before static artifacts. Versioned installers keep their existing route.
-  app.get(['/updates/ai/:projectId/:fileName', '/agent/ai/:projectId/:fileName'], async (req, res, next) => {
-    if (!isLatestDownloadFileName(req.params.fileName)) return next()
+  app.get(desktopPaths.map(path => `${path}/:projectId/:fileName`), async (req, res, next) => {
+    const { projectId, fileName } = req.params
+    const alias = isLatestDownloadFileName(fileName)
+    if (!alias && !isDesktopUpdateFileName(fileName)) return next()
     setNoStoreHeaders(res)
     try {
-      const target = await downloads.resolve(req.params.projectId, req.params.fileName)
-      if (!target) return res.status(404).type('text/plain').send('暂无可下载的正式版本')
+      const target = alias
+        ? await downloads.resolve(projectId, fileName)
+        : await downloads.resolveDesktopUpdate(projectId, fileName)
+      if (!target) return alias ? res.status(404).type('text/plain').send('暂无可下载的正式版本') : next()
+      const url = new URL(target)
+      // Local releases can already be served by the static route below.
+      if (url.host === req.get('host')?.toLowerCase() && decodeURIComponent(url.pathname) === decodeURIComponent(req.path)) {
+        return next()
+      }
       return res.redirect(302, target)
     } catch (error) { next(error) }
   })

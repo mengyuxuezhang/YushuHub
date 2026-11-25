@@ -2,6 +2,17 @@ import { projectAndroidBuild } from './android-project-build.mjs'
 import { ANDROID_BRAND, ANDROID_SOURCE, DEFAULT_ANDROID_PUBLIC_SOURCE_REPOSITORY, androidPublishedFile, androidSharedSource, androidSourceRepositoryUrl, androidUpdateManifest } from './android-build-artifacts.mjs'
 
 const aliasPattern = /^(?:[a-z0-9][a-z0-9_-]*-)?latest-x64\.exe$/
+const desktopManifests = new Set(['latest.yml', 'latest.json'])
+const desktopPackagePattern = /^[a-z0-9][a-z0-9._ -]{0,249}\.exe(?:\.blockmap)?$/i
+export const DESKTOP_UPDATE_PATH = '/updates/ai'
+
+export function desktopUpdateBaseUrl(adminBaseUrl, projectId) {
+  return `${adminBaseUrl.replace(/\/+$/, '')}${DESKTOP_UPDATE_PATH}/${encodeURIComponent(projectId)}/`
+}
+
+export function isDesktopUpdateFileName(name) {
+  return desktopManifests.has(name) || (desktopPackagePattern.test(name) && !isLatestDownloadFileName(name))
+}
 
 export function normalizeLatestDownloadFileName(value) {
   if (value === undefined || value === null || value === '') return ''
@@ -23,30 +34,45 @@ export function projectDownloadInfo(project, adminBaseUrl) {
   return {
     ...project,
     androidBuild: projectAndroidBuild(project, adminBaseUrl),
-    latestDownloadUrl: name ? `${adminBaseUrl.replace(/\/$/, '')}/updates/ai/${encodeURIComponent(project.id)}/${encodeURIComponent(name)}` : '',
+    latestDownloadUrl: name ? desktopUpdateBaseUrl(adminBaseUrl, project.id) + encodeURIComponent(name) : '',
   }
 }
 
 export function releasedInstallerUrl(release) {
-  if (!release || release.status !== 'succeeded' || !release.releasedAt || release.releaseStatus) return null
-  let files
-  try { files = typeof release.files === 'string' ? JSON.parse(release.files) : release.files } catch { return null }
-  if (!Array.isArray(files)) return null
+  const files = releasedFiles(release)
   const installers = files.filter(name => typeof name === 'string' && !/[\\/\x00-\x1f\x7f]/.test(name)
     && name !== '.' && name !== '..' && /\.exe$/i.test(name) && !isLatestDownloadFileName(name))
   const x64 = installers.filter(name => /-x64\.exe$/i.test(name))
   const candidates = x64.length ? x64 : installers.filter(name => !/-(?:arm64|ia32|x86)\.exe$/i.test(name))
-  if (candidates.length !== 1) return null
+  return candidates.length === 1 ? releasedFileUrl(release, candidates[0]) : null
+}
+
+function releasedFiles(release) {
+  if (!release || release.status !== 'succeeded' || !release.releasedAt || release.releaseStatus) return []
+  let files
+  try { files = typeof release.files === 'string' ? JSON.parse(release.files) : release.files } catch { return [] }
+  return Array.isArray(files) ? files : []
+}
+
+function releasedFileUrl(release, name) {
   try {
     const base = new URL(release.releaseUrl)
     if (!['https:', 'http:'].includes(base.protocol) || base.username || base.password || base.search || base.hash) return null
-    base.pathname = `${base.pathname.replace(/\/$/, '')}/${encodeURIComponent(candidates[0])}`
+    base.pathname = `${base.pathname.replace(/\/+$/, '')}/${encodeURIComponent(name)}`
     return base.href
   } catch { return null }
 }
 
-export function createProjectDownloadService({ findProject, findLatestRelease, findLatestAndroidRelease = async () => null, findPublishedAndroidRelease = async () => null, androidSourceRepository = DEFAULT_ANDROID_PUBLIC_SOURCE_REPOSITORY }) {
+export function createProjectDownloadService({ findProject, findLatestRelease, findPublishedDesktopFile = async () => null, findLatestAndroidRelease = async () => null, findPublishedAndroidRelease = async () => null, androidSourceRepository = DEFAULT_ANDROID_PUBLIC_SOURCE_REPOSITORY }) {
   return {
+    async resolveDesktopUpdate(projectId, fileName) {
+      if (!/^[a-z0-9][a-z0-9_-]{1,62}$/.test(projectId) || !isDesktopUpdateFileName(fileName)) return null
+      if ((await findProject(projectId))?.status !== 'enabled') return null
+      const release = desktopManifests.has(fileName)
+        ? await findLatestRelease(projectId)
+        : await findPublishedDesktopFile(projectId, fileName)
+      return releasedFiles(release).includes(fileName) ? releasedFileUrl(release, fileName) : null
+    },
     async resolveAndroid(projectId, kind = 'page', buildId = '') {
       if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(projectId)) return null
       const project = await findProject(projectId)

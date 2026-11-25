@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import express from 'express'
-import { registerProjectDownloadRoutes } from './project-downloads.mjs'
-import { createProjectDownloadService } from '../services/project-downloads.mjs'
+import { desktopUpdatePaths, registerProjectDownloadRoutes } from './project-downloads.mjs'
+import { createProjectDownloadService, desktopUpdateBaseUrl } from '../services/project-downloads.mjs'
 
 test('public GET/HEAD alias redirects to the current formal release without auth or cache; normal files still reach static serving', async t => {
   let file = 'brand-3.0.83-x64.exe'
@@ -86,4 +86,67 @@ test('public GET/HEAD alias redirects to the current formal release without auth
   assert.ok(sourcePage.includes('https://cdn.example.test/brand/build/android-brand.zip'))
   assert.equal((await request('/api/client/android-download/brand/apk/published-one')).headers.get('location'), 'https://cdn.example.test/brand/build/android-arm64.apk')
   assert.equal((await request('/api/client/android-download/brand/source/wrong-build')).status, 404)
+})
+
+test('desktop and Android update URLs survive local, R2 and OSS releases and preserve versioned downloads', async t => {
+  let desktop
+  let android
+  const releases = new Map()
+  const app = express()
+  const paths = desktopUpdatePaths('/old/downloads/')
+  registerProjectDownloadRoutes(app, {
+    desktopPaths: paths,
+    downloads: createProjectDownloadService({
+      findProject: async id => id === 'brand' ? { status: 'enabled' } : null,
+      findLatestRelease: async () => desktop,
+      findPublishedDesktopFile: async (_project, file) => releases.get(file),
+      findLatestAndroidRelease: async () => android,
+    }),
+  })
+  app.get('/updates/ai/brand/:fileName', (req, res) => res.send('local ' + req.params.fileName))
+  const server = app.listen(0, '127.0.0.1')
+  await new Promise(resolve => server.once('listening', resolve))
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  const base = `http://127.0.0.1:${server.address().port}`
+  const fixed = desktopUpdateBaseUrl(base, 'brand')
+  const mobileFeed = `${base}/api/client/android-download/brand/update.json`
+  const request = (url, method = 'GET') => fetch(url, { method, redirect: 'manual' })
+
+  for (const [index, desktopLocation, androidLocation] of [
+    [101, fixed, 'https://admin.example.com/updates/ai/android/brand/build-101/'],
+    [102, 'https://test-bucket.r2.dev/ai/brand/', 'https://test-bucket.r2.dev/ai/android/brand/build-102/'],
+    [103, 'https://test.oss.example.com/ai/brand/', 'https://test.oss.example.com/ai/android/brand/build-103/'],
+    [104, fixed, 'https://admin.example.com/updates/ai/android/brand/build-104/'],
+  ]) {
+    const exe = `brand-desktop-3.0.${index}-x64.exe`
+    const packageFiles = [exe, exe + '.blockmap']
+    desktop = { status: 'succeeded', releasedAt: 'date', releaseUrl: desktopLocation, files: ['latest.yml', 'latest.json', ...packageFiles] }
+    for (const file of packageFiles) releases.set(file, desktop)
+    android = { status: 'published', version: `0.1.${index}`, versionCode: index, url: androidLocation, size: 50, sha256: 'a'.repeat(64) }
+    for (const file of desktop.files) {
+      const canonical = await request(fixed + file, file.endsWith('.blockmap') ? 'HEAD' : 'GET')
+      assert.match(canonical.headers.get('cache-control'), /no-store/)
+      if (desktopLocation === fixed) {
+        assert.equal(canonical.status, 200)
+      } else {
+        assert.equal(canonical.status, 302)
+        assert.equal(canonical.headers.get('location'), desktopLocation + file)
+      }
+      for (const legacy of ['/agent/ai/brand/', '/old/downloads/brand/']) {
+        const result = await request(base + legacy + file)
+        assert.equal(result.status, 302)
+        assert.equal(result.headers.get('location'), desktopLocation + file)
+      }
+    }
+    const manifest = await request(mobileFeed)
+    assert.match(manifest.headers.get('cache-control'), /no-store/)
+    const json = await manifest.json()
+    assert.equal(json.version, `0.1.${index}+${index}`)
+    assert.equal(json.assets.arm64.url, androidLocation + 'android-arm64.apk')
+    const apk = await request(`${base}/api/client/android-download/brand/apk`, 'HEAD')
+    assert.equal(apk.headers.get('location'), json.assets.arm64.url)
+  }
+
+  const inProgress = await request(fixed + 'brand-desktop-3.0.102-x64.exe.blockmap')
+  assert.equal(inProgress.headers.get('location'), 'https://test-bucket.r2.dev/ai/brand/brand-desktop-3.0.102-x64.exe.blockmap')
 })

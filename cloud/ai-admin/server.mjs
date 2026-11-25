@@ -113,9 +113,9 @@ import { registerVoiceResourceRoutes } from '../../src/routes/voice-resources.mj
 import { registerUserRoutes } from '../../src/routes/users.mjs'
 import { registerUserUsageReportRoutes } from '../../src/routes/user-usage-report.mjs'
 import { registerAdminBusinessRoutes } from '../../src/routes/admin-business.mjs'
-import { registerProjectDownloadRoutes } from '../../src/routes/project-downloads.mjs'
-import { createProjectDownloadService, normalizeLatestDownloadFileName } from '../../src/services/project-downloads.mjs'
-import { findLatestProjectRelease, findLatestAndroidRelease, findPublishedAndroidRelease, beginAndroidRelease, finishAndroidRelease } from '../../src/repositories/project-downloads.mjs'
+import { desktopUpdatePaths, registerProjectDownloadRoutes } from '../../src/routes/project-downloads.mjs'
+import { createProjectDownloadService, desktopUpdateBaseUrl, normalizeLatestDownloadFileName } from '../../src/services/project-downloads.mjs'
+import { findLatestProjectRelease, findPublishedDesktopFileRelease, findLatestAndroidRelease, findPublishedAndroidRelease, beginAndroidRelease, finishAndroidRelease } from '../../src/repositories/project-downloads.mjs'
 import { DEFAULT_ANDROID_PUBLIC_SOURCE_REPOSITORY, androidBuildArtifacts, androidSharedSource, isAndroidBuildArtifact } from '../../src/services/android-build-artifacts.mjs'
 import { createAndroidArtifactPublisher, createAndroidReleaseStarter } from '../../src/services/android-release.mjs'
 import { registerBuildRoutes } from '../../src/routes/builds.mjs'
@@ -219,10 +219,20 @@ app.use((req, res, next) => {
   next()
 })
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true }))
-registerProjectDownloadRoutes(app, { downloads: createProjectDownloadService({ findProject: findProjectById, findLatestRelease: findLatestProjectRelease, findLatestAndroidRelease, findPublishedAndroidRelease, androidSourceRepository: process.env.AI_ANDROID_PUBLIC_SOURCE_REPOSITORY }) })
-app.use('/updates/ai', express.static(PUBLIC_UPDATE_ROOT, { maxAge: '5m' }))
+const desktopPaths = desktopUpdatePaths(publicPathFromBaseUrl(PUBLIC_UPDATE_BASE_URL))
+registerProjectDownloadRoutes(app, {
+  desktopPaths,
+  downloads: createProjectDownloadService({
+    findProject: findProjectById,
+    findLatestRelease: findLatestProjectRelease,
+    findPublishedDesktopFile: findPublishedDesktopFileRelease,
+    findLatestAndroidRelease,
+    findPublishedAndroidRelease,
+    androidSourceRepository: process.env.AI_ANDROID_PUBLIC_SOURCE_REPOSITORY,
+  }),
+})
+app.use(desktopPaths, express.static(PUBLIC_UPDATE_ROOT, { maxAge: '5m' }))
 app.use('/updates/ai-staging', express.static(PUBLIC_PREVIEW_ROOT, { maxAge: '5m' }))
-app.use('/agent/ai', express.static(PUBLIC_UPDATE_ROOT, { maxAge: '5m' }))
 app.use('/agent/ai-staging', express.static(PUBLIC_PREVIEW_ROOT, { maxAge: '5m' }))
 app.use('/admin/static', express.static(path.dirname(WEB_INDEX_PATH), { maxAge: '1y', immutable: true }))
 app.use('/admin/v2/assets', express.static(path.join(path.dirname(ADMIN_V2_INDEX_PATH), 'assets'), { maxAge: '1y', immutable: true }))
@@ -3952,7 +3962,6 @@ setRedeemCodeDependencies({
 
 
 function projectToBrand(project, publicUrls = {}) {
-  const publicUpdateBaseUrl = publicUrls.updateBaseUrl || PUBLIC_UPDATE_BASE_URL
   const publicAdminBaseUrl = publicUrls.adminBaseUrl || PUBLIC_ADMIN_BASE_URL
   return {
     aiProjectId: project.id,
@@ -3978,7 +3987,7 @@ function projectToBrand(project, publicUrls = {}) {
     menus: Array.isArray(project.menus) ? project.menus : [],
     themeColor: project.themeColor || '#2563eb',
     showGithubLink: false,
-    updateUrl: `${publicUpdateBaseUrl.replace(/\/$/, '')}/${project.id}/`,
+    updateUrl: desktopUpdateBaseUrl(publicAdminBaseUrl, project.id),
     clientApiUrl: publicAdminBaseUrl,
     sourceProjectId: project.id,
     sourceAgentId: project.ownerUserId || '',
@@ -4351,7 +4360,6 @@ async function prepareBuildCenterBrand(build, project, user, publicUrls = {}) {
   const brand = await projectToBuildCenterBrand(project, publicUrls)
   const visibleSource = await getVisibleSourceVersionInfo()
   const sourceInfo = build.target === 'android' ? visibleSource.android : await getSourceVersionInfo()
-  await applyProjectReleaseFeedUrl(brand, project.id, publicUrls.updateBaseUrl)
   brand.releaseNotes = sourceInfo?.releaseNotes || ''
   brand.releaseHistory = Array.isArray(sourceInfo?.history) ? sourceInfo.history : []
   brand.sourceAgentId = project.ownerUserId || user?.id || ''
@@ -5937,23 +5945,6 @@ async function copyArtifactObject(config, source, target) {
   await putR2ReleaseObject(config, target, { headers: { 'x-amz-copy-source': '/' + config.bucket + '/' + encodeOssObjectKey(source) } })
 }
 
-async function getProjectReleaseFeedUrl(projectId, publicUpdateBaseUrl = PUBLIC_UPDATE_BASE_URL) {
-  const id = String(projectId || '').trim()
-  const settings = await getPlatformSettings('platform')
-  const ossConfig = settings.artifactStorageMode === 'r2' ? normalizeR2ReleaseConfig(settings.r2Storage) : getOssArtifactConfig(settings)
-  if (settings.artifactStorageMode !== 'local' && ossConfig.enabled) {
-    const objectPrefix = [ossConfig.prefix, 'ai', id].filter(Boolean).join('/')
-    return `${ossConfig.publicBaseUrl.replace(/\/$/, '')}/${objectPrefix}/`
-  }
-  return `${publicUpdateBaseUrl.replace(/\/$/, '')}/${id}/`
-}
-
-async function applyProjectReleaseFeedUrl(brand, projectId, publicUpdateBaseUrl = PUBLIC_UPDATE_BASE_URL) {
-  if (!brand) return brand
-  brand.updateUrl = await getProjectReleaseFeedUrl(projectId || brand.sourceProjectId || brand.aiProjectId, publicUpdateBaseUrl)
-  return brand
-}
-
 async function uploadFileToAliyunOss(config, filePath, objectKey, onProgress = null) {
   if (!config?.enabled) throw new Error('OSS 未配置完整')
   const name = path.basename(filePath)
@@ -6088,37 +6079,10 @@ async function verifyPublicArtifactUrl(publicUrl, label = '公开访问', name =
   }
 }
 
-function updateFeedUrlFromBuild(build) {
-  const configured = normalizeHttpUrl(build?.brand?.updateUrl || '')
-  if (configured) return `${configured.replace(/\/+$/, '')}/`
-  return `${PUBLIC_UPDATE_BASE_URL.replace(/\/$/, '')}/${build.projectId}/`
-}
-
-function releasePathSegmentsFromUrl(releaseUrl, fallbackProjectId) {
-  try {
-    const parsed = new URL(normalizeHttpUrl(releaseUrl))
-    const updatePath = publicPathFromBaseUrl(PUBLIC_UPDATE_BASE_URL).replace(/\/+$/, '')
-    const targetPath = decodeURIComponent(parsed.pathname).replace(/\/+$/, '')
-    if (updatePath && updatePath !== '/' && (targetPath === updatePath || targetPath.startsWith(`${updatePath}/`))) {
-      const relative = targetPath.slice(updatePath.length).replace(/^\/+/, '')
-      if (relative) {
-        const parts = relative.split('/').filter(Boolean)
-        if (parts.length > 0 && parts.every((part) => part === path.basename(part) && part !== '.' && part !== '..')) {
-          return parts
-        }
-      }
-    }
-  } catch {
-    // Fall back to the build project id below.
-  }
-  return [fallbackProjectId]
-}
-
 function localReleaseLocationForBuild(build) {
-  const releaseUrl = updateFeedUrlFromBuild(build)
   return {
-    releaseUrl,
-    targetDir: path.join(PUBLIC_UPDATE_ROOT, ...releasePathSegmentsFromUrl(releaseUrl, build.projectId)),
+    releaseUrl: `${PUBLIC_UPDATE_BASE_URL.replace(/\/+$/, '')}/${encodeURIComponent(build.projectId)}/`,
+    targetDir: path.join(PUBLIC_UPDATE_ROOT, build.projectId),
   }
 }
 
@@ -6672,7 +6636,7 @@ async function releaseBuild(build, user) {
         updatedAt: nowIso(),
       },
     }).catch(() => {})
-    await verifyPublicArtifactUrl(releaseUrl, '正式包公开访问')
+    await verifyPublicArtifactUrl(releaseUrl, '正式包公开访问', copied.find(name => /\.exe$/i.test(name)))
   }
   if (useOss) {
     await fsp.rm(targetDir, { recursive: true, force: true }).catch(() => {})
@@ -7107,7 +7071,6 @@ registerBuildRoutes(app, {
   listWorkers,
   claimNextBuild,
   projectToBrand,
-  applyProjectReleaseFeedUrl,
   getSourceVersionInfo: getClientSourceVersionInfo,
   touchWorker,
   appendBuildLog,
