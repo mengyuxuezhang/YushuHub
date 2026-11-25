@@ -88,6 +88,7 @@ import { registerRedeemCodeRoutes } from '../../src/routes/redeem-codes.mjs'
 import { registerAuthRoutes } from '../../src/routes/auth.mjs'
 import { registerSystemRoutes } from '../../src/routes/platform-settings.mjs'
 import { registerClientApiRoutes } from '../../src/routes/client-api.mjs'
+import { createClientRemoteRelay } from '../../src/services/client-remote-relay.mjs'
 import { registerClientRemoteRelayRoutes } from '../../src/routes/client-remote-relay.mjs'
 import { normalizeClientPolicy, clientProjectPolicy } from '../../src/services/client-project-policy.mjs'
 import { registerClientProjectPolicyRoutes } from '../../src/routes/client-project-policy.mjs'
@@ -6805,7 +6806,9 @@ registerOrganizationRoutes(app, {
 })
 
 if (process.env.CLIENT_REMOTE_RELAY_ENABLED === '1') {
-  registerClientRemoteRelayRoutes(app, clientProjectPolicy, undefined, process.env.CLIENT_REMOTE_RELAY_PROJECT_ID?.trim())
+  registerClientRemoteRelayRoutes(app, clientProjectPolicy, createClientRemoteRelay({
+    pairFile: path.join(repoRoot, 'data', 'desktop-pairs.json'),
+  }), process.env.CLIENT_REMOTE_RELAY_PROJECT_ID?.trim())
 }
 registerClientProjectPolicyRoutes(app)
 const curatedPluginSync = registerPluginMarketRoutes(app, undefined, undefined, {

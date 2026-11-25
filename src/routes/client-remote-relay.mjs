@@ -30,6 +30,7 @@ export function registerClientRemoteRelayRoutes(app, projectPolicy, relay = crea
   }
   app.post(`${root}/offers`, requireClientAuth, guarded((actor, req) => relay.offer(actor, req.body)))
   app.post(`${root}/claims`, requireClientAuth, guarded((actor, req) => relay.claim(actor, req.body)))
+  app.get(`${root}/pairs/:id/status`, requireClientAuth, guarded((actor, req) => relay.status(actor, req.params.id)))
   app.post(`${root}/pairs/:id/requests`, requireClientAuth, guarded((actor, req) => relay.submit(actor, req.params.id, req.body)))
   app.get(`${root}/pairs/:id/requests/:requestId`, requireClientAuth, guarded((actor, req) => relay.result(actor, req.params.id, req.params.requestId)))
   app.post(`${root}/pairs/:id/take`, requireClientAuth, guarded((actor, req) => relay.take(actor, req.params.id, req.headers['x-remote-host-key'])))

@@ -1,10 +1,48 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import express from 'express'
 import { setAuthDependencies } from '../middleware/auth.mjs'
 import { createClientRemoteRelay } from '../services/client-remote-relay.mjs'
 import { registerClientRemoteRelayRoutes } from './client-remote-relay.mjs'
+
+test('named pairings survive restart, recover presence and persist revocation per account', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'desktop-relay-test-'))
+  const pairFile = join(directory, 'pairs.json')
+  const actor = { userId: 'owner', projectId: 'brand-a' }
+  let clock = 100_000
+  const options = { pairFile, now: () => clock }
+  try {
+    let relay = createClientRemoteRelay(options)
+    const fingerprint = 'a'.repeat(64)
+    const first = relay.offer(actor, { fingerprint, deviceName: 'Office PC' })
+    assert.deepEqual(relay.claim(actor, { fingerprint, persistent: true }), { pairId: first.pairId, deviceName: 'Office PC' })
+    const secondHash = 'b'.repeat(64)
+    const second = relay.offer(actor, { fingerprint: secondHash, deviceName: 'Home PC' })
+    relay.claim(actor, { fingerprint: secondHash, persistent: true })
+    assert.equal(readFileSync(pairFile, 'utf8').includes(first.hostKey), false)
+    assert.equal(relay.take(actor, first.pairId, first.hostKey).persistent, true)
+    assert.deepEqual(relay.status(actor, first.pairId), { online: true, deviceName: 'Office PC' })
+    assert.equal(relay.status(actor, second.pairId).online, false)
+    clock += 16_000
+    assert.equal(relay.status(actor, first.pairId).online, false)
+    clock += 9 * 60 * 60_000
+    relay = createClientRemoteRelay(options)
+    assert.equal(relay.status(actor, first.pairId).online, false)
+    assert.throws(() => relay.status({ ...actor, userId: 'other' }, first.pairId), { code: 'DEVICE_UNAVAILABLE' })
+    relay.take(actor, first.pairId, first.hostKey)
+    assert.equal(relay.status(actor, first.pairId).online, true)
+    relay.disconnect(actor, first.pairId)
+    relay = createClientRemoteRelay(options)
+    assert.throws(() => relay.status(actor, first.pairId), { code: 'DEVICE_UNAVAILABLE' })
+    assert.equal(relay.status(actor, second.pairId).deviceName, 'Home PC')
+  } finally {
+    rmSync(directory, { recursive: true })
+  }
+})
 
 test('remote relay isolates accounts, dispatches each request once and revokes queued work', async () => {
   let now = 100_000
