@@ -307,20 +307,28 @@ test('supplier project reservation route forwards the authenticated supplier and
 
 test('supplier retry refreshes the center brand before requeuing an existing remote build', async () => {
   let centerPayload = null
-  const current = { id: 'local-build', projectId: 'demo', status: 'failed', remoteBuildId: 'remote-build', centerSupplierId: '' }
+  const current = { id: 'local-build', projectId: 'demo', status: 'failed', remoteBuildId: 'remote-build', centerSupplierId: '', error: 'old failure', log: 'old log' }
+  let stored = current
+  let accepted = false
   const project = { id: 'demo', ownerUserId: 'owner' }
   const handler = postHandler('/api/builds/:id/retry', {
     findBuildById: async () => current,
     findProjectById: async () => project,
     getBuildCenterConfig: async () => ({ enabled: true }),
-    resetBuildForRetry: async () => ({ ...current, status: 'queued', log: '' }),
+    resetBuildForRetry: async (_id, patch, guard) => {
+      assert.equal(accepted, true, 'old center failure is still visible during submission')
+      assert.equal(guard.expectedStatus, 'failed')
+      stored = { ...current, error: '', finishedAt: null, ...patch }
+      return stored
+    },
     prepareBuildCenterBrand: async () => ({ clientApiUrl: 'https://ai.example.com' }),
     buildCenterApi: async (path, payload) => {
       if (path.endsWith('/status')) return [{ id: 'remote-build', status: 'failed' }]
       centerPayload = payload
-      return { id: 'remote-build', status: 'queued' }
+      assert.equal(stored.status, 'failed', 'active polling must skip this row while the center still reports the old attempt')
+      accepted = true
+      return { id: 'remote-build', status: 'queued', log: 'new retry' }
     },
-    updateBuild: async (_id, patch) => ({ ...current, ...patch }),
   })
   const res = responseRecorder()
 
@@ -334,6 +342,61 @@ test('supplier retry refreshes the center brand before requeuing an existing rem
 
   assert.equal(res.statusCode, 200)
   assert.equal(centerPayload.brand.clientApiUrl, 'https://ai.example.com')
+  assert.equal(res.body.data.id, current.id)
+  assert.equal(res.body.data.status, 'queued')
+  assert.equal(res.body.data.error, '')
+  assert.equal(res.body.data.log, 'new retry')
+})
+
+test('supplier retry recovers a lost response when the worker already started', async () => {
+  const current = { id: 'local-build', projectId: 'demo', status: 'failed', remoteBuildId: 'remote-build', log: 'old failure' }
+  const startedAt = '2026-11-25T01:53:27.302Z'
+  let submitted = false
+  const handler = postHandler('/api/builds/:id/retry', {
+    findBuildById: async () => current,
+    findProjectById: async () => ({ id: 'demo', ownerUserId: 'owner' }),
+    getBuildCenterConfig: async () => ({ enabled: true }),
+    prepareBuildCenterBrand: async () => ({}),
+    buildCenterApi: async route => {
+      if (route.endsWith('/status')) return [submitted
+        ? { id: 'remote-build', status: 'running', log: 'new compiler output', claimedBy: 'worker', startedAt }
+        : { id: 'remote-build', status: 'failed' }]
+      assert.equal(submitted, false)
+      submitted = true
+      throw new Error('response lost')
+    },
+    resetBuildForRetry: async (_id, patch, guard) => {
+      assert.equal(guard.expectedStatus, 'failed')
+      return { ...current, error: '', ...patch }
+    },
+  })
+  const res = responseRecorder()
+  await handler({ params: { id: current.id }, headers: {}, user: { id: 'owner', role: 'admin' } }, res, error => { throw error })
+  assert.equal(res.body.data.id, current.id)
+  assert.equal(res.body.data.status, 'running')
+  assert.equal(res.body.data.claimedBy, 'worker')
+  assert.equal(res.body.data.startedAt, startedAt)
+  assert.equal(res.body.data.log, 'new compiler output')
+})
+
+test('supplier retry reconnects a stale failed row without starting another build', async () => {
+  const current = { id: 'local-build', projectId: 'demo', status: 'failed', remoteBuildId: 'remote-build' }
+  const handler = postHandler('/api/builds/:id/retry', {
+    findBuildById: async () => current,
+    findProjectById: async () => ({ id: 'demo', ownerUserId: 'owner' }),
+    getBuildCenterConfig: async () => ({ enabled: true }),
+    prepareBuildCenterBrand: async () => assert.fail('must not submit a duplicate build'),
+    buildCenterApi: async route => {
+      assert.equal(route, '/api/center/builds/status')
+      return [{ id: 'remote-build', status: 'running', log: 'Compiling sidecar' }]
+    },
+    resetBuildForRetry: async (_id, patch) => ({ ...current, ...patch }),
+  })
+  const res = responseRecorder()
+  await handler({ params: { id: current.id }, user: { id: 'owner', role: 'admin' } }, res, error => { throw error })
+  assert.equal(res.body.data.id, current.id)
+  assert.equal(res.body.data.status, 'running')
+  assert.equal(res.body.data.log, 'Compiling sidecar')
 })
 
 test('failed artifact transfer retries localization without requeuing a successful remote build', async () => {

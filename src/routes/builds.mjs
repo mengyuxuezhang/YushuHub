@@ -121,57 +121,57 @@ export function registerBuildRoutes(app, deps) {
       }
       const config = await getBuildCenterConfig()
       if (config.enabled && current.remoteBuildId) {
-        const remotes = await buildCenterApi('/api/center/builds/status', { buildIds: [current.remoteBuildId] }, config)
-        const remote = Array.isArray(remotes) ? remotes.find(item => item.id === current.remoteBuildId) : null
+        const readRemote = async () => {
+          const remotes = await buildCenterApi('/api/center/builds/status', { buildIds: [current.remoteBuildId] }, config)
+          return Array.isArray(remotes) ? remotes.find(item => item.id === current.remoteBuildId) : null
+        }
+        let remote = await readRemote()
         if (!remote || !['queued', 'running', 'succeeded', 'failed'].includes(remote.status)) throw new Error('无法确认原官方构建状态，请稍后重试')
-        if (remote.status === 'succeeded' && (!(remote.publicUrl || remote.artifactDownloadUrls) || !Array.isArray(remote.files) || remote.files.length === 0)) throw new Error('原官方构建产物已不可用，请重新提交构建任务')
-        if (remote.status !== 'failed') {
+        if (remote.status === 'failed') {
+          const publicUrls = resolvePublicUrlsForRequest(req, {
+            adminBaseUrl: PUBLIC_ADMIN_BASE_URL,
+            updateBaseUrl: PUBLIC_UPDATE_BASE_URL,
+          })
+          const brand = await prepareBuildCenterBrand(current, project, req.user, publicUrls)
+          // Do not let active polling see the old failure while the retry is being submitted.
+          try {
+            remote = await buildCenterApi(`/api/center/builds/${encodeURIComponent(current.remoteBuildId)}/retry`, { brand }, config)
+          } catch (error) {
+            remote = await readRemote().catch(() => null)
+            if (!remote || !['queued', 'running', 'succeeded'].includes(remote.status)) throw error
+          }
+        }
+        if (remote?.status === 'succeeded') {
+          if (!(remote.publicUrl || remote.artifactDownloadUrls) || !Array.isArray(remote.files) || remote.files.length === 0) {
+            throw new Error('原官方构建产物已不可用，请重新提交构建任务')
+          }
           const build = await updateBuild(current.id, {
-            status: remote.status === 'succeeded' ? 'running' : remote.status,
+            status: 'running',
             error: '',
             finishedAt: null,
             transferProgress: { phase: 'staging', status: 'retrying', updatedAt: nowIso() },
-            log: `${current.log || ''}[admin] Retrying artifact transfer from the existing remote build\n`,
+            log: remote.log || '',
           }, { expectedStatus: 'failed' })
           res.json({ success: true, data: build ?? await findBuildById(current.id) })
           return
         }
+        if (!remote || !['queued', 'running'].includes(remote.status)) throw new Error('官方构建中心未接受重试，请核对任务状态')
+        const build = await resetBuildForRetry(current.id, {
+          status: remote.status,
+          remoteBuildId: remote.id || current.remoteBuildId,
+          log: remote.log || '',
+          claimedBy: remote.claimedBy || '',
+          startedAt: remote.startedAt || null,
+        }, { expectedStatus: 'failed' })
+        res.json({ success: true, data: build ?? await findBuildById(current.id) })
+        return
       }
       let build = await resetBuildForRetry(req.params.id, {}, { expectedStatus: 'failed' })
       if (!build) {
         res.json({ success: true, data: await findBuildById(current.id) })
         return
       }
-      if (config.enabled && current.remoteBuildId) {
-        try {
-          const publicUrls = resolvePublicUrlsForRequest(req, {
-            adminBaseUrl: PUBLIC_ADMIN_BASE_URL,
-            updateBaseUrl: PUBLIC_UPDATE_BASE_URL,
-          })
-          const brand = await prepareBuildCenterBrand(build, project, req.user, publicUrls)
-          const remote = await buildCenterApi(`/api/center/builds/${encodeURIComponent(current.remoteBuildId)}/retry`, { brand }, config)
-          build = await updateBuild(build.id, {
-            status: remote.status || 'queued',
-            error: '',
-            log: `${build.log || ''}[admin] Retried remote build ${remote.id || current.remoteBuildId}\n`,
-            remoteBuildId: remote.id || current.remoteBuildId,
-          }, { expectedStatus: 'queued' }) ?? await findBuildById(current.id)
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err)
-          build = await updateBuild(build.id, {
-            status: 'failed',
-            error: `提交官方构建中心重试失败：${message}`,
-            log: `${build.log || ''}[admin] Failed to retry remote build: ${message}\n`,
-            finishedAt: nowIso(),
-          }, { expectedStatus: 'queued' })
-          if (!build) {
-            res.json({ success: true, data: await findBuildById(current.id) })
-            return
-          }
-          res.status(400).json({ success: false, error: build.error, data: build })
-          return
-        }
-      } else if (config.enabled) {
+      if (config.enabled) {
         build = await submitBuildToCenter(build, project, req.user, resolvePublicUrlsForRequest(req, {
           adminBaseUrl: PUBLIC_ADMIN_BASE_URL,
           updateBaseUrl: PUBLIC_UPDATE_BASE_URL,
@@ -327,10 +327,10 @@ export function registerBuildRoutes(app, deps) {
         if (grant) refreshedBrand[privateUploadField] = grant
       }
       const build = await resetBuildForRetry(current.id, {
-        log: `${current.log || ''}[center] Retry requested by ${supplierId}\n`,
+        log: `[center] Retry requested by ${supplierId}\n`,
         ...(refreshedBrand ? { brand: refreshedBrand } : {}),
-      })
-      res.json({ success: true, data: build })
+      }, { expectedStatus: 'failed' })
+      res.json({ success: true, data: build ?? await findBuildById(current.id) })
     } catch (err) {
       res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) })
     }

@@ -4460,7 +4460,7 @@ async function findActiveBuildForProject(projectId, user, target = 'combined') {
   return normalizeBuild(rows[0])
 }
 
-function localizeCenterBuildInBackground(local, remote, config) {
+function localizeCenterBuildInBackground(local, remote, config, snapshot, metadataPatch) {
   if (localizingBuildIds.has(local.id)) return false
   localizingBuildIds.add(local.id)
   ;(async () => {
@@ -4468,7 +4468,8 @@ function localizeCenterBuildInBackground(local, remote, config) {
       return updateBuild(local.id, patch, { expectedStatus: ['queued', 'running'] })
     }
     try {
-      await updateIfActive({
+      const started = await updateBuild(local.id, {
+        ...metadataPatch,
         status: 'running',
         error: '正在同步官方测试包到供应商本地',
         log: `${remote.log || local.log || ''}[admin] 正在同步官方测试包到供应商本地...\n`,
@@ -4484,8 +4485,9 @@ function localizeCenterBuildInBackground(local, remote, config) {
           totalBytes: 0,
           updatedAt: nowIso(),
         },
-      }).catch(() => {})
-      const localized = await stageRemoteBuildArtifacts(local, remote)
+      }, snapshot).catch(() => null)
+      if (!started) return
+      const localized = await stageRemoteBuildArtifacts(started, remote)
       await buildCenterApi(`/api/center/builds/${encodeURIComponent(remote.id)}/artifacts/cleanup`, {}, config).catch((err) => {
         console.warn('[ai-admin] Failed to cleanup build center artifact:', err instanceof Error ? err.message : err)
       })
@@ -4565,16 +4567,22 @@ async function performCenterBuildSync({ platformScope = false, ownerUserId = '' 
     const remote = byId.get(local.remoteBuildId)
     if (!remote) continue
     const metadataPatch = remoteBuildMetadataPatch(local, remote)
-    if (Object.keys(metadataPatch).length > 0) { await updateBuild(local.id, metadataPatch); updated += 1 }
-    if (!['queued', 'running'].includes(local.status)) continue
-      if (remote.status === 'succeeded' && (remote.publicUrl || remote.artifactDownloadUrls) && Array.isArray(remote.files) && remote.files.length > 0) {
-      if (localizeCenterBuildInBackground({ ...local, ...metadataPatch }, remote, config)) localizationStarted += 1
+    const snapshot = { expectedStatus: local.status, expectedUpdatedAt: local.updatedAt }
+    const active = ['queued', 'running'].includes(local.status)
+    const canLocalize = active && remote.status === 'succeeded' && (remote.publicUrl || remote.artifactDownloadUrls)
+      && Array.isArray(remote.files) && remote.files.length > 0
+    if (!active) {
+      if (Object.keys(metadataPatch).length && await updateBuild(local.id, metadataPatch, snapshot)) updated += 1
+      continue
+    }
+    if (canLocalize) {
+      if (localizeCenterBuildInBackground(local, remote, config, snapshot, metadataPatch)) localizationStarted += 1
       continue
     }
     const synced = await updateBuild(local.id, {
       ...metadataPatch,
       status: remote.status,
-      log: remote.log || local.log || '',
+      log: remote.log ?? local.log ?? '',
       error: remote.error || '',
       artifactDir: remote.artifactDir || '',
       publicUrl: remote.publicUrl || '',
@@ -4583,7 +4591,7 @@ async function performCenterBuildSync({ platformScope = false, ownerUserId = '' 
       claimedBy: remote.claimedBy || '',
       startedAt: remote.startedAt || null,
       finishedAt: remote.finishedAt || null,
-    }, { expectedStatus: ['queued', 'running'] })
+    }, snapshot)
     if (synced) updated += 1
   }
   return { configured: true, checked: builds.length, updated, localizationStarted }
@@ -4642,7 +4650,7 @@ async function listBuildsForUser(user, options = {}) {
   return paged ? pageResult(items, total, pagination) : items
 }
 
-async function updateBuild(buildId, patch, { expectedStatus } = {}) {
+async function updateBuild(buildId, patch, { expectedStatus, expectedUpdatedAt } = {}) {
   const fields = []
   const values = []
   const map = {
@@ -4689,8 +4697,12 @@ async function updateBuild(buildId, patch, { expectedStatus } = {}) {
     condition = ` AND status IN (${allowed.map(() => '?').join(', ')})`
     values.push(...allowed)
   }
+  if (expectedUpdatedAt != null) {
+    condition += ' AND updated_at = ?'
+    values.push(toMysqlDateTime(expectedUpdatedAt))
+  }
   const [result] = await db().query(`UPDATE ai_builds SET ${fields.join(', ')} WHERE id = ?${condition}`, values)
-  if (expectedStatus && result.affectedRows === 0) return null
+  if (condition && result.affectedRows === 0) return null
   return findBuildById(buildId)
 }
 
