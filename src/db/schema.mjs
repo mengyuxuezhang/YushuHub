@@ -786,6 +786,14 @@ export async function initDatabase(options = {}) {
   await ensureColumn('ai_provider_models', 'center_sync_hash', 'VARCHAR(64) NOT NULL DEFAULT "" AFTER sort_order')
   await ensureColumn('ai_provider_models', 'organization_id', "VARCHAR(64) NOT NULL DEFAULT ''")
   await ensureColumn('ai_provider_models', 'archived_at', 'DATETIME(3) NULL')
+  await ensureColumn('ai_provider_models', 'client_sort_order', 'INT NULL')
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_client_model_defaults (
+      organization_id VARCHAR(64) PRIMARY KEY,
+      provider_model_id VARCHAR(64) NOT NULL,
+      CONSTRAINT fk_ai_client_model_defaults_model FOREIGN KEY (provider_model_id) REFERENCES ai_provider_models(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `)
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ai_model_task_capabilities (

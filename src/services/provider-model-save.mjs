@@ -33,24 +33,36 @@ export async function saveProviderModelRecord(pool, model, scope) {
       }
     }
     const organizationId = previous?.organization_id ?? model.provider.organizationId ?? ''
+    const eligibleForClientDefault = model.modelType === 'text' && model.status === 'enabled'
+    if (model.isClientDefault && (!eligibleForClientDefault || model.provider.status === 'disabled')) {
+      throw Object.assign(new Error('客户端默认模型必须是已启用服务商下的已启用文本模型'), { statusCode: 400 })
+    }
     if (model.isDefault) await conn.query('UPDATE ai_provider_models SET is_default=0 WHERE provider_id=? AND id<>?', [model.provider.id, id])
     await conn.query(`INSERT INTO ai_provider_models
-      (id,provider_id,model_id,display_name,description,model_type,endpoint_path,status,is_default,capabilities,reasoning_config,context_window,sort_order,organization_id)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      (id,provider_id,model_id,display_name,description,model_type,endpoint_path,status,is_default,capabilities,reasoning_config,context_window,sort_order,client_sort_order,organization_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON DUPLICATE KEY UPDATE
         model_id=VALUES(model_id),display_name=VALUES(display_name),description=VALUES(description),
         model_type=VALUES(model_type),endpoint_path=VALUES(endpoint_path),status=VALUES(status),
         is_default=VALUES(is_default),capabilities=VALUES(capabilities),reasoning_config=VALUES(reasoning_config),
-        context_window=VALUES(context_window),sort_order=VALUES(sort_order),archived_at=NULL`, [
+        context_window=VALUES(context_window),sort_order=VALUES(sort_order),
+        client_sort_order=VALUES(client_sort_order),archived_at=NULL`, [
       id, model.provider.id, model.modelId, model.displayName, model.description, model.modelType,
       model.endpointPath, model.status, model.isDefault ? 1 : 0, JSON.stringify(model.capabilities),
-      JSON.stringify(model.reasoning), model.contextWindow, model.sortOrder, organizationId,
+      JSON.stringify(model.reasoning), model.contextWindow, model.sortOrder,
+      model.clientSortOrder === undefined ? previous?.client_sort_order ?? null : model.clientSortOrder, organizationId,
     ])
     await syncAutomaticModelCapability(conn, {
       modelId: id, providerId: model.provider.id, modelType: model.modelType,
       organizationId, status: model.status,
       endpointPath: model.endpointPath, imageConfig: model.imageConfig,
     })
+    if (model.isClientDefault === true) {
+      await conn.query(`INSERT INTO ai_client_model_defaults (organization_id,provider_model_id) VALUES (?,?)
+        ON DUPLICATE KEY UPDATE provider_model_id=VALUES(provider_model_id)`, [organizationId, id])
+    } else if (model.isClientDefault === false || !eligibleForClientDefault) {
+      await conn.query('DELETE FROM ai_client_model_defaults WHERE organization_id=? AND provider_model_id=?', [organizationId, id])
+    }
     await conn.commit()
     return id
   } catch (error) {

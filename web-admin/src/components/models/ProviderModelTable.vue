@@ -33,7 +33,11 @@ function capabilities(item: ProviderModel): string[] { return (Array.isArray(ite
             </div>
           </td>
           <td><StatusBadge :status="item.status" /></td>
-          <td>{{ item.modelType }} · 上下文 {{ item.contextWindow || '—' }}<span v-if="item.isDefault" class="soft-tag">默认</span></td>
+          <td>{{ item.modelType }} · 上下文 {{ item.contextWindow || '—' }}
+            <span v-if="item.clientSortOrder != null" class="soft-tag">客户端排序 {{ item.clientSortOrder }}</span>
+            <span v-if="item.isDefault" class="soft-tag">服务商默认</span>
+            <span v-if="item.isClientDefault" class="soft-tag">客户端默认</span>
+          </td>
           <td><span class="date-cell">{{ item.updatedAt ? new Date(item.updatedAt).toLocaleString('zh-CN') : '—' }}</span></td>
           <td class="action-column">
             <div class="row-actions">

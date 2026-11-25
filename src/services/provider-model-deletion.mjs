@@ -25,6 +25,7 @@ export async function deleteProviderModel(pool, id, scope) {
         await conn.query(`UPDATE ${table} SET status='disabled' WHERE provider_model_id=?`, [id])
       }
       await conn.query("UPDATE ai_provider_models SET status='disabled',is_default=0,archived_at=CURRENT_TIMESTAMP(3) WHERE id=?", [id])
+      await conn.query('DELETE FROM ai_client_model_defaults WHERE organization_id=? AND provider_model_id=?', [model.organization_id || '', id])
     }
     await conn.commit()
     return { id, deleted: true }

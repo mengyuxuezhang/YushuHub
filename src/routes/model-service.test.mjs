@@ -32,6 +32,7 @@ test('model service enable endpoints update a single record by id', async () => 
   registerModelServiceRoutes(app, {
     getSupplierLicense: async () => ({ source: 'license-center', modelMode: 'custom' }),
     enableModelProvider: async (id) => { called.provider = id; return { id, status: 'enabled' } },
+    findProviderModelById: async (id) => ({ id, modelType: 'text' }),
     enableProviderModel: async (id) => { called.model = id; return { id, status: 'enabled' } },
     enableModelPricingRule: async (id) => { called.pricing = id; return { id, status: 'enabled' } },
   })

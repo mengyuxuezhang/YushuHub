@@ -177,6 +177,7 @@ import {
   shouldRetainMatchedSyncRow,
 } from '../../src/services/model-service-sync.mjs'
 import { resolveModelServiceScope, modelServiceScopeWhere, assertModelServiceRecordInScope } from '../../src/services/model-service-scope.mjs'
+import { CLIENT_MODEL_ORDER_SQL, resolveClientChatModels } from '../../src/services/client-model-catalog.mjs'
 import {
   clientPricingPayload,
   normalizeConsumptionMultiplier,
@@ -1278,10 +1279,12 @@ function normalizeProviderModel(row) {
     endpointPath: row.endpoint_path || '',
     status: row.status || 'enabled',
     isDefault: Boolean(row.is_default),
+    isClientDefault: Boolean(row.is_client_default),
     capabilities: parseJson(row.capabilities, []),
     reasoning: normalizeModelReasoning(parseJson(row.reasoning_config, {})),
     contextWindow: Number(row.context_window || 0),
     sortOrder: Number(row.sort_order || 0),
+    clientSortOrder: row.client_sort_order == null ? null : Number(row.client_sort_order),
     isSystem: isSystemImageRecordId(row.id),
     organizationId: row.organization_id || '',
     createdAt: row.created_at,
@@ -3600,7 +3603,8 @@ async function listClientModelCatalog(userId = '') {
   const endUser = await findEndUserById(userId)
   const endUserOrganizationId = String(endUser?.organizationId || '')
   const [rows] = await db().query(
-    `SELECT m.*, p.name AS provider_name, p.is_default AS provider_is_default, p.sort_order AS provider_sort_order,
+    `SELECT m.*, p.name AS provider_name, p.is_default AS provider_is_default,
+      d.provider_model_id IS NOT NULL AS is_client_default,
       EXISTS(SELECT 1 FROM ai_model_provider_keys k WHERE k.owner_user_id = ? AND k.provider_id = p.id AND k.status = 'enabled' AND (COALESCE(k.provider_model_id,'')='' OR k.provider_model_id=m.id)) AS has_enabled_key,
       r.id AS pricing_rule_id, r.billing_type AS pricing_billing_type,
       r.input_points_per_m_tokens AS pricing_input_points, r.output_points_per_m_tokens AS pricing_output_points,
@@ -3611,12 +3615,13 @@ async function listClientModelCatalog(userId = '') {
       c.id AS task_capability_id
      FROM ai_provider_models m
      JOIN ai_model_providers p ON p.id = m.provider_id
+     LEFT JOIN ai_client_model_defaults d ON d.organization_id = m.organization_id AND d.provider_model_id = m.id
      LEFT JOIN ai_model_pricing_rules r ON r.provider_model_id = m.id AND r.status = 'enabled'
      LEFT JOIN ai_model_task_capabilities c ON c.provider_model_id=m.id AND c.status='enabled' AND c.task_type=(CASE
        WHEN m.model_type='image' THEN 'image_generation' WHEN m.model_type='search' THEN 'web_search'
        WHEN m.model_type='audio' THEN 'speech_synthesis' WHEN m.model_type='video' THEN 'video_generation' ELSE 'chat' END)
      WHERE m.archived_at IS NULL AND m.status = 'enabled' AND p.status = 'enabled'${endUserOrganizationId ? ' AND m.organization_id = ?' : ''}
-     ORDER BY p.sort_order ASC, m.sort_order ASC, m.created_at ASC`,
+     ORDER BY ${CLIENT_MODEL_ORDER_SQL}`,
     endUserOrganizationId ? [keyOwnerUserId, endUserOrganizationId] : [keyOwnerUserId],
   )
   const activePlans = endUserOrganizationId ? (await pricingPlanRepository.list({ organizationId: endUserOrganizationId })).filter(item => item.status === 'enabled') : []
@@ -3632,6 +3637,7 @@ async function listClientModelCatalog(userId = '') {
     reasoning: normalizeModelReasoning(parseJson(row.reasoning_config, {})),
     contextWindow: Number(row.context_window || 0),
     isDefault: Boolean(row.provider_is_default) && Boolean(row.is_default),
+    isClientDefault: Boolean(row.is_client_default) && row.organization_id === endUserOrganizationId,
     configured: Boolean(row.has_enabled_key) && Boolean(row.pricing_rule_id || plansByCapability.has(row.task_capability_id)),
     pricing: plansByCapability.has(row.task_capability_id) ? legacyPricingProjection(plansByCapability.get(row.task_capability_id)) : row.pricing_rule_id ? clientPricingPayload(normalizeModelPricingRule({
       id: row.pricing_rule_id,
@@ -3647,18 +3653,11 @@ async function listClientModelCatalog(userId = '') {
       consumption_multiplier: row.pricing_consumption_multiplier,
     })) : undefined,
   })).filter((item) => item.id)
-  const chatModels = models.filter((item) => item.modelType === 'text')
-  const defaultModel = chatModels.find((item) => item.isDefault && item.configured)
-    || chatModels.find((item) => item.configured)
-    || chatModels.find((item) => item.isDefault)
-    || chatModels[0]
-    || null
+  const searchModels = models.filter((item) => item.modelType === 'search')
   return {
-    models,
-    searchModels: models.filter((item) => item.modelType === 'search'),
-    defaultModelId: defaultModel?.id || '',
-    configured: chatModels.some((item) => item.configured),
-    searchConfigured: models.some((item) => item.modelType === 'search' && item.configured),
+    ...resolveClientChatModels(models),
+    searchModels: searchModels.map(({ isClientDefault: _preferred, ...model }) => model),
+    searchConfigured: searchModels.some((item) => item.configured),
   }
 }
 
@@ -5237,11 +5236,12 @@ async function listProviderModels(providerId = '', scope = null) {
     conditions.push('m.provider_id = ?')
     params.push(providerId)
   }
-  let sql = `SELECT m.*, p.name AS provider_name
+  let sql = `SELECT m.*, p.name AS provider_name, d.provider_model_id IS NOT NULL AS is_client_default
     FROM ai_provider_models m
-    JOIN ai_model_providers p ON p.id = m.provider_id`
+    JOIN ai_model_providers p ON p.id = m.provider_id
+    LEFT JOIN ai_client_model_defaults d ON d.organization_id = m.organization_id AND d.provider_model_id = m.id`
   if (conditions.length) sql += ` WHERE ${conditions.join(' AND ')}`
-  sql += ' ORDER BY p.sort_order ASC, m.sort_order ASC, m.created_at ASC'
+  sql += ` ORDER BY ${CLIENT_MODEL_ORDER_SQL}`
   const [rows] = await db().query(sql, params)
   return rows.map(normalizeProviderModel)
 }
@@ -5261,30 +5261,30 @@ async function saveProviderModel(input = {}, scope = null) {
   const endpointPath = normalizeModelEndpointPath(input.endpointPath || input.endpoint_path, modelType)
   const status = normalizeRecordStatus(input.status)
   const isDefault = Boolean(input.isDefault ?? input.is_default)
+  const isClientDefault = input.isClientDefault
+  if (isClientDefault !== undefined && typeof isClientDefault !== 'boolean') throw new Error('客户端默认模型设置无效')
   const capabilities = normalizeModelCapabilities(input.capabilities)
   const reasoning = normalizeModelReasoning(input.reasoning ?? input.reasoningConfig ?? input.reasoning_config)
   if (reasoning.enabled && !capabilities.includes('reasoning')) capabilities.push('reasoning')
   const contextWindow = normalizePositiveInt(input.contextWindow ?? input.context_window, 0)
   const sortOrder = normalizeSortOrder(input.sortOrder ?? input.sort_order)
+  const clientSortOrder = input.clientSortOrder === '' ? null : input.clientSortOrder
+  if (clientSortOrder != null && (!Number.isInteger(clientSortOrder) || Math.abs(clientSortOrder) > 999999)) {
+    throw new Error('客户端排序须为 -999999 到 999999 之间的整数')
+  }
   const id = await saveProviderModelRecord(db(), {
     id: candidateId, explicitId, provider, modelId, displayName, description,
-    modelType, endpointPath, status, isDefault, capabilities, reasoning, contextWindow, sortOrder, imageConfig: input.imageConfig,
+    modelType, endpointPath, status, isDefault, isClientDefault, capabilities, reasoning, contextWindow, sortOrder, clientSortOrder, imageConfig: input.imageConfig,
   }, scope)
-  const [rows] = await db().query(
-    `SELECT m.*, p.name AS provider_name
-     FROM ai_provider_models m
-     JOIN ai_model_providers p ON p.id = m.provider_id
-     WHERE m.id = ? AND m.archived_at IS NULL LIMIT 1`,
-    [id],
-  )
-  return normalizeProviderModel(rows[0])
+  return findProviderModelById(id)
 }
 
 async function findProviderModelById(id) {
   const [rows] = await db().query(
-    `SELECT m.*, p.name AS provider_name
+    `SELECT m.*, p.name AS provider_name, d.provider_model_id IS NOT NULL AS is_client_default
      FROM ai_provider_models m
      JOIN ai_model_providers p ON p.id = m.provider_id
+     LEFT JOIN ai_client_model_defaults d ON d.organization_id = m.organization_id AND d.provider_model_id = m.id
      WHERE m.id = ? AND m.archived_at IS NULL LIMIT 1`,
     [String(id || '').trim()],
   )
@@ -5297,14 +5297,7 @@ async function enableProviderModel(id, scope = null) {
   assertModelServiceRecordInScope(existing, scope, '模型')
   await db().query('UPDATE ai_provider_models SET status = "enabled" WHERE id = ?', [existing.id])
   await db().query('UPDATE ai_model_task_capabilities SET status = "enabled" WHERE provider_model_id = ?', [existing.id])
-  const [rows] = await db().query(
-    `SELECT m.*, p.name AS provider_name
-     FROM ai_provider_models m
-     JOIN ai_model_providers p ON p.id = m.provider_id
-     WHERE m.id = ? AND m.archived_at IS NULL LIMIT 1`,
-    [String(id || '').trim()],
-  )
-  return normalizeProviderModel(rows[0])
+  return findProviderModelById(existing.id)
 }
 
 async function testProviderModelConnectivity(input = {}, actor = null, scope = null) {

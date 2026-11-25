@@ -113,8 +113,9 @@ export function useModelServicePage(section: Ref<ModelSection>) {
     const reasoning = form.reasoning && typeof form.reasoning === 'object' ? form.reasoning : {}
     form.reasoning = { enabled: Boolean(reasoning.enabled), adapter: reasoning.adapter || 'openai', efforts: Array.isArray(reasoning.efforts) ? reasoning.efforts : ['low', 'medium', 'high'], defaultEffort: reasoning.defaultEffort || 'medium' }
   }
-  function openCreate() { Object.keys(form).forEach((key) => delete form[key]); Object.assign(form, defaults()); errorMessage.value = ''; drawerOpen.value = true }
-  function openEdit(item: Resource) { Object.keys(form).forEach((key) => delete form[key]); Object.assign(form, item); if (section.value === 'keys') { form.key = ''; form.providerModelId = form.providerModelId || ''; form.confirmKeyReplacement = false } if (section.value === 'catalog') normalizeCatalogFormCapabilities(form); if (section.value === 'pricing') { const pricing = item as ModelPricingRule; form.resolutionPoints = { '1K': 0, '1.5K': 0, '2K': 0, ...pricing.resolutionPoints }; form.resolutionCostPoints = { '1K': 0, '1.5K': 0, '2K': 0, ...pricing.resolutionCostPoints } } errorMessage.value = ''; drawerOpen.value = true }
+  let initialClientDefault = false
+  function openCreate() { Object.keys(form).forEach((key) => delete form[key]); Object.assign(form, defaults()); initialClientDefault = false; errorMessage.value = ''; drawerOpen.value = true }
+  function openEdit(item: Resource) { Object.keys(form).forEach((key) => delete form[key]); Object.assign(form, item); initialClientDefault = Boolean(form.isClientDefault); if (section.value === 'keys') { form.key = ''; form.providerModelId = form.providerModelId || ''; form.confirmKeyReplacement = false } if (section.value === 'catalog') normalizeCatalogFormCapabilities(form); if (section.value === 'pricing') { const pricing = item as ModelPricingRule; form.resolutionPoints = { '1K': 0, '1.5K': 0, '2K': 0, ...pricing.resolutionPoints }; form.resolutionCostPoints = { '1K': 0, '1.5K': 0, '2K': 0, ...pricing.resolutionCostPoints } } errorMessage.value = ''; drawerOpen.value = true }
   function close() { if (!saving.value && !testing.value) drawerOpen.value = false }
   function isSystemRecord(item: Resource) { return Boolean((item as any).isSystem) }
   function validate() {
@@ -142,7 +143,17 @@ export function useModelServicePage(section: Ref<ModelSection>) {
     try {
       if (section.value === 'providers') store.upsert(store.providers, await api.saveModelProvider(form))
       else if (section.value === 'keys') store.upsert(store.keys, await api.saveModelKey(form.providerId, form))
-      else if (section.value === 'catalog') store.upsert(store.models, await api.saveProviderModel(form))
+      else if (section.value === 'catalog') {
+        const isClientDefault = form.modelType === 'text' && form.status === 'enabled' && Boolean(form.isClientDefault)
+        const saved = await api.saveProviderModel({ ...form, isClientDefault: isClientDefault === initialClientDefault ? undefined : isClientDefault })
+        if (saved.isClientDefault) {
+          store.models = store.models.map(model => model.organizationId === saved.organizationId && model.id !== saved.id
+            ? { ...model, isClientDefault: false } : model)
+        }
+        store.upsert(store.models, saved)
+        const ordered = await api.listProviderModels().catch(() => null)
+        if (ordered) store.models = ordered
+      }
       else store.upsert(store.pricing, await api.savePricingRule(form))
       feedback.notify(`${meta.value.item}保存成功`, 'success'); drawerOpen.value = false
     } catch (error) { errorMessage.value = toUserMessage(error) } finally { saving.value = false }

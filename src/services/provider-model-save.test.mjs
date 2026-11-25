@@ -59,3 +59,31 @@ test('capability failure rolls back the complete save', async () => {
   assert.ok(f.calls.some(c => c.sql === 'rollback'))
   assert.ok(!f.calls.some(c => c.sql === 'commit'))
 })
+
+test('selects one model per organization using the saved identity without editing the provider default', async () => {
+  const f = fixture({ byName: { ...archived, archived_at: null } })
+  await saveProviderModelRecord(f.pool, { ...input, isClientDefault: true, clientSortOrder: -10 }, scope)
+  const change = f.calls.find(c => c.sql.includes('INSERT INTO ai_client_model_defaults'))
+  assert.deepEqual(change.args, ['org-a', archived.id])
+  assert.match(change.sql, /ON DUPLICATE KEY UPDATE/)
+  assert.ok(f.calls.indexOf(change) < f.calls.findIndex(c => c.sql === 'commit'))
+  assert.equal(f.calls.find(c => c.sql.includes('INSERT INTO ai_provider_models')).args.at(-2), -10)
+  assert.ok(!f.calls.some(c => c.sql.includes('SET is_default=0')))
+})
+
+test('clearing a client default only removes the selected model and ordinary saves preserve its order', async () => {
+  const f = fixture({ byName: { ...archived, archived_at: null, client_sort_order: 20 } })
+  await saveProviderModelRecord(f.pool, { ...input, isClientDefault: false }, scope)
+  const change = f.calls.find(c => c.sql.startsWith('DELETE FROM ai_client_model_defaults'))
+  assert.deepEqual(change.args, ['org-a', archived.id])
+  assert.match(change.sql, /WHERE organization_id=\? AND provider_model_id=\?/)
+  assert.equal(f.calls.find(c => c.sql.includes('INSERT INTO ai_provider_models')).args.at(-2), 20)
+})
+
+test('rejects disabled and non-text models as client defaults', async () => {
+  for (const fields of [{ modelType: 'search' }, { status: 'disabled' }, { provider: { ...input.provider, status: 'disabled' } }]) {
+    const f = fixture()
+    await assert.rejects(saveProviderModelRecord(f.pool, { ...input, ...fields, isClientDefault: true }, scope), { statusCode: 400 })
+    assert.ok(!f.calls.some(c => /^(INSERT|UPDATE)/.test(c.sql)))
+  }
+})

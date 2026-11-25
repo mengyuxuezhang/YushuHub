@@ -221,8 +221,17 @@ export function registerModelServiceRoutes(app, deps) {
       if (!existing) throw new Error('模型不存在')
       assertNotSystemImageRecord(existing.id, '该模型')
       assertModelServiceRecordInScope(existing, scopeOf(req), '模型')
-      await db().query('UPDATE ai_provider_models SET status = "disabled", is_default = 0 WHERE id = ?', [existing.id])
-      await db().query('UPDATE ai_model_task_capabilities SET status = "disabled" WHERE provider_model_id = ?', [existing.id])
+      const connection = await db().getConnection()
+      try {
+        await connection.beginTransaction()
+        await connection.query('UPDATE ai_provider_models SET status = "disabled", is_default = 0 WHERE id = ?', [existing.id])
+        await connection.query('UPDATE ai_model_task_capabilities SET status = "disabled" WHERE provider_model_id = ?', [existing.id])
+        await connection.query('DELETE FROM ai_client_model_defaults WHERE organization_id=? AND provider_model_id=?', [existing.organizationId || '', existing.id])
+        await connection.commit()
+      } catch (error) {
+        await connection.rollback().catch(() => {})
+        throw error
+      } finally { connection.release() }
       res.json({ success: true, data: await findProviderModelById(existing.id) })
     } catch (err) {
       res.status(err?.statusCode || 400).json({ success: false, error: err instanceof Error ? err.message : String(err) })

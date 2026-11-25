@@ -3,6 +3,25 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { clientScopedCreditLedgerPage, registerClientApiRoutes } from './client-api.mjs'
+import { resolveClientChatModels } from '../services/client-model-catalog.mjs'
+
+test('client catalog sends a single accessible default without moving it ahead of ordered models', () => {
+  const models = [
+    { id: 'first', modelType: 'text', configured: true, isDefault: true },
+    { id: 'search', modelType: 'search', configured: true, isDefault: true },
+    { id: 'chosen', modelType: 'text', configured: true, isClientDefault: true },
+  ]
+  const assertDefault = (items, expected) => {
+    const catalog = resolveClientChatModels(items)
+    assert.equal(catalog.defaultModelId, expected)
+    assert.deepEqual(catalog.models.map(model => model.id), items.map(model => model.id))
+    assert.deepEqual(catalog.models.filter(model => model.isDefault).map(model => model.id), [expected])
+    assert.ok(catalog.models.every(model => !Object.hasOwn(model, 'isClientDefault')))
+  }
+  assertDefault(models, 'chosen')
+  assertDefault(models.map(model => model.id === 'chosen' ? { ...model, configured: false } : model), 'first')
+  assertDefault(models.filter(model => model.id !== 'chosen'), 'first')
+})
 
 test('client ledger aggregate never exposes another account consumption total', () => {
   assert.deepEqual(clientScopedCreditLedgerPage({
