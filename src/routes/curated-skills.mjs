@@ -8,7 +8,7 @@ import { parseJson } from '../utils/parse.mjs'
 import { slugify } from '../utils/slug.mjs'
 import { compareSemanticVersions } from '../utils/version.mjs'
 import { organizationContentMarkets, resolveClientContentMarket } from '../services/content-markets.mjs'
-import { diffMarketCatalog, marketCatalogSignature, marketImageChanged, publicMarketCatalogItems } from '../services/market-catalog-sync.mjs'
+import { diffMarketCatalog, marketCatalogSignature, marketImageChanged, publicMarketCatalogItems, requireMarketCatalogItems, serializeMarketSync } from '../services/market-catalog-sync.mjs'
 import { installedSkillVersions } from '../repositories/skill-market-installations.mjs'
 import { sendCuratedSkillPackage } from '../services/curated-skill-package.mjs'
 
@@ -205,7 +205,7 @@ export function registerCuratedSkillRoutes(app, {
   async function centerUpdateStatus() {
     if (centerMode || !fetchCenterCatalog) return { enabled: false, updateAvailable: false, checkedAt: new Date().toISOString(), signature: '', added: 0, updated: 0, removed: 0, items: [] }
     const catalog = await fetchCenterCatalog()
-    const remoteItems = Array.isArray(catalog?.items) ? catalog.items : []
+    const remoteItems = requireMarketCatalogItems(catalog)
     const [rows] = await db().query(`SELECT s.id, s.name, s.status, s.cover_url, v.version
       FROM ai_curated_skills s LEFT JOIN ai_curated_skill_versions v ON v.id=s.current_version_id
       WHERE s.source_type='official_sync'`)
@@ -228,12 +228,12 @@ export function registerCuratedSkillRoutes(app, {
     }
   }
 
-  async function syncCenterSkills(ownerUserId, onProgress = () => {}) {
+  const syncCenterSkills = serializeMarketSync(async (ownerUserId, onProgress = () => {}) => {
     onProgress({ stage: 'checking', message: '正在检查总后台技能目录…', percent: 3, current: 0, total: 0, currentSkill: '' })
     const status = await centerUpdateStatus()
     if (!status.enabled) throw new Error('当前实例是官方中心或尚未配置官方构建中心')
-    const catalog = status.catalog || await fetchCenterCatalog()
-    const remoteItems = Array.isArray(catalog?.items) ? catalog.items : []
+    const { catalog } = status
+    const remoteItems = catalog.items
     const remoteIds = new Set(remoteItems.map((item) => item.id))
     const result = { added: 0, updated: 0, removed: 0, skipped: 0, failed: [] }
     onProgress({ stage: 'catalog', message: `目录检查完成，共 ${remoteItems.length} 个技能`, percent: 8, current: 0, total: remoteItems.length, currentSkill: '' })
@@ -305,7 +305,7 @@ export function registerCuratedSkillRoutes(app, {
             }
           }
         }
-        await db().query("UPDATE ai_curated_skill_distributions SET enabled=1,status='available' WHERE skill_id=? AND status IN ('revoked','disabled')", [item.id])
+        await db().query("UPDATE ai_curated_skill_distributions SET status=IF(enabled=1,'available','disabled') WHERE skill_id=? AND status='revoked'", [item.id])
         result[existing ? 'updated' : 'added'] += 1
       } catch (error) {
         result.failed.push({ skillId: item.id, error: error instanceof Error ? error.message : String(error) })
@@ -316,14 +316,14 @@ export function registerCuratedSkillRoutes(app, {
     const [localOfficial] = await db().query(`SELECT id FROM ai_curated_skills WHERE source_type='official_sync' AND status='published'`)
     for (const row of localOfficial) {
       if (remoteIds.has(row.id)) continue
-      await db().query(`UPDATE ai_curated_skills SET status='disabled' WHERE id=?`, [row.id])
-      await db().query(`UPDATE ai_curated_skill_distributions SET enabled=0,status='revoked' WHERE skill_id=?`, [row.id])
+      await db().query(`UPDATE ai_curated_skills s LEFT JOIN ai_curated_skill_distributions d ON d.skill_id=s.id
+        SET s.status='disabled', d.status='revoked' WHERE s.id=? AND s.source_type='official_sync' AND s.status='published'`, [row.id])
       result.removed += 1
     }
     onProgress({ stage: 'reporting', message: '正在上报同步结果…', percent: 96, current: remoteItems.length, total: remoteItems.length, currentSkill: '' })
     if (reportCenterSync) await reportCenterSync({ success: result.failed.length === 0, imported: result.added + result.updated, failed: result.failed.length }).catch(() => {})
     return result
-  }
+  })
 
   function startSyncJob(ownerUserId) {
     cleanSyncJobs()
@@ -369,9 +369,10 @@ export function registerCuratedSkillRoutes(app, {
   app.get('/api/curated-skills', requireAuth, requirePermission('curated_skills.view'), async (req, res) => {
     const markets = organizationContentMarkets(req.organizationContext)
     const params = req.organizationContext?.dataScope !== 'platform' ? [req.ownerUserId, ...markets] : []
-    const ownerFilter = req.organizationContext?.dataScope !== 'platform' ? `WHERE (s.owner_user_id=? OR ((s.status='published' OR s.source_type='official_sync') AND EXISTS (SELECT 1 FROM ai_curated_skill_market_placements mp WHERE mp.curated_skill_id=s.id AND mp.status='published' AND mp.market_type IN (${markets.map(() => '?').join(',')}))))` : ''
+    const ownerFilter = req.organizationContext?.dataScope !== 'platform' ? `AND (s.owner_user_id=? OR ((s.status='published' OR s.source_type='official_sync') AND EXISTS (SELECT 1 FROM ai_curated_skill_market_placements mp WHERE mp.curated_skill_id=s.id AND mp.status='published' AND mp.market_type IN (${markets.map(() => '?').join(',')}))))` : ''
     const [rows] = await db().query(`SELECT s.*, v.version AS current_version, v.status AS current_version_status
-      FROM ai_curated_skills s LEFT JOIN ai_curated_skill_versions v ON v.id = s.current_version_id ${ownerFilter} ORDER BY s.updated_at DESC`, params)
+      FROM ai_curated_skills s LEFT JOIN ai_curated_skill_versions v ON v.id = s.current_version_id
+      WHERE NOT (s.source_type='official_sync' AND s.status='disabled') ${ownerFilter} ORDER BY s.updated_at DESC`, params)
     res.json({ success: true, data: rows.map((row) => ({ ...skillJson(row), currentVersion: row.current_version || '', currentVersionStatus: row.current_version_status || '' })) })
   })
 
@@ -398,7 +399,7 @@ export function registerCuratedSkillRoutes(app, {
 
   app.get('/api/curated-skills/:id', requireAuth, requirePermission('curated_skills.view'), async (req, res) => {
     const skill = await findSkill(req.params.id)
-    if (!skill) return res.status(404).json({ success: false, error: '技能不存在' })
+    if (!skill || (!centerMode && skill.source_type === 'official_sync' && skill.status === 'disabled')) return res.status(404).json({ success: false, error: '技能不存在' })
     if (skill.source_type !== 'official_sync' && skill.status !== 'published' && !agentOwnsCuratedSkill(skill, req.dataActor)) return res.status(403).json({ success: false, error: '不能查看其他组织尚未发布的技能草稿' })
     const [versions] = await db().query('SELECT * FROM ai_curated_skill_versions WHERE skill_id = ? ORDER BY created_at DESC', [skill.id])
     res.json({ success: true, data: { ...await skillWithMarkets(skill), versions: versions.map((row) => versionJson(row, false)) } })
@@ -541,7 +542,7 @@ export function registerCuratedSkillRoutes(app, {
   app.get('/api/curated-skill-distributions', requireAuth, requirePermission('curated_skills.view'), async (req, res) => {
     const [rows] = await db().query(`SELECT d.*, s.name, s.distribution_type, v.version FROM ai_curated_skill_distributions d
       JOIN ai_curated_skills s ON s.id=d.skill_id LEFT JOIN ai_curated_skill_versions v ON v.id=d.selected_version_id
-      WHERE d.owner_user_id=? ORDER BY d.updated_at DESC`, [req.ownerUserId])
+      WHERE d.owner_user_id=? AND NOT (s.source_type='official_sync' AND s.status='disabled') ORDER BY d.updated_at DESC`, [req.ownerUserId])
     const ids = rows.map((row) => row.id)
     const [audiences] = ids.length ? await db().query(`SELECT distribution_id, audience_type, audience_id FROM ai_curated_skill_audiences WHERE distribution_id IN (${ids.map(() => '?').join(',')})`, ids) : [[]]
     res.json({ success: true, data: rows.map((row) => {
@@ -579,6 +580,7 @@ export function registerCuratedSkillRoutes(app, {
   app.post('/api/curated-skill-distributions/:skillId/activate-version', requireAuth, requirePermission('curated_skills.distribute'), async (req, res) => {
     const skill = await findSkill(req.params.skillId)
     if (!skill) return res.status(404).json({ success: false, error: '技能不存在' })
+    if (skill.source_type === 'official_sync' && skill.status === 'disabled') return res.status(409).json({ success: false, error: '官方技能已下架' })
     const version = await findVersion(req.params.skillId, req.body?.versionId || req.body?.version)
     if (!version || version.status !== 'published') throw new Error('所选版本不可用')
     const [result] = await db().query(`UPDATE ai_curated_skill_distributions SET selected_version_id=?, status=IF(enabled=1,'available','disabled') WHERE owner_user_id=? AND skill_id=?`, [version.id, req.ownerUserId, req.params.skillId])

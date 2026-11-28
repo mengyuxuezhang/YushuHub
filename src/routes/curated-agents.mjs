@@ -4,7 +4,7 @@ import { db } from '../db/pool.mjs'
 import { requireAuth, requirePermission, requireClientAuth, requireCenterAuth, requireAnyPermission } from '../middleware/auth.mjs'
 import { slugify } from '../utils/slug.mjs'
 import { organizationContentMarkets, resolveClientContentMarket } from '../services/content-markets.mjs'
-import { diffMarketCatalog, marketCatalogSignature, marketImageChanged, publicMarketCatalogItems } from '../services/market-catalog-sync.mjs'
+import { diffMarketCatalog, marketCatalogSignature, marketImageChanged, publicMarketCatalogItems, requireMarketCatalogItems, serializeMarketSync } from '../services/market-catalog-sync.mjs'
 
 const DELIVERY = new Set(['market', 'recommended', 'auto_install'])
 const PERMISSION_MODES = new Set(['default', 'acceptEdits', 'auto', 'dontAsk', 'plan'])
@@ -208,7 +208,7 @@ export function registerCuratedAgentRoutes(app, { keyOwnerUserIdForEndUser, cent
   async function centerUpdateStatus() {
     if (centerMode || !fetchCenterCatalog) return { enabled: false, updateAvailable: false, checkedAt: new Date().toISOString(), signature: '', added: 0, updated: 0, removed: 0, items: [] }
     const catalog = await fetchCenterCatalog()
-    const remoteItems = Array.isArray(catalog?.items) ? catalog.items : []
+    const remoteItems = requireMarketCatalogItems(catalog)
     const [localItems] = await db().query("SELECT id,name,version,status,icon_url,publisher_name,profile_labels_json,usage_label,expertise_tags_json,starter_prompts_json FROM ai_curated_agents WHERE source_type='official_sync'")
     const diff = diffAgentCatalog(remoteItems, localItems)
     const items = [
@@ -223,11 +223,11 @@ export function registerCuratedAgentRoutes(app, { keyOwnerUserIdForEndUser, cent
     }
   }
 
-  async function syncCenterAgents(onProgress = () => {}) {
+  const syncCenterAgents = serializeMarketSync(async (onProgress = () => {}) => {
     onProgress({ stage: 'checking', message: '正在检查总后台专家目录…', percent: 5, current: 0, total: 0, currentAgent: '' })
     const status = await centerUpdateStatus()
     if (!status.enabled) throw new Error('当前实例是总后台或尚未配置官方构建中心')
-    const remoteItems = Array.isArray(status.catalog?.items) ? status.catalog.items : []
+    const remoteItems = status.catalog.items
     const remoteIds = new Set(remoteItems.map((item) => item.id))
     const result = { added: 0, updated: 0, removed: 0, skipped: 0, failed: [] }
     onProgress({ stage: 'catalog', message: `目录检查完成，共 ${remoteItems.length} 个专家`, percent: 10, total: remoteItems.length })
@@ -259,7 +259,7 @@ export function registerCuratedAgentRoutes(app, { keyOwnerUserIdForEndUser, cent
               VALUES (?,?,?,1,?,'available',?)`, [crypto.randomUUID(), id, ownerUserId, item.defaultDeliveryPolicy || 'market', ownerUserId])
           }
         }
-        await db().query("UPDATE ai_curated_agent_distributions SET enabled=1,status='available' WHERE agent_id=? AND status IN ('blocked','revoked')", [id])
+        await db().query("UPDATE ai_curated_agent_distributions SET status=IF(enabled=1,'available','disabled') WHERE agent_id=? AND status='blocked'", [id])
         if (changed) result[existing ? 'updated' : 'added'] += 1
       } catch (error) {
         result.failed.push({ agentId: item.id, error: error instanceof Error ? error.message : String(error) })
@@ -270,14 +270,14 @@ export function registerCuratedAgentRoutes(app, { keyOwnerUserIdForEndUser, cent
     const [localOfficial] = await db().query("SELECT id FROM ai_curated_agents WHERE source_type='official_sync' AND status='published'")
     for (const row of localOfficial) {
       if (remoteIds.has(row.id)) continue
-      await db().query("UPDATE ai_curated_agents SET status='disabled' WHERE id=?", [row.id])
-      await db().query("UPDATE ai_curated_agent_distributions SET enabled=0,status='blocked' WHERE agent_id=?", [row.id])
+      await db().query(`UPDATE ai_curated_agents a LEFT JOIN ai_curated_agent_distributions d ON d.agent_id=a.id
+        SET a.status='disabled', d.status='blocked' WHERE a.id=? AND a.source_type='official_sync' AND a.status='published'`, [row.id])
       result.removed += 1
     }
     onProgress({ stage: 'reporting', message: '正在上报同步结果…', percent: 97, current: remoteItems.length, total: remoteItems.length, currentAgent: '' })
     if (reportCenterSync) await reportCenterSync({ success: result.failed.length === 0, imported: result.added + result.updated, failed: result.failed.length }).catch(() => {})
     return result
-  }
+  })
 
   function startSyncJob() {
     cleanSyncJobs()
@@ -312,8 +312,9 @@ export function registerCuratedAgentRoutes(app, { keyOwnerUserIdForEndUser, cent
   }))
   app.get('/api/curated-agents', requireAuth, requirePermission('curated_agents.view'), wrap(async (req, res) => {
     const markets = organizationContentMarkets(req.organizationContext)
-    const [rows] = await db().query(`SELECT * FROM ai_curated_agents a WHERE owner_user_id=? OR (status='published' AND EXISTS
-      (SELECT 1 FROM ai_curated_agent_market_placements p WHERE p.curated_agent_id=a.id AND p.status='published' AND p.market_type IN (${markets.map(() => '?').join(',')}))) ORDER BY updated_at DESC`, [req.ownerUserId, ...markets])
+    const [rows] = await db().query(`SELECT * FROM ai_curated_agents a WHERE NOT (a.source_type='official_sync' AND a.status='disabled')
+      AND (owner_user_id=? OR (status='published' AND EXISTS
+        (SELECT 1 FROM ai_curated_agent_market_placements p WHERE p.curated_agent_id=a.id AND p.status='published' AND p.market_type IN (${markets.map(() => '?').join(',')})))) ORDER BY updated_at DESC`, [req.ownerUserId, ...markets])
     res.json({ success: true, data: await Promise.all(rows.map((row) => agentJson(row, row.owner_user_id === req.ownerUserId))) })
   }))
   app.post('/api/curated-agents', requireAuth, requirePermission('curated_agents.manage'), wrap(async (req, res) => {
@@ -389,7 +390,8 @@ export function registerCuratedAgentRoutes(app, { keyOwnerUserIdForEndUser, cent
     res.json({ success: true, data: { deleted: true } })
   }))
   app.get('/api/curated-agent-distributions', requireAuth, requirePermission('curated_agents.view'), wrap(async (req, res) => {
-    const [rows] = await db().query('SELECT d.*,a.name,a.version FROM ai_curated_agent_distributions d JOIN ai_curated_agents a ON a.id=d.agent_id WHERE d.owner_user_id=? ORDER BY d.updated_at DESC', [req.ownerUserId])
+    const [rows] = await db().query(`SELECT d.*,a.name,a.version FROM ai_curated_agent_distributions d JOIN ai_curated_agents a ON a.id=d.agent_id
+      WHERE d.owner_user_id=? AND NOT (a.source_type='official_sync' AND a.status='disabled') ORDER BY d.updated_at DESC`, [req.ownerUserId])
     const result = []
     for (const row of rows) { const [audience] = await db().query('SELECT audience_type,audience_id FROM ai_curated_agent_audiences WHERE distribution_id=?', [row.id]); result.push({ ...row, audienceType: audience.some((item) => item.audience_type === 'all') ? 'all' : 'membership_cards', membershipCardIds: audience.filter((item) => item.audience_type === 'membership_card').map((item) => item.audience_id) }) }
     res.json({ success: true, data: result })

@@ -12,7 +12,7 @@ export function createPluginMarketSync({ market, fetchCatalog, fetchPackage }) {
   async function sync() {
     const { items } = await fetchCatalog()
     if (!Array.isArray(items) || items.length > 1000) throw new Error('官方插件目录无效')
-    const installed = new Map((await market.overview()).versions.map(item => [item.id + '@' + item.version, item]))
+    const installed = new Map((await market.overview({ includeWithdrawn: true })).versions.map(item => [item.id + '@' + item.version, item]))
     const received = new Set()
     const snapshot = []
     for (const item of items) {

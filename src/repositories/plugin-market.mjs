@@ -3,8 +3,15 @@ import { pluginPresentation } from '../services/plugin-presentation.mjs'
 
 const query = (...args) => db().query(...args)
 
+// Synced versions retain their origin after the official catalog entry is removed.
+const availableVersion = `(v.created_by<>'official-center' OR EXISTS (
+  SELECT 1 FROM ai_plugin_official available WHERE available.plugin_id=v.plugin_id
+))`
+
 const effectiveGrants = `(
-  SELECT project_id,plugin_id,version FROM ai_plugin_grants
+  SELECT g.project_id,g.plugin_id,g.version FROM ai_plugin_grants g
+  JOIN ai_plugin_versions v ON v.plugin_id=g.plugin_id AND v.version=g.version
+  WHERE ${availableVersion}
   UNION ALL
   SELECT p.id,o.plugin_id,o.version FROM ai_projects p CROSS JOIN ai_plugin_official o
   WHERE p.status='enabled'
@@ -23,13 +30,20 @@ function publicVersion(row, includePresentation, admin = false) {
 }
 
 export const pluginMarket = {
-  async overview() {
+  async overview({ includeWithdrawn = false } = {}) {
     const [[versions], [grants], [projects], [counts], [profiles]] = await Promise.all([
-      query('SELECT v.plugin_id,v.version,v.status,v.metadata,v.sha256,v.size,COALESCE(o.presentation,p.presentation) AS presentation,o.presentation IS NOT NULL AS official_sync FROM ai_plugin_versions v LEFT JOIN ai_plugin_profiles p ON p.plugin_id=v.plugin_id LEFT JOIN ai_plugin_official o ON o.plugin_id=v.plugin_id ORDER BY v.created_at DESC'),
+      query(`SELECT v.plugin_id,v.version,v.status,v.metadata,v.sha256,v.size,COALESCE(o.presentation,p.presentation) AS presentation,o.presentation IS NOT NULL AS official_sync
+        FROM ai_plugin_versions v LEFT JOIN ai_plugin_profiles p ON p.plugin_id=v.plugin_id LEFT JOIN ai_plugin_official o ON o.plugin_id=v.plugin_id
+        ${includeWithdrawn ? '' : `WHERE ${availableVersion}`} ORDER BY v.created_at DESC`),
       query(`SELECT project_id,plugin_id,version FROM ${effectiveGrants} g ORDER BY project_id,plugin_id`),
       query("SELECT id, app_name AS name FROM ai_projects WHERE status='enabled' ORDER BY app_name, id"),
       query("SELECT plugin_id, version, project_id, COUNT(*) AS count FROM ai_plugin_installations WHERE state='installed' GROUP BY plugin_id, version, project_id"),
-      query('SELECT plugin_id,presentation FROM ai_plugin_profiles ORDER BY plugin_id'),
+      query(`SELECT p.plugin_id,p.presentation FROM ai_plugin_profiles p
+        LEFT JOIN ai_plugin_official o ON o.plugin_id=p.plugin_id
+        WHERE o.plugin_id IS NOT NULL
+          OR NOT EXISTS (SELECT 1 FROM ai_plugin_versions v WHERE v.plugin_id=p.plugin_id AND v.created_by='official-center')
+          OR EXISTS (SELECT 1 FROM ai_plugin_versions v WHERE v.plugin_id=p.plugin_id AND v.created_by<>'official-center')
+        ORDER BY p.plugin_id`),
     ])
     return { versions: versions.map(row => publicVersion(row, true, true)), grants, projects, counts,
       profiles: profiles.map(row => ({ id: row.plugin_id, presentation: pluginPresentation(row.plugin_id, row.presentation) })) }
@@ -58,11 +72,11 @@ export const pluginMarket = {
   async grant(projectId, pluginId, version, actor) {
     const [result] = await query(`INSERT INTO ai_plugin_grants (project_id,plugin_id,version,updated_by)
       SELECT p.id,v.plugin_id,v.version,? FROM ai_projects p JOIN ai_plugin_versions v ON v.plugin_id=? AND v.version=? AND v.status='published'
-      WHERE p.id=? AND p.status='enabled'
+      WHERE p.id=? AND p.status='enabled' AND ${availableVersion}
       ON DUPLICATE KEY UPDATE version=VALUES(version),updated_by=VALUES(updated_by)`, [actor, pluginId, version, projectId])
     // A repeat save may not change the row.
     if (result.affectedRows) return true
-    const [[existing]] = await query(`SELECT g.version FROM ai_plugin_grants g JOIN ai_projects p ON p.id=g.project_id
+    const [[existing]] = await query(`SELECT g.version FROM ${effectiveGrants} g JOIN ai_projects p ON p.id=g.project_id
       WHERE g.project_id=? AND g.plugin_id=? AND p.status='enabled'`, [projectId, pluginId])
     return existing?.version === version
   },
@@ -111,6 +125,9 @@ export const pluginMarket = {
         await connection.query('INSERT INTO ai_plugin_official (plugin_id,version,presentation) VALUES (?,?,?)',
           [item.id, item.version, JSON.stringify(item.presentation)])
       }
+      await connection.query(`DELETE g FROM ai_plugin_grants g
+        JOIN ai_plugin_versions v ON v.plugin_id=g.plugin_id AND v.version=g.version
+        WHERE NOT ${availableVersion}`)
       await connection.commit()
     } catch (error) {
       await connection.rollback()

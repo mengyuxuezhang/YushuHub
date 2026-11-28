@@ -15,7 +15,7 @@ test('official plugin sync checks files before switching project visibility and 
   const versions = []
   const sync = createPluginMarketSync({
     market: {
-      overview: async () => ({ versions }),
+      overview: async ({ includeWithdrawn }) => ({ versions: includeWithdrawn ? versions : versions.filter((version) => snapshot.some((entry) => entry.id === version.id)) }),
       publish: async ({ plugin, sha256 }) => { versions.push({ ...plugin, sha256 }); return true },
       replaceOfficialCatalog: async values => { snapshot = values },
     },
@@ -41,4 +41,9 @@ test('official plugin sync checks files before switching project visibility and 
   items = []
   assert.deepEqual(await sync(), { enabled: true, total: 0 })
   assert.deepEqual(snapshot, [])
+
+  items = [item]
+  const previousDownloads = downloads
+  assert.deepEqual(await sync(), { enabled: true, total: 1 })
+  assert.equal(downloads, previousDownloads)
 })

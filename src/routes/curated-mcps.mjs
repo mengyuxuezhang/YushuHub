@@ -6,7 +6,7 @@ import { requireAuth, requirePermission, requireClientAuth, requireCenterAuth, r
 import { parseJson } from '../utils/parse.mjs'
 import { slugify } from '../utils/slug.mjs'
 import { normalizeContentMarkets, organizationContentMarkets, resolveClientContentMarket } from '../services/content-markets.mjs'
-import { diffMarketCatalog, marketCatalogSignature, marketImageChanged, publicMarketCatalogItems } from '../services/market-catalog-sync.mjs'
+import { diffMarketCatalog, marketCatalogSignature, marketImageChanged, publicMarketCatalogItems, requireMarketCatalogItems, serializeMarketSync } from '../services/market-catalog-sync.mjs'
 
 const DELIVERY = new Set(['market', 'recommended', 'auto_install'])
 const VERSION_POLICY = new Set(['manual', 'follow_latest'])
@@ -274,7 +274,7 @@ export function registerCuratedMcpRoutes(app, {
   async function centerUpdateStatus() {
     if (centerMode || !fetchCenterCatalog) return { enabled: false, updateAvailable: false, checkedAt: new Date().toISOString(), signature: '', added: 0, updated: 0, removed: 0, items: [] }
     const catalog = await fetchCenterCatalog()
-    const remoteItems = Array.isArray(catalog?.items) ? catalog.items : []
+    const remoteItems = requireMarketCatalogItems(catalog)
     const [rows] = await db().query(`SELECT m.id,m.name,m.status,m.icon_url,v.version
       FROM ai_curated_mcps m LEFT JOIN ai_curated_mcp_versions v ON v.id=m.current_version_id
       WHERE m.source_type='official_sync'`)
@@ -291,12 +291,11 @@ export function registerCuratedMcpRoutes(app, {
     }
   }
 
-  async function syncCenterMcps(onProgress = () => {}) {
+  const syncCenterMcps = serializeMarketSync(async (onProgress = () => {}) => {
     onProgress({ stage: 'checking', message: '正在检查总后台 MCP 目录…', percent: 5, current: 0, total: 0, currentMcp: '' })
     const status = await centerUpdateStatus()
     if (!status.enabled) throw new Error('当前实例是总后台或尚未配置官方构建中心')
-    const catalog = status.catalog || await fetchCenterCatalog()
-    const remoteItems = Array.isArray(catalog?.items) ? catalog.items : []
+    const remoteItems = status.catalog.items
     const remoteIds = new Set(remoteItems.map((item) => item.id))
     const result = { added: 0, updated: 0, removed: 0, skipped: 0, failed: [] }
     onProgress({ stage: 'catalog', message: `目录检查完成，共 ${remoteItems.length} 个 MCP`, percent: 10, current: 0, total: remoteItems.length, currentMcp: '' })
@@ -334,7 +333,7 @@ export function registerCuratedMcpRoutes(app, {
               VALUES (?,?,?,1,?,?,?,'available',?)`, [crypto.randomUUID(), mcpId, ownerUserId, versionId, item.defaultDeliveryPolicy || 'market', 'follow_latest', ownerUserId])
           }
         }
-        await db().query("UPDATE ai_curated_mcp_distributions SET enabled=1,status='available' WHERE mcp_id=? AND status IN ('revoked','disabled')", [mcpId])
+        await db().query("UPDATE ai_curated_mcp_distributions SET status=IF(enabled=1,'available','disabled') WHERE mcp_id=? AND status='revoked'", [mcpId])
         if (changed) result[existing ? 'updated' : 'added'] += 1
       } catch (error) {
         result.failed.push({ mcpId: item.id, error: error instanceof Error ? error.message : String(error) })
@@ -345,14 +344,14 @@ export function registerCuratedMcpRoutes(app, {
     const [localOfficial] = await db().query(`SELECT id FROM ai_curated_mcps WHERE source_type='official_sync' AND status='published'`)
     for (const row of localOfficial) {
       if (remoteIds.has(row.id)) continue
-      await db().query(`UPDATE ai_curated_mcps SET status='disabled' WHERE id=?`, [row.id])
-      await db().query(`UPDATE ai_curated_mcp_distributions SET enabled=0,status='revoked' WHERE mcp_id=?`, [row.id])
+      await db().query(`UPDATE ai_curated_mcps m LEFT JOIN ai_curated_mcp_distributions d ON d.mcp_id=m.id
+        SET m.status='disabled', d.status='revoked' WHERE m.id=? AND m.source_type='official_sync' AND m.status='published'`, [row.id])
       result.removed += 1
     }
     onProgress({ stage: 'reporting', message: '正在上报同步结果…', percent: 97, current: remoteItems.length, total: remoteItems.length, currentMcp: '' })
     if (reportCenterSync) await reportCenterSync({ success: result.failed.length === 0, imported: result.added + result.updated, failed: result.failed.length }).catch(() => {})
     return result
-  }
+  })
 
   function startSyncJob() {
     cleanSyncJobs()
@@ -391,7 +390,9 @@ export function registerCuratedMcpRoutes(app, {
   app.get('/api/curated-mcps', requireAuth, requirePermission('curated_mcps.view'), wrap(async (req, res) => {
     const scoped = req.organizationContext?.dataScope !== 'platform'
     const markets = organizationContentMarkets(req.organizationContext)
-    const [rows] = await db().query(`SELECT * FROM ai_curated_mcps m ${scoped ? `WHERE (owner_user_id=? OR ((status='published' OR source_type='official_sync') AND EXISTS (SELECT 1 FROM ai_curated_mcp_market_placements mp WHERE mp.curated_mcp_id=m.id AND mp.status='published' AND mp.market_type IN (${markets.map(() => '?').join(',')}))))` : ''} ORDER BY updated_at DESC`, scoped ? [req.ownerUserId, ...markets] : [])
+    const ownerFilter = scoped ? `AND (m.owner_user_id=? OR ((m.status='published' OR m.source_type='official_sync') AND EXISTS (SELECT 1 FROM ai_curated_mcp_market_placements mp WHERE mp.curated_mcp_id=m.id AND mp.status='published' AND mp.market_type IN (${markets.map(() => '?').join(',')}))))` : ''
+    const [rows] = await db().query(`SELECT * FROM ai_curated_mcps m
+      WHERE NOT (m.source_type='official_sync' AND m.status='disabled') ${ownerFilter} ORDER BY m.updated_at DESC`, scoped ? [req.ownerUserId, ...markets] : [])
     res.json({ success: true, data: rows.map(resourceJson) })
   }))
   app.post('/api/curated-mcps', requireAuth, requirePermission('curated_mcps.manage'), wrap(async (req, res) => {
@@ -403,7 +404,8 @@ export function registerCuratedMcpRoutes(app, {
     const [[row]] = await db().query('SELECT * FROM ai_curated_mcps WHERE id=?', [mcpId]); res.status(201).json({ success: true, data: resourceJson(row) })
   }))
   app.get('/api/curated-mcps/:id', requireAuth, requirePermission('curated_mcps.view'), wrap(async (req, res) => {
-    const [[mcp]] = await db().query('SELECT * FROM ai_curated_mcps WHERE id=?', [req.params.id]); if (!mcp) return res.status(404).json({ success: false, error: 'MCP 不存在' })
+    const [[mcp]] = await db().query('SELECT * FROM ai_curated_mcps WHERE id=?', [req.params.id])
+    if (!mcp || (!centerMode && mcp.source_type === 'official_sync' && mcp.status === 'disabled')) return res.status(404).json({ success: false, error: 'MCP 不存在' })
     if (mcp.source_type !== 'official_sync' && mcp.status !== 'published' && !agentOwnsMcp(mcp, req.user)) return res.status(403).json({ success: false, error: '不能查看其他账号尚未发布的 MCP 草稿' })
     const [versions] = await db().query('SELECT * FROM ai_curated_mcp_versions WHERE mcp_id=? ORDER BY created_at DESC', [mcp.id]); res.json({ success: true, data: { ...resourceJson(mcp), marketTypes: await mcpMarketTypes(mcp.id), versions: versions.map(versionJson) } })
   }))
@@ -480,7 +482,9 @@ export function registerCuratedMcpRoutes(app, {
     res.json({ success: true, data: { mcpId: mcp.id, versionId: version.id, version: version.version, status: 'published' } })
   }))
   app.get('/api/curated-mcp-distributions', requireAuth, requirePermission('curated_mcps.view'), wrap(async (req, res) => {
-    const [rows] = await db().query(`SELECT d.*,m.name,v.version FROM ai_curated_mcp_distributions d JOIN ai_curated_mcps m ON m.id=d.mcp_id LEFT JOIN ai_curated_mcp_versions v ON v.id=d.selected_version_id WHERE d.owner_user_id=? ORDER BY d.updated_at DESC`, [req.ownerUserId])
+    const [rows] = await db().query(`SELECT d.*,m.name,v.version FROM ai_curated_mcp_distributions d
+      JOIN ai_curated_mcps m ON m.id=d.mcp_id LEFT JOIN ai_curated_mcp_versions v ON v.id=d.selected_version_id
+      WHERE d.owner_user_id=? AND NOT (m.source_type='official_sync' AND m.status='disabled') ORDER BY d.updated_at DESC`, [req.ownerUserId])
     const ids = rows.map((row) => row.id); const [audiences] = ids.length ? await db().query(`SELECT distribution_id,audience_type,audience_id FROM ai_curated_mcp_audiences WHERE distribution_id IN (${ids.map(() => '?').join(',')})`, ids) : [[]]
     res.json({ success: true, data: rows.map((row) => { const own = audiences.filter((item) => item.distribution_id === row.id); return { ...row, audienceType: own.some((item) => item.audience_type === 'all') ? 'all' : 'membership_cards', membershipCardIds: own.filter((item) => item.audience_type === 'membership_card').map((item) => item.audience_id) } }) })
   }))

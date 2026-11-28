@@ -3,6 +3,22 @@ import crypto from 'node:crypto'
 import { PUBLIC_ADMIN_BASE_URL } from '../config/env.mjs'
 import { canonicalizePublicUploadUrl, resolvePublicUrlsForRequest } from '../utils/public-url.mjs'
 
+export function requireMarketCatalogItems(catalog) {
+  if (!Array.isArray(catalog?.items) || catalog.items.some((item) => typeof item?.id !== 'string' || !item.id.trim())) {
+    throw new Error('总后台资源目录无效')
+  }
+  return catalog.items
+}
+
+export function serializeMarketSync(sync) {
+  let pending = Promise.resolve()
+  return (...args) => {
+    const result = pending.then(() => sync(...args))
+    pending = result.catch(() => {})
+    return result
+  }
+}
+
 export function marketImageChanged(remote, local, imageField = 'iconUrl') {
   const column = imageField === 'coverUrl' ? 'cover_url' : 'icon_url'
   return String(remote?.[imageField] || '').trim() !== String(local?.[column] || '').trim()
